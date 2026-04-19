@@ -109,7 +109,8 @@ MCP (Model Context Protocol) lets your agent use external tools. Here's how:
 }
 ```
 
-Alternatively, `"env":{"TOKEN_ENV_NAME":"${YOUR_TOKEN}"}` works as well assuming environment variable `YOUR_TOKEN` exists.
+Alternatively, `"env":{"TOKEN_ENV_NAME":"${YOUR_TOKEN}"}` works as well assuming environment variable `YOUR_TOKEN` exists.  
+Refer to `examples/mcp_config.json` for a few no-config, plug-and-play example servers.  
 
 ### Step 2: Use it in chat()
 
@@ -118,7 +119,7 @@ result = await chat(
     message="Create a new issue in my repo about the bug",
     provider="openai",
     api_key="sk-...",
-    mcp_config_path="mcp.json"  # <-- This enables MCP!
+    mcp_config_path="path/to/mcp.json"  # <-- This enables MCP!
 )
 ```
 

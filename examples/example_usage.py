@@ -13,7 +13,7 @@ import os
 
 from pathlib import Path
 os.environ['MCP_SERVER_MEMORY_FILE'] = str((Path(__file__).parent.parent / "memory.jsonl").resolve())
-os.environ['MCP_CONFIG_PATH'] = str((Path(__file__).parent.parent / "mcp_config.json").resolve())
+os.environ['MCP_CONFIG_PATH'] = str((Path(__file__).parent / "mcp_config.json").resolve())
 
 async def main():
     # ============================================================
