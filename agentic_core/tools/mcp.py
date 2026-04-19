@@ -407,8 +407,11 @@ class MCPClientManager:
         if not command:
             logger.error(f"ERROR: Could not find '{raw_command}' in system PATH.")
             return False
-            
-        env = os.environ.copy()
+
+        # Provide only what is strictly necessary to run subprocesses
+        safe_env_keys = ["PATH", "HOME", "USERPROFILE", "SystemRoot", "APPDATA", "LOCALAPPDATA"]
+        env = {k: os.environ[k] for k in safe_env_keys if k in os.environ}
+
         server_env = server_config.get("env", {})
 
         for key, value in server_env.items():
