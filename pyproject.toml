@@ -24,9 +24,9 @@ dependencies = [
 
 [project.optional-dependencies]
 # Lazy-loaded dependencies
-openai = ["openai>=1.0.0"]
-anthropic = ["anthropic>=0.18.0"]
-ollama = ["ollama>=0.1.6"]
+openai = ["openai>=2.24.0"]
+anthropic = ["anthropic"]
+ollama = ["ollama>=0.6.1"]
 mcp = ["mcp>=1.27.0"] # Adjust based on the official MCP python SDK version
 
 # Convenience extra to install everything
