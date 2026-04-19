@@ -207,13 +207,15 @@ class MCPToolAdapter(BaseTool):
         # e.g., "sqlite_query" instead of just "query"
         self._name = f"{server_name}_{mcp_tool_def.get('name', 'unnamed')}"
         
+        cleansed_schema = {k: v for k, v in mcp_tool_def.get('inputSchema', {}).items() if k in ['type', 'required', 'properties']}
+
         # Map MCP schema to OpenAI function calling schema format
         self._schema = {
             "type": "function",
             "function": {
                 "name": self._name,
                 "description": mcp_tool_def.get('description', ''),
-                "parameters": mcp_tool_def.get('inputSchema', {})
+                "parameters": cleansed_schema
             }
         }
     
