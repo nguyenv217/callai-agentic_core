@@ -11,11 +11,11 @@ class AnthropicLLM(ILLMClient):
     def __init__(
         self, 
         api_key: str, 
-        model: str = "claude-3-5-sonnet-20241022",
+        model: str,
         **kwargs
     ):
         try:
-            import agentic_core.llm_providers.anthropic as anthropic  # type: ignore
+            import anthropic  # type: ignore
         except ImportError:
             raise ImportError("Please install anthropic: pip install anthropic")
         

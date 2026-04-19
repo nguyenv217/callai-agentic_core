@@ -124,8 +124,8 @@ async def chat(
     if runner: agent=runner
     elif provider == 'openai':
         agent = create_openai_agent(
-            api_key=api_key or "dummy",
-            model=model or "gpt-4o",
+            api_key=api_key,
+            model=model,
             base_url=base_url,
             system_prompt=system_prompt,
             mcp_config_path=mcp_config_path,
@@ -134,8 +134,8 @@ async def chat(
         )
     elif provider == "anthropic":
         agent = create_anthropic_agent(
-            api_key=api_key or "dummy",
-            model=model or "claude-3-5-sonnet-20241022",
+            api_key=api_key,
+            model=model,
             system_prompt=system_prompt,
             mcp_config_path=mcp_config_path,
             observer=observer,
@@ -143,7 +143,7 @@ async def chat(
         )
     elif provider == "ollama":
         agent = create_ollama_agent(
-            model=model or "llama3.1",
+            model=model,
             base_url=base_url,
             system_prompt=system_prompt,
             mcp_config_path=mcp_config_path,
