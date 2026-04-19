@@ -36,12 +36,18 @@ async def main():
     )
 
     from agentic_core.engine import RunnerConfig
-    config = RunnerConfig(
-        system_prompt=f"""You are a helpful assistant. Keep your answer short and concise. 
+    
+    system_prompt = f"""You are a helpful assistant. Keep your answer short and concise. 
 You have access to MCP servers to invoke tools when appropriate. 
 Among these servers, you can use the 'memory' server to access past conversations. 
 Only use these tools when necessary to conserve resources.
 """
+    
+    # RunnerConfig provides easy way to config agentic loop
+    config = RunnerConfig(
+        system_prompt=system_prompt,
+        max_iterations=20,
+        # mcp_preload_tools=[]
         )
 
     try:

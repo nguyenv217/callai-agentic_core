@@ -30,18 +30,9 @@ class ToolManager:
     """
     def __init__(
         self, 
-        search_api_key=None, 
-        e2b_api_key=None, 
-        firecrawl_api_key=None, 
-        sandbox_dir="sandbox/",
         toolsets: dict[str, list[str]] | None = None,
         mcp_config_path: Optional[str] = None
     ):
-        self.search_api_key = search_api_key
-        self.e2b_api_key = e2b_api_key
-        self.firecrawl_api_key = firecrawl_api_key
-        self.sandbox_dir = sandbox_dir
-
         self.active_sessions = {}
         self.seed = 0
 
@@ -91,14 +82,14 @@ class ToolManager:
             from .mcp import MCPClientManager, MCPToolAdapter
         except ImportError:
             logger.warning("MCP dependencies missing. Skipping MCP initialization.")
-            return 0
+            return -1
         
         mcp_manager = MCPClientManager(config_path=self.mcp_config_path)
         initialized = await mcp_manager.initialize(allowed_servers=allowed_servers)
         
         if not initialized:
             logger.info("No MCP servers configured or available.")
-            return 0
+            return -1
         
         # Populate standby registry
         mcp_tools = await mcp_manager.list_all_tools()
@@ -211,13 +202,9 @@ class ToolManager:
                 await self.ensure_mcp_initialized()
 
             context = {
-                "search_api_key": self.search_api_key,
-                "e2b_api_key": self.e2b_api_key,
                 "active_sessions": self.active_sessions,
                 "session_id": self.seed,
-                "sandbox_dir": self.sandbox_dir,
                 "controller": controller,
-                "firecrawl_api_key": self.firecrawl_api_key
             }
 
             plugin = self._plugins[tool_name]
@@ -254,7 +241,7 @@ class ToolManager:
         if config.mcp_active_servers or config.mcp_preload_tools:
             num_tools = await self.initialize_mcp(allowed_servers=config.mcp_active_servers)
 
-            if num_tools > 0:
+            if num_tools != -1:
                 self._mcp_initialized = True
             
             # Preload the specific tools directly into the active set

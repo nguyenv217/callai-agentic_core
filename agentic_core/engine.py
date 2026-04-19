@@ -50,9 +50,8 @@ class AgentRunner:
 
         observer.on_turn_start()
         
-        # --- NEW: Awaitable preparation phase ---
-        if hasattr(self.tools, 'prepare_turn'):
-            await self.tools.prepare_turn(config)
+        # Preparation phase to setup configureed MCP servers and tools
+        await self.tools.prepare_turn(config)
             
         active_tools = config.tools or self.tools.get_tools(config.toolset)
         iteration = 1
