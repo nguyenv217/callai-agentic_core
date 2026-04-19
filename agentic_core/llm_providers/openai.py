@@ -4,23 +4,33 @@ OpenAI LLM Provider.
 from typing import List, Dict, Any, Iterator
 from .base import ILLMClient, LLMResponse
 
+_openai_imported=True
+try:
+    from openai import OpenAI
+except ImportError:
+    _openai_imported=False
 
 class OpenAILLM(ILLMClient):
     """OpenAI GPT adapter."""
     
     def __init__(
         self, 
-        api_key: str, 
+        api_key: str | None = None, 
         model: str = "gpt-4o",
         base_url: str = "https://api.openai.com/v1",
+        client: OpenAI | None = None,
         **kwargs
     ):
-        try:
-            from openai import OpenAI
-        except ImportError:
+        if not _openai_imported:
             raise ImportError("Please install openai: pip install openai")
         
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        if client:
+            self.client = client
+        elif api_key:
+            self.client = OpenAI(api_key=api_key, base_url=base_url)
+        else:
+            raise RuntimeError("Please pass either a valid api_key as 'api_key' or a configured OpenAI client instance as 'client")
+            
         self.model = model
         self.extra_kwargs = kwargs
     
