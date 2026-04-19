@@ -29,13 +29,26 @@ class ToolManager:
     def __init__(
         self, 
         toolsets: dict[str, list[str]] | None = None,
-        mcp_config_path: Optional[str] = None
+        mcp_config_path: Optional[str] = None,
+        enable_mcp_discovery: bool = True,
+        extra_env: dict[str, str] | None = None
     ):
+        """
+        Initializes the ToolManager.
+
+        Args:
+            toolsets: A dictionary where the keys are the names of the toolsets and the values are lists of tool names.
+            mcp_config_path: The path to the MCP servers configuration file.
+            enable_mcp_discovery: If True, the ToolManager will inject MCP discovery tools on each agent run.
+            extra_env: Extra environment variables to pass to MCPClient initialization.
+        """
         self.active_sessions = {}
         self.seed = 0
 
         self.tools_schema = []
         self._plugins: dict[str, BaseTool] = {}
+        
+        self._universal_tools = ["list_mcp_catalog", "load_mcp_tool"]
 
         # --- MCP State ---
         self.mcp_config_path = mcp_config_path
@@ -43,11 +56,12 @@ class ToolManager:
         self._mcp_loaded_tools: Set[BaseTool] = set()
         self._mcp_initialized = False
         self._mcp_init_in_progress = False
-        self._universal_tools = ["list_mcp_catalog", "load_mcp_tool"]
+        self.extra_env = extra_env
         # Register the universal meta-tools that allow the LLM to search/load MCPs
-        from .mcp import ListMCPTools, LoadMCPTool
-        self.register_tool(ListMCPTools(self))
-        self.register_tool(LoadMCPTool(self))
+        if enable_mcp_discovery:
+            from .mcp import ListMCPTools, LoadMCPTool
+            self.register_tool(ListMCPTools(self))
+            self.register_tool(LoadMCPTool(self))
         
         # Toolsets initialization (Base logic)
         self.toolsets = toolsets or {}
@@ -83,7 +97,7 @@ class ToolManager:
             return -1
         
         mcp_manager = MCPClientManager(config_path=self.mcp_config_path)
-        initialized = await mcp_manager.initialize(allowed_servers=allowed_servers)
+        initialized = await mcp_manager.initialize(allowed_servers=allowed_servers, extra_env=self.extra_env)
         
         if not initialized:
             logger.info("No MCP servers configured or available.")

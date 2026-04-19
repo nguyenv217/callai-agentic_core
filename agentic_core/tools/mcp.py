@@ -75,8 +75,6 @@ class ListMCPTools(BaseTool):
                 return f"Error: Server '{server_filter}' not found. Available servers: {list(servers.keys())}"
             
             lines.append(f"--- Available tools for server '{server_filter}' ({len(servers[server_filter])} total) ---")
-            if server_filter == 'playwright':
-                lines.append(f"Note:\n* This server is prone to ghost browser processes. If a 'Target page, context or browser has been closed' error persists, load and call playwright_browser_close tool before retrying.\n* For LLM agents: Use playwright_browser_snapshot to understand the page elements. Only use take_screenshot if the user specified that they want to see screenshot.")
             for adapter in servers[server_filter]:
                 desc = adapter.schema['function'].get('description', 'No description')
                 lines.append(f"- {adapter.name}: {desc}")
@@ -170,8 +168,6 @@ class LoadMCPTool(BaseTool):
             
         if loaded:
             results.append(f"Success: Loaded {len(loaded)} tool(s): {', '.join(loaded)}")
-            if any("playwright" in tn for tn in tool_names):
-                results.append(f"INFO: You loaded a playwright tool(s). Playwright MCP is prone to ghost browser processes. If a 'Target page, context or browser has been closed' error persists, load and call playwright_browser_close tool before retrying.")
             
         return "\n".join(results)
 
@@ -187,7 +183,8 @@ class MCPToolAdapter(BaseTool):
         mcp_tool_def: Dict[str, Any], 
         session: Any, 
         server_name: str,
-        timeout: float = 30.0
+        timeout: float = 30.0,
+        clean_schema: bool = True
     ):
         """
         Initialize the MCP tool adapter.
@@ -207,7 +204,9 @@ class MCPToolAdapter(BaseTool):
         # e.g., "sqlite_query" instead of just "query"
         self._name = f"{server_name}_{mcp_tool_def.get('name', 'unnamed')}"
         
-        cleansed_schema = {k: v for k, v in mcp_tool_def.get('inputSchema', {}).items() if k in ['type', 'required', 'properties']}
+        if clean_schema:
+            cleansed_schema = {k: v for k, v in mcp_tool_def.get('inputSchema', {}).items() if k in ['type', 'required', 'properties']}
+        else: cleansed_schema=mcp_tool_def.get('inputSchema', {})
 
         # Map MCP schema to OpenAI function calling schema format
         self._schema = {
@@ -350,7 +349,7 @@ class MCPClientManager:
         
         return self.config
     
-    async def initialize(self, allowed_servers: list[str] | None = None) -> bool:
+    async def initialize(self, allowed_servers: list[str] | None = None, extra_env: dict[str, str] | None = None) -> bool:
         """
         Initialize connections to configured MCP servers.
         
@@ -383,7 +382,7 @@ class MCPClientManager:
         try:
             server_names = list(servers_to_start.keys())
             results = await asyncio.gather(
-                *(self._connect_to_server(name, cfg) for name, cfg in servers_to_start.items()),
+                *(self._connect_to_server(name, cfg, extra_env) for name, cfg in servers_to_start.items()),
                 return_exceptions=True
             )
 
@@ -397,7 +396,7 @@ class MCPClientManager:
             logger.error("MCP SDK not installed. Run: pip install mcp")
             return False
     
-    async def _connect_to_server(self, server_name: str, server_config: Dict[str, Any]):
+    async def _connect_to_server(self, server_name: str, server_config: Dict[str, Any], extra_env: dict[str, str] | None):
         from mcp.client.stdio import stdio_client
         from mcp import ClientSession, StdioServerParameters
         import re, os, shutil, asyncio
@@ -412,7 +411,8 @@ class MCPClientManager:
 
         # Provide only what is strictly necessary to run subprocesses
         safe_env_keys = ["PATH", "HOME", "USERPROFILE", "SystemRoot", "APPDATA", "LOCALAPPDATA"]
-        env = {k: os.environ[k] for k in safe_env_keys if k in os.environ}
+        extra_env = extra_env or {}
+        env = {**{k: os.environ[k] for k in safe_env_keys if k in os.environ}, **extra_env}
 
         server_env = server_config.get("env", {})
 
