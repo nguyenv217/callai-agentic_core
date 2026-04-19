@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "description": "Graph-based memory. No API keys, just local JSON storage.",
+      "env": {
+        "MEMORY_FILE_PATH": "${MCP_SERVER_MEMORY_FILE}"
+      }
+    },
+    "fetch": {
+      "command": "cmd",
+      "args": ["/c", "python", "-m", "mcp_server_fetch"],
+      "description": "Python-based fetch server via cmd"
+    }
+  }
+}

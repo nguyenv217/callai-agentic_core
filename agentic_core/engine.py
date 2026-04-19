@@ -1,0 +1,134 @@
+from typing import Union, List, Dict, Any
+from dataclasses import dataclass
+import json
+
+from .interfaces.llm import ILLMClient
+from .tools.manager import ToolManager
+from .memory.manager import MemoryManager
+from .interfaces.events import AgentEventObserver
+
+
+import logging
+logger = logging.getLogger(__name__)
+
+@dataclass
+class RunnerConfig:
+    max_iterations: int = 20
+    toolset: str = "none"
+    system_prompt: str = "You are a helpful AI assistant."
+    tools: list['schema'] | None = None # type: ignore
+    clear_loaded_tool: bool = True
+    mcp_active_servers: list[str] | None = None  # e.g. ["github", "memory"]
+    mcp_preload_tools: list[str] | None = None   # e.g. ["github_create_issue"]
+
+class AgentRunner:
+    def __init__(
+        self,
+        llm_client: ILLMClient,
+        tool_manager: ToolManager,
+        memory: MemoryManager,
+    ):
+        self.llm = llm_client
+        self.tools = tool_manager
+        self.memory = memory
+        self.session_completion_tokens = 0
+
+    async def run_turn(self, user_input: Union[str, List[Dict]], observer: AgentEventObserver, config: RunnerConfig | None = None) -> Dict:
+        config = config or RunnerConfig()
+
+        if config.clear_loaded_tool:
+            self.tools.clear_loaded_tools()
+
+        max_iterations = config.max_iterations
+
+        self.memory.set_system_prompt(config.system_prompt)
+        
+        # Normalize and add user input
+        messages = [{"role": "user", "content": user_input}] if isinstance(user_input, str) else user_input
+        for message in messages:
+            self.memory.add_message(message)
+
+        observer.on_turn_start()
+        
+        # --- NEW: Awaitable preparation phase ---
+        if hasattr(self.tools, 'prepare_turn'):
+            await self.tools.prepare_turn(config)
+            
+        active_tools = config.tools or self.tools.get_tools(config.toolset)
+        iteration = 1
+
+        final_response = {"text": "", "tool_calls": [], "usage": {}}
+
+        try:
+            # The Agentic Loop
+            while iteration <= max_iterations:
+                observer.on_iteration_start(iteration, max_iterations)
+                
+                conversation = self.memory.get_history()
+                logger.info(f"Tools turn {iteration}: {[t['function']['name'] for t in active_tools]}")
+                response_iterator = self.llm.ask(conversation, active_tools)
+
+                turn_response = {"text": "", "tool_calls": []}
+                
+                for response in response_iterator:
+                    if response.success:
+                        if response.text: turn_response["text"] += response.text
+                        if response.tool_calls: turn_response["tool_calls"].extend(response.tool_calls)
+                        if response.usage:
+                            self.session_completion_tokens += response.usage.get('completion_tokens', 0)
+                    else:
+                        observer.on_error(response.error or "Unknown LLM error")
+                        return {"error": response.error}
+
+                logger.info(f"Turn response: {turn_response}")
+
+                # If the LLM returned final text (no tools requested), we are done.
+                if not turn_response["tool_calls"]:
+                    self.memory.add_message({"role": "assistant", "content": turn_response["text"]})
+                    final_response["text"] = turn_response["text"]
+                    break
+
+                # Handle Tool Calls
+                self.memory.add_message({
+                    "role": "assistant", 
+                    "content": turn_response.get("text", ""), 
+                    "tool_calls": turn_response["tool_calls"]
+                })
+
+                for tc in turn_response["tool_calls"]:
+                    tool_name = tc['function']["name"]
+                    tool_args = tc['function'].get("arguments", {})
+                    tool_id = tc.get("id", "")
+
+                    parsed_args = json.loads(tool_args) if isinstance(tool_args, str) else tool_args
+
+                    observer.on_tool_start(tool_name, tool_id)
+                    try:
+                        result = await self.tools.execute(tool_name, parsed_args, controller=observer)
+                        observer.on_tool_complete(tool_name, tool_id, True, result)
+                        self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=result)
+                    except Exception as e:
+                        error_msg = f"Error executing {tool_name}: {str(e)}"
+                        observer.on_tool_complete(tool_name, tool_id, False, error_msg)
+                        self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=error_msg)
+
+                # Prevent deep looping by warning on the last iteration
+                if iteration == max_iterations - 1:
+                    self.memory.add_message({
+                        "role": "system",
+                        "content": "***You are on your last iteration of the loop. DO NOT call anymore tools. You MUST provide your final answer NOW.***"
+                    })
+                
+                self.memory.enforce_context_limits()
+                iteration += 1
+
+            if iteration > max_iterations:
+                observer.on_error(f"Agent failed to provide a final answer after {max_iterations} iterations.")
+
+        except Exception as e:
+            logger.exception(f"Error executing agent turn")
+            observer.on_error(f"Engine execution error: {str(e)}")
+        finally:
+            observer.on_turn_complete(final_response)
+
+        return final_response
