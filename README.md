@@ -1,20 +1,19 @@
-# Agentic Core - Start in 30 Seconds
-
-> **TL;DR**: Got an API key? You can start an agent in one line. No classes, no protocols, no boilerplate.
+# Agentic Core
+**TL;DR**: Got an API key? You can start an agent in one line. No classes, no protocols, no boilerplate.
 
 ## Table of Contents
 
-1. [The 30-Second Quick Start](#the-30-second-quick-start)
+1. [Quick Start](#the-30-second-quick-start)
 2. [The Simple `chat()` Function](#the-simple-chat-function)
-3. [Using MCP Tools (GitHub, Filesystem, etc.)](#using-mcp-tools-github-filesystem-etc)
-4. [Creating Your Own Agent (Advanced)](#creating-your-own-agent-advanced)
+3. [MCP integration (GitHub, Filesystem, etc.)](#using-mcp-tools-github-filesystem-etc)
+4. [Agent creation (Advanced)](#creating-your-own-agent-advanced)
 5. [Configuration Options](#configuration-options)
 6. [Project Structure](#project-structure)
 7. [Troubleshooting](#troubleshooting)
-
+8. [Notes on security](#security--production-readiness-️)
 ---
 
-## ⚡ THE 30-SECOND QUICK START
+## QUICK START
 
 
 ### Installation
@@ -214,7 +213,7 @@ tools = ToolManager(
 agentic_core/
 ├── __init__.py              # Core exports
 ├── engine.py                # AgentRunner
-├── agents.py                # ⚡ SIMPLE API (chat, LLM adapters, observers)
+├── agents.py                # SIMPLE API (chat, LLM adapters, observers)
 ├── memory/
 │   └── manager.py          # MemoryManager
 ├── tools/
@@ -281,7 +280,7 @@ await chat("Hello", provider="ollama", verbose=True)
 **That's it!** Start building agents in seconds. 🚀
 
 
-## Security & Production Readiness ⚠️
+## Security & Production Readiness
 
 While `agentic-core` safely handles execution, developers must secure the deployment environment:
 
@@ -290,3 +289,6 @@ The `mcp_config.json` dictates exactly which terminal commands your system will 
 
 ### Denial of Service via Payload Serialization
 Agents interacting with APIs that return massive, deeply nested JSON payloads may experience performance degradation during the engine's double-serialization checks. To mitigate this, limit the scope of the data your tools are allowed to fetch.
+
+**Other stuff:**  
+Additionally, it may be helpful to know that each `BaseTool` class inherits an `is_allowed_path()` method that reliably prevents path traversal. Implementation of tools dealing with local filesystem may use this to improve security. 
