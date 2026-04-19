@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [
-    { name = "nguyenv", email = "none" }
+    { name = "nguyenv", email = "182782819+nguyenv217@users.noreply.github.com" }
 ]
 
 # Core dependencies required for the engine to run
