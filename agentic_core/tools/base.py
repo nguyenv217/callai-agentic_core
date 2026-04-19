@@ -23,7 +23,8 @@ class BaseTool(ABC):
         """The JSON schema associated with this tool"""
         return self._schema
     
-    def _is_allowed_path(self, file_path: str, base_dir: str = ".") -> bool:
+    @staticmethod
+    def _is_allowed_path(file_path: str, base_dir: str = ".") -> bool:
         """Return True only if *file_path* resolves inside *base_dir*."""
         if not file_path:
             return False

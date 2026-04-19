@@ -1,8 +1,6 @@
 from __future__ import annotations
-from typing import Dict, List, Any, Callable, Optional, Set, TYPE_CHECKING
+from typing import Dict, List, Any, Callable, Optional, Set, Protocol, TYPE_CHECKING
 import asyncio
-import threading
-import concurrent.futures
 import atexit
 import inspect
 import logging
@@ -16,11 +14,11 @@ logger = logging.getLogger(__name__)
 
 MCP_INIT_TIMEOUT = 30
 
-class ToolExecutionController:
+class ToolExecutionController(Protocol):
     """Protocol for tool execution control."""
     on_chat_notified: Callable[[str], None] | None = None
     on_prompt_respond: Callable[[str], str] | None = None
-    on_prompt_confirmation: Callable[[str, Callable, Callable], None] | None = None
+    on_prompt_confirmation: Callable[[str, Callable, Callable | None], None] | None = None
 
 
 class ToolManager:

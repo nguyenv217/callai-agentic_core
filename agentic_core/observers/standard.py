@@ -2,7 +2,7 @@
 Standard observer implementations.
 """
 from .base import AgentEventObserver
-
+from ..tools.manager import ToolExecutionController
 
 class DefaultObserver(AgentEventObserver):
     """A no-op observer that prints nothing. Use this if you don't care about events."""
@@ -16,7 +16,7 @@ class DefaultObserver(AgentEventObserver):
     def on_error(self, error: str) -> None: pass
 
 
-class PrintObserver(AgentEventObserver):
+class PrintObserver(AgentEventObserver, ToolExecutionController):
     """An observer that prints everything - great for debugging."""
     
     def on_turn_start(self) -> None:
@@ -40,3 +40,11 @@ class PrintObserver(AgentEventObserver):
     
     def on_error(self, error: str) -> None:
         print(f"❗ [ERROR]: {error}")
+
+    def on_prompt_respond(self, prompt: str) -> str:
+        return input(prompt)
+    
+    def on_prompt_confirmation(self, prompt, on_yes, on_no):
+        if (input(prompt).strip().lower() in ['y', 'yes']): on_yes()
+        elif on_no: on_no()
+        

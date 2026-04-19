@@ -287,8 +287,12 @@ While `agentic-core` safely handles execution, developers must secure the deploy
 ### Remote Code Execution via MCP Config (CRITICAL)
 The `mcp_config.json` dictates exactly which terminal commands your system will run (via the `command` and `args` fields). **Never allow end-users to upload, modify, or provide their own `mcp_config.json`.** This file must remain strictly server-side.
 
+### Prompt Injection to Tool Execution: 
+If an agent is given an MCP tool that reads external data (like fetching a webpage or reading a user-submitted file), a malicious payload in that data can instruct the LLM to execute other available tools. Because the engine loop automatically runs `await self.tools.execute(...)`, the agent could be hijacked into executing destructive actions (e.g., via a GitHub or filesystem MCP) without human oversight.
+
 ### Denial of Service via Payload Serialization
 Agents interacting with APIs that return massive, deeply nested JSON payloads may experience performance degradation during the engine's double-serialization checks. To mitigate this, limit the scope of the data your tools are allowed to fetch.
 
-**Other stuff:**  
-Additionally, it may be helpful to know that each `BaseTool` class inherits an `is_allowed_path()` method that reliably prevents path traversal. Implementation of tools dealing with local filesystem may use this to improve security. 
+**MITIGATIONS:**  
+* Each `BaseTool` class inherits an `is_allowed_path()` method that reliably prevents path traversal. Implementation of tools dealing with local filesystem may use this to improve security. 
+* Utilize `ToolExecutionController.on_prompt_respond()` and `ToolExecutionController.on_prompt_confirmation()` to design safe, human-in-the-loop agentic applications.
