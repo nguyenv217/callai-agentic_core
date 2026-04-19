@@ -24,7 +24,7 @@ dependencies = [
 openai = ["openai>=1.0.0"]
 anthropic = ["anthropic>=0.18.0"]
 ollama = ["ollama>=0.1.6"]
-mcp = ["mcp>=0.1.0"] # Adjust based on the official MCP python SDK version
+mcp = ["mcp>=1.27.0"] # Adjust based on the official MCP python SDK version
 
 # Convenience extra to install everything
 all = ["openai", "anthropic", "ollama", "mcp"]
