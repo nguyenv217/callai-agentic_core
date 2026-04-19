@@ -100,9 +100,16 @@ class AgentRunner:
                     tool_args = tc['function'].get("arguments", {})
                     tool_id = tc.get("id", "")
 
-                    parsed_args = json.loads(tool_args) if isinstance(tool_args, str) else tool_args
-
                     observer.on_tool_start(tool_name, tool_id)
+
+                    try:
+                        parsed_args = json.loads(tool_args) if isinstance(tool_args, str) else tool_args
+                    except json.JSONDecodeError as e:
+                        error_msg = f"Error: Invalid JSON arguments provided. Please fix the syntax and try again. Details: {str(e)}"
+                        observer.on_tool_complete(tool_name, tool_id, False, error_msg)
+                        self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=error_msg)
+                        continue
+
                     try:
                         result = await self.tools.execute(tool_name, parsed_args, controller=observer)
                         observer.on_tool_complete(tool_name, tool_id, True, result)
