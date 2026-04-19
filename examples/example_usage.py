@@ -47,7 +47,7 @@ Only use these tools when necessary to conserve resources.
     config = RunnerConfig(
         system_prompt=system_prompt,
         max_iterations=20,
-        # mcp_preload_tools=[]
+        mcp_preload_tools=["memory_create_entities", "memory_add_observations", "memory_search_nodes"] # some basic tools from server 'memory' preloaded
         )
 
     try:
