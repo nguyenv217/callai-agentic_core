@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agentic-core"
+name = "agentic_core"
 version = "0.1.0"
 description = "A lightweight, modular execution engine and routing framework for LLM agents."
 readme = "README.md"
