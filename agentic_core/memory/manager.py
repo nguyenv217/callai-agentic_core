@@ -17,9 +17,9 @@ class MemoryManager:
 
     def inject_dynamic_system_prompt(self, content: str):
         if self.system_prompt:
-            self.system_prompt = {"role": "system", "content": self.set_system_prompt['content'] + content}
+            self.system_prompt = {"role": "system", "content": self.system_prompt['content'] + content}
         else:
-            self.set_system_prompt = {"role": "system", "content": content}
+            self.system_prompt = {"role": "system", "content": content}
 
     def add_message(self, message: Dict):
         """Adds standard messages (user, assistant)."""

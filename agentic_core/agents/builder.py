@@ -41,7 +41,6 @@ def create_openai_agent(
 
     llm_kwargs = {"base_url": base_url} if base_url else {}
     llm = OpenAILLM(api_key=api_key, model=model, **llm_kwargs, **kwargs)
-    llm = OpenAILLM(api_key=api_key, model=model, **kwargs)
     memory = MemoryManager()
     memory.set_system_prompt(system_prompt)
     tools = ToolManager(mcp_config_path=mcp_config_path)

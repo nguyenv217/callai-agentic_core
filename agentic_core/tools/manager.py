@@ -111,6 +111,10 @@ class ToolManager:
             self._mcp_standby_registry[adapter.name] = adapter
         
         self._mcp_manager = mcp_manager
+
+        if len(self._mcp_standby_registry) > 0:
+            self._mcp_initialized = True
+
         logger.info(f"Initialized {len(self._mcp_standby_registry)} MCP tools in standby mode.")
         return len(self._mcp_standby_registry)
 
@@ -204,7 +208,7 @@ class ToolManager:
                         pass
 
             if tool_name in self._universal_tools:
-                self.ensure_mcp_initialized()
+                await self.ensure_mcp_initialized()
 
             context = {
                 "search_api_key": self.search_api_key,
@@ -248,7 +252,10 @@ class ToolManager:
 
         # If the user specifically requested servers or tools, we must eagerly initialize
         if config.mcp_active_servers or config.mcp_preload_tools:
-            await self.initialize_mcp(allowed_servers=config.mcp_active_servers)
+            num_tools = await self.initialize_mcp(allowed_servers=config.mcp_active_servers)
+
+            if num_tools > 0:
+                self._mcp_initialized = True
             
             # Preload the specific tools directly into the active set
             if config.mcp_preload_tools:
