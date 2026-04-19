@@ -278,3 +278,14 @@ await chat("Hello", provider="ollama", verbose=True)
 ```
 
 **That's it!** Start building agents in seconds. 🚀
+
+
+## Security & Production Readiness ⚠️
+
+While `agentic-core` safely handles execution, developers must secure the deployment environment:
+
+### Remote Code Execution via MCP Config (CRITICAL)
+The `mcp_config.json` dictates exactly which terminal commands your system will run (via the `command` and `args` fields). **Never allow end-users to upload, modify, or provide their own `mcp_config.json`.** This file must remain strictly server-side.
+
+### Denial of Service via Payload Serialization
+Agents interacting with APIs that return massive, deeply nested JSON payloads may experience performance degradation during the engine's double-serialization checks. To mitigate this, limit the scope of the data your tools are allowed to fetch.

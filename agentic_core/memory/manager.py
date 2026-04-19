@@ -50,19 +50,21 @@ class MemoryManager:
         """Prevents deep agentic loops from blowing out the API context window limits."""
         total_chars = sum(len(str(m.get("content", ""))) for m in self.messages)
         
-        if total_chars > self.max_chars and len(self.messages) > 2:
+        if total_chars > self.max_chars and len(self.messages) > 0:
             running_total = 0
-            for i in range(len(self.messages) - 1, 0, -1): 
+            for i in range(len(self.messages) - 1, -1, -1):
                 msg = self.messages[i]
                 content_str = str(msg.get("content", ""))
                 running_total += len(content_str)
                 
                 # Only truncate tool outputs, don't mess with user messages or system prompts
                 if running_total > self.max_chars and msg.get("role") == "tool":
-                    if isinstance(msg.get("content"), str) and len(msg["content"]) > 5000:
-                        msg["content"] = msg["content"][:5000] + "\n\n...[TRUNCATED TO PRESERVE CONTEXT LIMIT]..."
-                        running_total -= (len(content_str) - len(msg["content"]))
-        
+                    if isinstance(msg.get("content"), str):
+                        # Truncate if the message is significantly large relative to the max context
+                        threshold = self.max_chars // 4
+                        if len(msg["content"]) > threshold:
+                            msg["content"] = msg["content"][:threshold] + "\n\n...[TRUNCATED TO PRESERVE CONTEXT LIMIT]..."
+                            running_total -= (len(content_str) - len(msg["content"]))
         self._update_hash()
 
     def _enforce_message_limit(self):
