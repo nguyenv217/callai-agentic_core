@@ -119,42 +119,21 @@ class ToolManager:
             await self._mcp_manager.close()
             self._mcp_manager = None
 
-    def _ensure_mcp_initialized(self):
-        """
-        Idiomatically safe lazy-loader. Spins up a background event loop for MCP tasks
-        so the main application isn't blocked and users don't have to manage async states.
-        """
-        if not self.mcp_config_path or self._mcp_initialized or self._mcp_init_in_progress:
+    async def ensure_mcp_initialized(self) -> None:
+        """Pure async lazy-loader for MCP servers."""
+        if not getattr(self, 'mcp_config_path', None) or self._mcp_initialized or self._mcp_init_in_progress:
             return
             
         self._mcp_init_in_progress = True
         
         try:
-            # 1. Create a persistent background loop for async MCP connections
-            if not hasattr(self, '_mcp_loop'):
-                self._mcp_loop = asyncio.new_event_loop()
-                def run_mcp_loop(loop):
-                    asyncio.set_event_loop(loop)
-                    loop.run_forever()
-                    
-                self._mcp_thread = threading.Thread(
-                    target=run_mcp_loop, 
-                    args=(self._mcp_loop,), 
-                    daemon=True,
-                    name="MCP_Background_Loop"
-                )
-                self._mcp_thread.start()
-
-            # 2. Run initialization with a strict timeout so it doesn't hang the app
-            future = asyncio.run_coroutine_threadsafe(self.initialize_mcp(), self._mcp_loop)
-            future.result(timeout=MCP_INIT_TIMEOUT)
-            
+            await asyncio.wait_for(self.initialize_mcp(), timeout=15.0)
             self._mcp_initialized = True
-            
-        except concurrent.futures.TimeoutError:
-            logger.warning(f"MCP initialization timed out after {MCP_INIT_TIMEOUT}s.")
+            logger.debug("MCP servers initialized successfully.")
+        except asyncio.TimeoutError:
+            logger.error("MCP initialization timed out after 15 seconds.")
         except Exception as e:
-            logger.warning(f"MCP initialization failed: {e}")
+            logger.error(f"MCP initialization failed: {e}")
         finally:
             self._mcp_init_in_progress = False
 
@@ -196,9 +175,16 @@ class ToolManager:
         self._mcp_loaded_tools.clear()
 
     async def execute(self, tool_name: str, args: dict, controller: ToolExecutionController) -> str:
-        """Routes execution to the registered plugin (Standard or MCP)."""
+        """Routes execution to the registered plugin (Standard or MCP). Executes asynchronously."""
         if tool_name not in self._plugins:
             return f"Error: Tool '{tool_name}' not found or not registered."
+        
+        # Handle double-serialized JSON arguments cleanly
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except json.JSONDecodeError:
+                return f"Error: Tool arguments must be valid JSON. Received: {args}"
 
         try:
             param_schemas = self._plugins[tool_name].schema['function']['parameters'].get('properties', {})
@@ -214,11 +200,11 @@ class ToolManager:
                         logger.info(f"Fixed double-serialized {expected_type} for '{key}'")
                     except (json.JSONDecodeError, TypeError):
                         # If it's not valid JSON, the server will handle the error 
-                        # during its own validation phase.
+                        # during its own validation phase. (or not, and it will returns an error)
                         pass
 
             if tool_name in self._universal_tools:
-                self._ensure_mcp_initialized()
+                self.ensure_mcp_initialized()
 
             context = {
                 "search_api_key": self.search_api_key,

@@ -65,5 +65,30 @@ class OpenAILLM(ILLMClient):
                 },
                 error=None
             )
+
         except Exception as e:
-            yield LLMResponse(success=False, text=None, tool_calls=None, usage=None, error=str(e))
+            # We import here to ensure the core doesn't crash if openai isn't installed
+            # but a user accidentally instantiates the provider
+            try:
+                import openai
+            except ImportError:
+                yield LLMResponse(success=False, error="OpenAI library is not installed.", text=None)
+                return
+                
+            error_msg = str(e)
+            if isinstance(e, openai.AuthenticationError):
+                error_msg = f"FATAL AUTH ERROR: Invalid or missing OpenAI API key. ({e})"
+            elif isinstance(e, openai.RateLimitError):
+                error_msg = f"RATE LIMIT: OpenAI quota exceeded or rate limited. ({e})"
+            elif isinstance(e, openai.APIConnectionError):
+                error_msg = f"NETWORK ERROR: Failed to connect to OpenAI API. ({e})"
+            elif isinstance(e, openai.BadRequestError):
+                error_msg = f"BAD REQUEST: Invalid parameters or context window exceeded. ({e})"
+                
+            yield LLMResponse(
+                success=False, 
+                text=None, 
+                tool_calls=[], 
+                usage={}, 
+                error=error_msg
+            )

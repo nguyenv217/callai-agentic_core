@@ -47,24 +47,45 @@ class MemoryManager:
         return self._current_hash
 
     def enforce_context_limits(self):
-        """Prevents deep agentic loops from blowing out the API context window limits."""
+        """
+        Prevents context window overflow. Uses smart truncation for tool outputs 
+        to preserve JSON schema integrity whenever possible.
+        """
         total_chars = sum(len(str(m.get("content", ""))) for m in self.messages)
         
-        if total_chars > self.max_chars and len(self.messages) > 0:
+        # If we exceed the limit, prune starting from the oldest non-system messages
+        # If we exceed the limit, prune starting from the oldest non-system messages
+        if total_chars > getattr(self, 'max_chars', 80000) and (len(self.messages) > 0):
             running_total = 0
-            for i in range(len(self.messages) - 1, -1, -1):
+            
+            # Iterate backwards (newest to oldest)
+            # Iterate backwards (newest to oldest)
+            for i in range(len(self.messages) - 1, -1, -1): 
                 msg = self.messages[i]
                 content_str = str(msg.get("content", ""))
                 running_total += len(content_str)
                 
-                # Only truncate tool outputs, don't mess with user messages or system prompts
+                # Only heavily truncate tool outputs (where massive payloads usually occur)
                 if running_total > self.max_chars and msg.get("role") == "tool":
-                    if isinstance(msg.get("content"), str):
-                        # Truncate if the message is significantly large relative to the max context
-                        threshold = self.max_chars // 4
-                        if len(msg["content"]) > threshold:
-                            msg["content"] = msg["content"][:threshold] + "\n\n...[TRUNCATED TO PRESERVE CONTEXT LIMIT]..."
-                            running_total -= (len(content_str) - len(msg["content"]))
+                    # Use a dynamic threshold: 25% of max_chars, capped at 3000
+                    threshold = min(3000, self.max_chars // 4)
+                    if len(content_str) > threshold:
+                        try:
+                            # Smart Truncation: Try to preserve JSON structure
+                            data = json.loads(content_str)
+                            if isinstance(data, list):
+                                # Keep only the first 3 items to maintain the schema example
+                                msg["content"] = json.dumps(data[:3]) + "\n\n... [ARRAY TRUNCATED: Exceeded context limits] ..."
+                            elif isinstance(data, dict):
+                                # Truncate dict string representation
+                                msg["content"] = content_str[:threshold] + "\n\n... [JSON TRUNCATED: Exceeded context limits] ..."
+                        except json.JSONDecodeError:
+                            # Fallback for plain text
+                            msg["content"] = content_str[:threshold] + "\n\n... [TEXT TRUNCATED: Exceeded context limits] ..."
+                        
+                        # Adjust running total after truncation
+                        running_total -= (len(content_str) - len(msg["content"]))
+        
         self._update_hash()
 
     def _enforce_message_limit(self):

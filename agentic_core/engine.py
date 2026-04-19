@@ -131,4 +131,4 @@ class AgentRunner:
         finally:
             observer.on_turn_complete(final_response)
 
-        return final_response
+        return {"success": True, **final_response} if "error" not in final_response else final_response
