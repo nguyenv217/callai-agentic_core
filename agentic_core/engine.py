@@ -118,13 +118,6 @@ class AgentRunner:
                         observer.on_tool_complete(tool_name, tool_id, False, error_msg)
                         self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=error_msg)
 
-                # Prevent deep looping by warning on the last iteration
-                if iteration == max_iterations - 1:
-                    self.memory.add_message({
-                        "role": "system",
-                        "content": "***You are on your last iteration of the loop. DO NOT call anymore tools. You MUST provide your final answer NOW.***"
-                    })
-                
                 self.memory.enforce_context_limits()
                 iteration += 1
 
