@@ -145,3 +145,5 @@ obj/
 *.tlh
 *.vshost
 
+# Specific config files
+memory.jsonl
