@@ -7,8 +7,13 @@ After: Just call chat() with your API key!
 import asyncio
 from agentic_core.agents import chat, create_openai_agent  # That's it!
 
-from agentic_core.utils import init_env
-init_env()
+from pathlib import Path
+from dotenv import load_dotenv
+
+env_path = Path(__file__).resolve().parents[1] / ".env"
+if not load_dotenv(dotenv_path=env_path):
+    raise RuntimeError("No .env file found. Please create one in the project root directory and try again")
+
 import os
 
 from pathlib import Path
