@@ -12,6 +12,7 @@ class LLMResponse:
     tool_calls: List[Dict] | None = None
     usage: Dict | None = None
     error: str | None = None
+    reasoning: str | None = None
 
 
 class ILLMClient(Protocol):
