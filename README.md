@@ -175,6 +175,8 @@ config = RunnerConfig(
 agent.chat("How many users are in the database?", config=config)
 ```
 
+Please see this more detailed [explanation](docs/MCP_config.md) in how to configuring `RunnerConfig` to fully realize the MCP protocol in your project.
+
 ---
 
 ## Creating Your Own Agent (Advanced)
