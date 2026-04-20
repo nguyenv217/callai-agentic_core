@@ -129,6 +129,7 @@ obj/
 *.plists
 *.sublime-project
 *.sublime-workspace
+.vscode/
 
 # Ignore common Windows files
 *.msi
