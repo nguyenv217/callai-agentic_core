@@ -112,15 +112,39 @@ Alternatively, `"env":{"TOKEN_ENV_NAME":"${YOUR_TOKEN}"}` works as well assuming
 Refer to `examples/mcp_config.json` for a few no-config, plug-and-play example servers.  
 
 ### Step 2: Use it in chat()
-
-```python
-result = await chat(
-    message="Create a new issue in my repo about the bug",
-    provider="openai",
-    api_key="sk-...",
-    mcp_config_path="path/to/mcp.json"  # <-- This enables MCP!
-)
-```
+ 
+ ```python
+ result = await chat(
+     message="Create a new issue in my repo about the bug",
+     provider="openai",
+     api_key="sk-...",
+     mcp_config_path="path/to/mcp.json"  # <-- This enables MCP!
+ )
+ ```
+ 
+ ### Step 3: Programmatic MCP Config (No JSON file needed)
+ 
+ If you prefer not to use a JSON file, you can add MCP servers directly to your `ToolManager` instance.
+ 
+ ```python
+ from agentic_core import ToolManager
+ 
+ tools = ToolManager()
+ tools.add_mcp_server(
+     server_name="everything",
+     command="npx",
+     args=["-y", "@modelcontextprotocol/server-everything"]
+ )
+ 
+ # Now use this ToolManager with your agent
+ from agentic_core import AgentRunner
+ from agentic_core.agents import OpenAILLM
+ 
+ agent = AgentRunner(
+     llm_client=OpenAILLM(api_key="sk-..."),
+     tool_manager=tools
+ )
+ ```
 
 **How it works:**
 1. The agent sees available MCP tools via `list_mcp_catalog`
@@ -199,32 +223,46 @@ from agentic_core.agents import (
 from agentic_core import ToolManager
 
 tools = ToolManager(
-    mcp_config_path="mcp.json",  # Enable MCP!
-    search_api_key="...",        # For web search
-    e2b_api_key="...",           # For code execution
+    mcp_config_path="mcp.json",  # Enable MCP: str | Path
+    toolsets={
+        "local": ["read_file", "write_file"],
+        "web": ["web_search"], 
+        ...
+    },
+    enable_mcp_discovery=True, # Preload MCP discovery tools (2 tools)
+    extra_env={"DATABASE": "..."} # Extra environment variables for MCP server intialization (pass only what you need)
 )
 ```
 
 ---
 
 ## Project Structure
-
-```
-agentic_core/
-├── __init__.py              # Core exports
-├── engine.py                # AgentRunner
-├── agents.py                # SIMPLE API (chat, LLM adapters, observers)
-├── memory/
-│   └── manager.py          # MemoryManager
-├── tools/
-│   ├── base.py            # BaseTool (for custom tools)
-│   ├── manager.py         # ToolManager
-│   └── mcp.py             # MCP support
-└── interfaces/            # Protocols (for advanced use)
-    ├── llm.py
-    ├── memory.py
-    └── events.py
-```
+ 
+ ```
+ agentic_core/
+ ├── __init__.py              
+ ├── engine.py                # AgentRunner (The execution loop)
+ ├── agents/                  # Agent construction and orchestration
+ │   └── builder.py           # Agent builder logic
+ ├── llm_providers/           # LLM Adapters (OpenAI, Anthropic, Ollama)
+ │   ├── base.py              # Base LLM interface
+ │   ├── openai.py            # OpenAI/Compatible provider
+ │   ├── anthropic.py         # Anthropic Claude provider
+ │   └── ollama.py            # Local Ollama provider
+ ├── memory/                  # Context and state management
+ │   └── manager.py           # MemoryManager
+ ├── tools/                   # Tooling and MCP integration
+ │   ├── base.py              # BaseTool (for custom tools)
+ │   ├── manager.py           # ToolManager
+ │   └── mcp.py               # MCP Protocol support
+ ├── observers/               # Event logging and observation
+ │   ├── base.py              # Base Observer
+ │   └── standard.py          # Default/Print observers
+ └── interfaces/              # Type definitions and Protocols
+     ├── llm.py
+     ├── memory.py
+     └── events.py
+ ```
 
 ---
 
