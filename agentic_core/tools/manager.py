@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, Set, Protocol, TYPE_CHECKING
+from typing import Callable, Set, Protocol, TYPE_CHECKING, Any
 from pathlib import Path
 import asyncio
 import atexit
@@ -33,7 +33,8 @@ class ToolManager:
         toolsets: dict[str, list[str]] | None = None,
         mcp_config_path: str | Path | None = None,
         enable_mcp_discovery: bool = True,
-        extra_env: dict[str, str] | None = None
+        extra_env: dict[str, str] | None = None,
+        extra_context: dict[str, Any] | None = None
     ):
         """
         Initializes the ToolManager.
@@ -46,6 +47,7 @@ class ToolManager:
         """
         self.active_sessions = {}
         self.seed = 0
+        self.extra_context = extra_context or {}
 
         self.tools_schema = []
         self._plugins: dict[str, BaseTool] = {}
@@ -253,6 +255,7 @@ class ToolManager:
                 "active_sessions": self.active_sessions,
                 "session_id": self.seed,
                 "controller": controller,
+                **self.extra_context
             }
 
             plugin = self._plugins[tool_name]
