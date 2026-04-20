@@ -93,7 +93,7 @@ async def test_agent_execution_loop_with_tool():
     # 2. Initialize Agent Architecture
     agent = create_openai_agent(api_key="mock_key")
     agent.llm = mock_llm  # Inject our mock
-    agent.tools.register_tool(CalculatorTool())
+    agent.tool_manager.register_tool(CalculatorTool())
     
     # 3. Execute
     config = RunnerConfig(toolset="all")
