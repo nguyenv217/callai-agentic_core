@@ -1,4 +1,4 @@
-from typing import Union, List, Dict, Any
+from typing import AsyncIterator, Union, List, Dict, Iterator
 from dataclasses import dataclass
 import json
 
@@ -7,6 +7,7 @@ from .tools.manager import ToolManager
 from .memory.manager import MemoryManager
 from .interfaces.events import AgentEventObserver
 from .observers.base import ToolStartDecision
+from .llm_providers.base import LLMResponse
 
 import logging
 logger = logging.getLogger(__name__)
@@ -32,6 +33,17 @@ class AgentRunner:
         self.tool_manager = tool_manager
         self.memory = memory
         self.session_completion_tokens = 0
+
+    @staticmethod
+    def _to_async_gen(sync_gen: Iterator[LLMResponse]) -> AsyncIterator[LLMResponse]: # QUICK FIX BEFORE STANDARDIZATION
+        """Wrap a synchronous iterator as an async iterator."""                                                    
+        async def _wrapper():               
+            import asyncio                                                   
+            for item in sync_gen:                                                                                  
+                # give the event loop a chance to run
+                await asyncio.sleep(0)                                                                             
+                yield item                                                                                         
+        return _wrapper()
 
     async def run_turn(self, user_input: Union[str, List[Dict]], observer: AgentEventObserver, config: RunnerConfig | None = None) -> Dict:
         config = config or RunnerConfig()
@@ -67,7 +79,10 @@ class AgentRunner:
                 conversation = self.memory.get_history()
                 logger.info(f"Tools turn {iteration}: {[t['function']['name'] for t in active_tools]}")
                 
-                response_iterator = self.llm.ask(conversation, active_tools) # Is async iterator
+                response_iterator = self.llm.ask(conversation, active_tools) 
+                # quick fix 
+                if not isinstance(response_iterator, AsyncIterator):
+                    response_iterator = AgentRunner._to_async_gen(response_iterator)
 
                 turn_response = {"text": "", "tool_calls": []}
                 
