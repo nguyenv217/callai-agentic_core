@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import Dict, List, Any, Callable, Optional, Set, Protocol, TYPE_CHECKING
+from typing import Callable, Set, Protocol, TYPE_CHECKING
+from pathlib import Path
 import asyncio
 import atexit
 import inspect
@@ -9,6 +10,7 @@ import json
 if TYPE_CHECKING:
     from .base import BaseTool
     from ..engine import RunnerConfig
+    from .mcp import MCPToolAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +31,7 @@ class ToolManager:
     def __init__(
         self, 
         toolsets: dict[str, list[str]] | None = None,
-        mcp_config_path: Optional[str] = None,
+        mcp_config_path: str | Path | None = None,
         enable_mcp_discovery: bool = True,
         extra_env: dict[str, str] | None = None
     ):
@@ -52,12 +54,13 @@ class ToolManager:
 
         # --- MCP State ---
         self.mcp_config_path = mcp_config_path
-        self._mcp_standby_registry = {}  
+        self._mcp_config_dict = {}
+        self._mcp_standby_registry: dict[str, MCPToolAdapter] = {}  
         self._mcp_loaded_tools: Set[BaseTool] = set()
         self._mcp_initialized = False
         self._mcp_init_in_progress = False
         self.extra_env = extra_env
-        # Register the universal meta-tools that allow the LLM to search/load MCPs
+
         if enable_mcp_discovery:
             from .mcp import ListMCPTools, LoadMCPTool
             self.register_tool(ListMCPTools(self))
@@ -96,9 +99,11 @@ class ToolManager:
             logger.warning("MCP dependencies missing. Skipping MCP initialization.")
             return -1
         
-        mcp_manager = MCPClientManager(config_path=self.mcp_config_path)
+        mcp_manager = MCPClientManager(
+            config=self._mcp_config_dict, # config takes priority over config_path
+            config_path=self.mcp_config_path 
+        )
         initialized = await mcp_manager.initialize(allowed_servers=allowed_servers, extra_env=self.extra_env)
-        
         if not initialized:
             logger.info("No MCP servers configured or available.")
             return -1
@@ -128,7 +133,7 @@ class ToolManager:
 
     async def ensure_mcp_initialized(self) -> None:
         """Pure async lazy-loader for MCP servers."""
-        if not getattr(self, 'mcp_config_path', None) or self._mcp_initialized or self._mcp_init_in_progress:
+        if not self.mcp_config_path or self._mcp_initialized or self._mcp_init_in_progress:
             return
             
         self._mcp_init_in_progress = True
@@ -157,12 +162,43 @@ class ToolManager:
                 if hasattr(self, '_mcp_thread'):
                     self._mcp_thread.join(timeout=2.0)
 
+    def add_mcp_server(self, server_name: str, command: str, args: list[str] = None, env: dict[str, str] = None):
+        """
+        Programmatically add an MCP server configuration.
+        
+        Args:
+            server_name: Unique identifier for the server
+            command: Executable command to start the server
+            args: List of arguments for the command
+            env: Environment variables for the server process
+        """
+        if args is None:
+            args = []
+        if env is None:
+            env = {}
+            
+        if "mcpServers" not in self._mcp_config_dict:
+            self._mcp_config_dict["mcpServers"] = {}
+            
+        self._mcp_config_dict["mcpServers"][server_name] = {
+            "command": command,
+            "args": args,
+            "env": env
+        }
+        
+        # Reset MCP initialization state to force reload on next ensure_mcp_initialized call
+        self._mcp_initialized = False
+        self._mcp_init_in_progress = False
+        logger.info(f"Added MCP server '{server_name}' to programmatic config.")
+        if hasattr(self, '_mcp_thread'):
+            self._mcp_thread.join(timeout=2.0)
+
     # ==========================================
     # PUBLIC API
     # ==========================================
 
     def get_tools(self, toolset="all"):
-        """Get tools for a specific toolset, triggering lazy MCP init if needed."""
+        """Get tools for a specific toolset."""
         # Get base tools
         tools = [t for t in self.tools_schema if t['function']['name'] in self.toolsets.get(toolset, [])]
         

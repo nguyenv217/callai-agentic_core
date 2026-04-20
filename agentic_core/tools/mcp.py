@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 from typing import Any, Dict, List, TYPE_CHECKING
+from pathlib import Path
 
 from .base import BaseTool
 
@@ -311,41 +312,44 @@ class MCPClientManager:
     Uses the official Python MCP SDK for stdio-based connections.
     """
     
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: str | Path | None = None, config: Dict[str, Any] | None = None):
         """
         Initialize the MCP client manager.
         
         Args:
-            config_path: Path to the MCP servers configuration file
+            config_path: Path to the MCP servers configuration file (Optional)
+            config: Direct MCP configuration dictionary (Optional)
         """
         self.config_path = config_path
-        self.config: Dict[str, Any] = {}
+        self.config = config or {}
         self.sessions: List[Dict[str, Any]] = []
         self._process_handles: List[Any] = []
-    
+
     def load_config(self) -> Dict[str, Any]:
         """
-        Load MCP server configuration from JSON file.
+        Load MCP server configuration from JSON file if path is provided.
         
         Returns:
             Dict containing mcpServers configuration
         """
-        import os
-        from pathlib import Path
-        
-        config_file = Path(self.config_path)
+        if self.config:
+            return self.config
+
+        if not self.config_path:
+            logger.info("No MCP config path or dictionary provided.")
+            return {"mcpServers": {}}
+
+        if isinstance(self.config_path, str):
+            config_file = Path(self.config_path)
         logger.info(f"Resolved path {config_file.resolve()}")
 
         if not config_file.exists():
             logger.error("Could not find MCP server configuration file.")
             raise RuntimeError("MCP server configuration file not found")
         
-        if config_file.exists():
-            logger.info(f" Loading config from: {config_file}")
-            with open(config_file, 'r') as f:
-                self.config = json.load(f)
-        else:
-            self.config = {"mcpServers": {}}
+        logger.info(f" Loading config from: {config_file}")
+        with open(config_file, 'r') as f:
+            self.config = json.load(f)
         
         return self.config
     
