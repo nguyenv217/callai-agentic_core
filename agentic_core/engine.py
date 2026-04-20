@@ -106,7 +106,7 @@ class AgentRunner:
         if config.mcp_enable_discovery:
             active_tools.extend(self.tool_manager.get_discovery_tools()) 
 
-        active_tools = list(set(active_tools))
+        # active_tools = list(set(active_tools)) # it's unlikely that they will colide because: 1. no modification to `toolsets`, 2. get_mcp_loaded_tools() never contains discovery tools. 3. active_tools is ephemeral
 
         iteration = 1
 
