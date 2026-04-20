@@ -29,7 +29,7 @@ class AgentRunner:
         memory: MemoryManager,
     ):
         self.llm = llm_client
-        self.tools = tool_manager
+        self.tool_manager = tool_manager
         self.memory = memory
         self.session_completion_tokens = 0
 
@@ -37,7 +37,7 @@ class AgentRunner:
         config = config or RunnerConfig()
 
         if config.clear_loaded_tool:
-            self.tools.clear_loaded_tools()
+            self.tool_manager.clear_loaded_tools()
 
         max_iterations = config.max_iterations
 
@@ -51,9 +51,9 @@ class AgentRunner:
         observer.on_turn_start()
         
         # Preparation phase to setup configureed MCP servers and tools
-        await self.tools.prepare_turn(config)
+        await self.tool_manager.prepare_turn(config)
             
-        active_tools = config.tools or self.tools.get_tools(config.toolset)
+        active_tools = config.tools or self.tool_manager.get_tools(config.toolset)
         iteration = 1
 
         final_response = {"text": "", "tool_calls": [], "usage": {}}
@@ -110,7 +110,7 @@ class AgentRunner:
                         continue
 
                     try:
-                        result = await self.tools.execute(tool_name, parsed_args, controller=observer)
+                        result = await self.tool_manager.execute(tool_name, parsed_args, controller=observer)
                         observer.on_tool_complete(tool_name, tool_id, True, result)
                         self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=result)
                     except Exception as e:
