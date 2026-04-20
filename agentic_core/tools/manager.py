@@ -7,6 +7,8 @@ import inspect
 import logging
 import json
 
+from agentic_core.tools.base import ToolSchema
+
 if TYPE_CHECKING:
     from .base import BaseTool
     from ..engine import RunnerConfig
@@ -202,13 +204,10 @@ class ToolManager:
     # PUBLIC API
     # ==========================================
 
-    def get_tools_from_toolset(self, toolset="all"):
+    def get_tools_from_toolset(self, toolset="all") -> ToolSchema:
         """Get tools for a specific toolset."""
         # Get base tools
         tools = [t for t in self.tools_schema if t['function']['name'] in self.toolsets.get(toolset, [])]
-        
-        # Always inject dynamically loaded MCP tools
-        tools.extend([t.schema for t in self._mcp_loaded_tools])
 
         # Always inject universal MCP meta-tools if MCP is active
         existing_names = [t['function']['name'] for t in tools]
@@ -218,6 +217,9 @@ class ToolManager:
         
         return tools
     
+    def get_mcp_loaded_tools(self) -> ToolSchema:
+        return [t.schema for t in self._mcp_loaded_tools]
+
     def clear_loaded_tools(self):
         """Clears the list of loaded MCP tools."""
         self._mcp_loaded_tools.clear()
@@ -310,6 +312,5 @@ class ToolManager:
                     if tool_name in registry:
                         adapter = registry[tool_name]
                         self.register_tool(adapter, load_mcp=True)
-                        self._mcp_loaded_tools
                     else:
                         logger.warning(f"MCP tool '{tool_name}' not found in standby registry during preload.")
