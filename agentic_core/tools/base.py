@@ -1,6 +1,15 @@
 # callai/engine/tools/base.py
 from abc import ABC, abstractmethod
-from typing import Protocol, Dict, Any
+from typing import Literal, TypedDict, Mapping, Any
+
+class ToolSchemaFunction(TypedDict):
+    name: str
+    description: str
+    parameters: Mapping[str, Any]
+
+class ToolSchema(TypedDict):
+    type: Literal['function']
+    funtion: ToolSchemaFunction
 
 class BaseTool(ABC):
     """Interface for all executable tools."""
@@ -19,7 +28,7 @@ class BaseTool(ABC):
         pass
      
     @property
-    def schema(self) -> dict:
+    def schema(self) -> ToolSchema:
         """The JSON schema associated with this tool"""
         return self._schema
     
