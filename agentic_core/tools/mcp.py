@@ -8,8 +8,10 @@ bridging the gap between MCP's JSON-RPC protocol and callai's BaseTool interface
 from __future__ import annotations
 import asyncio
 import json
-from typing import Any, Dict, List, TYPE_CHECKING
+from typing import Any, Dict, List, TYPE_CHECKING, TypedDict
 from pathlib import Path
+
+from agentic_core.interfaces.config import ConfigurationError
 
 from .base import BaseTool
 
@@ -301,6 +303,14 @@ class _MCPSessionProxy:
         logger.info(f"[{self.server_name}] PROXY: Sending 'call_tool' ({name}) to actor loop...")
         return await self._send_to_actor("call_tool", {"name": name, "arguments": arguments or {}})
 
+class _MCPSession(TypedDict):
+    name: str
+    session: _MCPSessionProxy 
+    shutdown_event: asyncio.Event
+    task: asyncio.Task
+    # alive: bool # to be refactored for threaded keep-alive -> no need for this field anymoree
+    # last_health_checked: int
+
 class MCPClientManager:
     """
     Manages lifecycle of connections to external MCP servers.
@@ -316,9 +326,8 @@ class MCPClientManager:
             config: Direct MCP configuration dictionary (Optional)
         """
         self.config_path = config_path
-        self.config = config or {}
-        self.sessions: List[Dict[str, Any]] = []
-        self._process_handles: List[Any] = []
+        self.config = config
+        self.sessions: List[_MCPSession] = []
 
     def load_config(self) -> Dict[str, Any]:
         """
@@ -340,13 +349,16 @@ class MCPClientManager:
 
         if not config_file.exists():
             logger.error("Could not find MCP server configuration file.")
-            raise RuntimeError("MCP server configuration file not found")
+            raise ConfigurationError("MCP server configuration file not found")
         
         logger.info(f" Loading config from: {config_file}")
         with open(config_file, 'r') as f:
             self.config = json.load(f)
         
         return self.config
+    
+    def get_active_servers(self):
+        return [s['name'] for s in self.sessions]
     
     async def initialize(self, allowed_servers: list[str] | None = None, extra_env: dict[str, str] | None = None) -> bool:
         """
@@ -358,19 +370,25 @@ class MCPClientManager:
         Returns:
             bool: True if at least one connection was established
         """
-        self.load_config()
+        config = self.load_config()
         
-        if not self.config.get("mcpServers"):
-            logger.info(" No servers configured")
-            return False
+        if not config.get("mcpServers"): 
+            raise ConfigurationError("No servers configured. Check your config file if you supplied `mcp_config_path`.")
             
         # Filter servers if a whitelist is provided
-        servers_to_start = self.config['mcpServers']
+        servers_to_start = config['mcpServers']
         if allowed_servers is not None:
             servers_to_start = {
                 k: v for k, v in servers_to_start.items() 
                 if k in allowed_servers
             }
+
+        # Filter out started and alive servers
+        active_servers_name = [s['name'] for s in self.sessions]
+        servers_to_start = {
+            k: v for k, v in servers_to_start.items() 
+            if not k in active_servers_name
+        }
         
         if not servers_to_start:
             logger.info("No allowed servers matched configured servers.")
@@ -392,8 +410,7 @@ class MCPClientManager:
             return len(self.sessions) > 0
             
         except ImportError:
-            logger.error("MCP SDK not installed. Run: pip install mcp")
-            return False
+            raise ConfigurationError("MCP SDK not installed. Run: pip install mcp")
     
     async def _connect_to_server(self, server_name: str, server_config: Dict[str, Any], extra_env: dict[str, str] | None):
         from mcp.client.stdio import stdio_client
@@ -499,7 +516,8 @@ class MCPClientManager:
             "name": server_name,
             "session": session_proxy,  # Inject the Proxy instead of the raw session!
             "shutdown_event": shutdown_event,
-            "task": task
+            "task": task,
+            # "alive": True
         })
         logger.info(f"Session mapped for '{server_name}'")
     

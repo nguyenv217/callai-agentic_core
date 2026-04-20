@@ -7,6 +7,7 @@ import inspect
 import logging
 import json
 
+from agentic_core.interfaces.config import ConfigurationError
 from agentic_core.tools.base import ToolSchema
 
 if TYPE_CHECKING:
@@ -43,6 +44,7 @@ class ToolManager:
 
         Args:
             toolsets: A dictionary where the keys are the names of the toolsets and the values are lists of tool names.
+            extra_context: Extra context to pass to tools when executed. Useful for state-aware tool implementations.
             mcp_config_path: The path to the MCP servers configuration file.
             enable_mcp_discovery: If True, the ToolManager will inject MCP discovery tools on each agent run.
             extra_env: Extra environment variables to pass to MCPClient initialization.
@@ -59,9 +61,10 @@ class ToolManager:
         self._mcp_config_dict = {}
         self._mcp_standby_registry: dict[str, MCPToolAdapter] = {}  
         self._mcp_loaded_tools: Set[BaseTool] = set()
-        self._mcp_initialized = False
+        self._mcp_initialized_servers = set()
         self._mcp_init_in_progress = False
         self.extra_env = extra_env
+        self._mcp_manager = None
         
         # Discovery tools config
         self._discovery_tools = ["list_mcp_catalog", "load_mcp_tool"]
@@ -127,27 +130,27 @@ class ToolManager:
         
         self._mcp_manager = mcp_manager
 
-        if len(self._mcp_standby_registry) > 0:
-            self._mcp_initialized = True
+        # if len(self._mcp_standby_registry) > 0:
+        #     self._mcp_initialized = True
 
         logger.info(f"Initialized {len(self._mcp_standby_registry)} MCP tools in standby mode.")
         return len(self._mcp_standby_registry)
 
     async def shutdown_mcp(self):
-        if hasattr(self, '_mcp_manager') and self._mcp_manager:
+        if self._mcp_manager:
             await self._mcp_manager.close()
             self._mcp_manager = None
 
     async def ensure_mcp_initialized(self) -> None:
         """Pure async lazy-loader for MCP servers."""
-        if not self.mcp_config_path or self._mcp_initialized or self._mcp_init_in_progress:
+        if not self.mcp_config_path or self._mcp_init_in_progress:
             return
             
         self._mcp_init_in_progress = True
         
         try:
             await asyncio.wait_for(self.initialize_mcp(), timeout=15.0)
-            self._mcp_initialized = True
+            # self._mcp_initialized = True
             logger.debug("MCP servers initialized successfully.")
         except asyncio.TimeoutError:
             logger.error("MCP initialization timed out after 15 seconds.")
@@ -157,17 +160,26 @@ class ToolManager:
             self._mcp_init_in_progress = False
 
     def cleanup(self):
-        """Ensures the background MCP loop is safely killed on application exit."""
-        if hasattr(self, '_mcp_loop') and self._mcp_loop.is_running():
+        """
+        Ensures background MCP tasks are signaled to stop.
+        Because atexit is synchronous, we can only trigger the shutdown 
+        events or attempt to run the close coroutine in a temporary loop.
+        """
+        if self._mcp_manager:
+            logger.info("Cleaning up MCP Manager...")
             try:
-                future = asyncio.run_coroutine_threadsafe(self.shutdown_mcp(), self._mcp_loop)
-                future.result(timeout=5.0)
-            except Exception:
-                pass
-            finally:
-                self._mcp_loop.call_soon_threadsafe(self._mcp_loop.stop)
-                if hasattr(self, '_mcp_thread'):
-                    self._mcp_thread.join(timeout=2.0)
+                # Check if we are already in a running loop
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Just schedule it; the loop is about to close anyway
+                    loop.create_task(self.shutdown_mcp())
+                else:
+                    # Loop is stopped, run the cleanup to completion
+                    loop.run_until_complete(self.shutdown_mcp())
+            except Exception as e:
+                # Everything is already dead
+                logger.debug(f"Cleanup encountered an issue: {e}")
+
 
     def add_mcp_server(self, server_name: str, command: str, args: list[str] = None, env: dict[str, str] = None):
         """
@@ -178,7 +190,12 @@ class ToolManager:
             command: Executable command to start the server
             args: List of arguments for the command
             env: Environment variables for the server process
+        
+        Return
         """
+        if self._mcp_init_in_progress:
+            return 
+
         if args is None:
             args = []
         if env is None:
@@ -194,30 +211,31 @@ class ToolManager:
         }
         
         # Reset MCP initialization state to force reload on next ensure_mcp_initialized call
-        self._mcp_initialized = False
+        # self._mcp_initialized = False
         self._mcp_init_in_progress = False
         logger.info(f"Added MCP server '{server_name}' to programmatic config.")
-        if hasattr(self, '_mcp_thread'):
-            self._mcp_thread.join(timeout=2.0)
 
     # ==========================================
     # PUBLIC API
     # ==========================================
 
-    def get_tools_from_toolset(self, toolset="all") -> ToolSchema:
+    def get_tools_from_toolset(self, toolset="all") -> list[ToolSchema]:
         """Get tools for a specific toolset."""
         return [t for t in self.tools_schema if t['function']['name'] in self.toolsets.get(toolset, [])]
     
-    def get_discovery_tools(self) -> ToolSchema:
+    def get_discovery_tools(self) -> list[ToolSchema]:
         """Get discovery tools."""
         return [t for t in self.tools_schema if t['function']['name'] in self._discovery_tools]
 
-    def get_mcp_loaded_tools(self) -> ToolSchema:
+    def get_mcp_loaded_tools(self) -> list[ToolSchema]:
         return [t.schema for t in self._mcp_loaded_tools]
     
     def clear_loaded_tools(self):
         """Clears the list of loaded MCP tools."""
         self._mcp_loaded_tools.clear()
+
+    def get_active_servers(self) -> list[str]:
+        return self._mcp_manager.get_active_servers() if self._mcp_manager else []
 
     async def execute(self, tool_name: str, args: dict, controller: ToolExecutionController) -> str:
         """Routes execution to the registered plugin (Standard or MCP). Executes asynchronously."""
@@ -247,7 +265,8 @@ class ToolManager:
                         # If it's not valid JSON, the server will handle the error 
                         # during its own validation phase. (or not, and it will returns an error)
                         pass
-
+            
+            # load all servers if agent call discovery tools
             if tool_name in self._discovery_tools:
                 await self.ensure_mcp_initialized()
 
@@ -285,27 +304,39 @@ class ToolManager:
 
     async def prepare_turn(self, config: RunnerConfig):
         """Forces MCP initialization and preloads requested tools before turn 1."""
-        if not self.mcp_config_path:
-            return
+        # If want to set up MCP for turn but don't have any MCP configuration yet 
+        if not (config.mcp_active_servers or config.enable_mcp_discovery):
+            return # nothing to do here, don't waste token on universal tools or waste time for setup
+
+        if not (self.mcp_config_path or len(self._mcp_config_dict) > 0):
+            raise ConfigurationError(f"No MCP configuration found. Please create an agent with a valid config path or use add_mcp_server().")
+        
+        # there are supplied mcp_preload_tools without their corresponding hosting servers specified 
+
+        mcp_preload_tools = config.mcp_active_servers or []
+        mcp_active_servers = config.mcp_active_servers or []
+        tools_with_missing_server = []
+        for tool in mcp_preload_tools:
+                if not any(tool.startswith(server_name) for server_name in mcp_active_servers):
+                    tools_with_missing_server.append(tool)
+        
+        if len(tools_with_missing_server) > 0:
+            raise ConfigurationError(f"The following requested tools are missing their corresponding hosting servers: {tools_with_missing_server}")
         
         if config.enable_mcp_discovery and not self._loaded_discovery_tools:
             from .mcp import ListMCPTools, LoadMCPTool
             self.register_tool(ListMCPTools(self))
             self.register_tool(LoadMCPTool(self))
 
-        # If the user specifically requested servers or tools, we must eagerly initialize
-        if config.mcp_active_servers or config.mcp_preload_tools:
-            num_tools = await self.initialize_mcp(allowed_servers=config.mcp_active_servers)
+        # If we reach here, user definitely specified something
+        await self.initialize_mcp(allowed_servers=config.mcp_active_servers)
 
-            if num_tools != -1:
-                self._mcp_initialized = True
-            
-            # Preload the specific tools directly into the active set
-            if config.mcp_preload_tools:
-                registry = self._mcp_standby_registry
-                for tool_name in config.mcp_preload_tools:
-                    if tool_name in registry:
-                        adapter = registry[tool_name]
-                        self.register_tool(adapter, load_mcp=True)
-                    else:
-                        logger.warning(f"MCP tool '{tool_name}' not found in standby registry during preload.")
+        # Preload the specific tools directly into the active set
+        if config.mcp_preload_tools:
+            registry = self._mcp_standby_registry
+            for tool_name in config.mcp_preload_tools:
+                if tool_name in registry:
+                    adapter = registry[tool_name]
+                    self.register_tool(adapter, load_mcp=True)
+                else:
+                    logger.warning(f"MCP tool '{tool_name}' not found in standby registry during preload.")

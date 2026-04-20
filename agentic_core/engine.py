@@ -22,17 +22,20 @@ class RunnerConfig:
     toolset: str | None = None                   # Additionally, specify a preconfigured `toolset` registered with tool. Passing `tools` will take priority over this settings to encourage clearer tooling injection.
     # MCP configs
     clear_loaded_tool: bool = True               # Whether to keep the last turn loaded MCP tools
-    mcp_active_servers: list[str] | None = None  # e.g. ["github", "memory"]
+    mcp_active_servers: list[str] | None = None  # e.g. ["github", "memory"]. Supply this before supplying mcp_preload_tools.
     mcp_preload_tools: list[str] | None = None   # e.g. ["github_create_issue"]
-    enable_mcp_discovery: bool = True            # Whether to enable user to dynamically browse and load MCP tools. Recommended 'False' if `mcp_preload_tools` is specified.  
+    enable_mcp_discovery: bool = False           # Whether to enable user to dynamically browse and load MCP tools. Recommended 'False' if `mcp_preload_tools` is specified.  
 
     def __post_init__(self):
         if self.max_iterations < 1: 
             raise ValueError("`max_iterations` must be >= 1")
         if self.tools and self.toolset:
-            logger.warning("Both tools and toolset were specified at the same time.")
+            logger.warning("[RunnerConfig] Both tools and toolset were specified at the same time.")
         
         self.toolset = self.toolset or "none"
+
+        if self.enable_mcp_discovery and not (self.mcp_active_servers or self.mcp_preload_tools):
+            logger.warning("[RunnerConfig] `enable_mcp_discovery` is set to `True`, but no MCP servers or tools were specified.")
 
 class AgentRunner:
     def __init__(
@@ -84,6 +87,8 @@ class AgentRunner:
         
         if config.enable_mcp_discovery:
             active_tools.extend(self.tool_manager.get_discovery_tools()) 
+
+        active_tools = list(set(active_tools))
 
         iteration = 1
 
