@@ -6,7 +6,7 @@ from .interfaces.llm import ILLMClient
 from .tools.manager import ToolManager
 from .memory.manager import MemoryManager
 from .interfaces.events import AgentEventObserver
-
+from .observers.base import ToolStartDecision
 
 import logging
 logger = logging.getLogger(__name__)
@@ -103,7 +103,11 @@ class AgentRunner:
                     tool_args = tc['function'].get("arguments", {})
                     tool_id = tc.get("id", "")
 
-                    observer.on_tool_start(tool_name, tool_id)
+                    decision: ToolStartDecision = observer.on_tool_start(tool_name, tool_id, tool_args)
+                    if decision == ToolStartDecision.SKIP:
+                        continue
+                    elif decision == ToolStartDecision.ABANDON:
+                        break
 
                     try:
                         parsed_args = json.loads(tool_args) if isinstance(tool_args, str) else tool_args
@@ -112,35 +116,27 @@ class AgentRunner:
                         observer.on_tool_complete(tool_name, tool_id, False, error_msg)
                         self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=error_msg)
                         continue
-                    
 
                     tasks.append(self.tool_manager.execute(tool_name, parsed_args, controller=observer))
                     tc_meta.append((tc["id"], tool_name))
 
-                import asyncio
-                tool_results = await asyncio.gather(*tasks, return_exceptions=True)
+                if len(tasks) > 0:
+                    import asyncio
+                    tool_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                for i, tool_result in enumerate(tool_results):
-                    tc_id, tool_name = tc_meta[i]
-                    success = not isinstance(tool_result, Exception)
-                    observer.on_tool_complete(tool_name, tc_id, success, tool_result)
+                    for i, tool_result in enumerate(tool_results):
+                        tc_id, tool_name = tc_meta[i]
+                        success = not isinstance(tool_result, Exception)
+                        observer.on_tool_complete(tool_name, tc_id, success, tool_result)
+                        
+                        self.memory.add_tool_result(
+                            tool_call_id=tc_id,
+                            name=tool_name,
+                            content=str(tool_result)
+                        )
+
+                    self.memory.enforce_context_limits()
                     
-                    self.memory.add_tool_result(
-                        tool_call_id=tc_id,
-                        name=tool_name,
-                        content=str(tool_result)
-                    )
-
-                    # try:
-                    #     result = await self.tool_manager.execute(tool_name, parsed_args, controller=observer)
-                    #     observer.on_tool_complete(tool_name, tool_id, True, result)
-                    #     self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=result)
-                    # except Exception as e:
-                    #     error_msg = f"Error executing {tool_name}: {str(e)}"
-                    #     observer.on_tool_complete(tool_name, tool_id, False, error_msg)
-                    #     self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=error_msg)
-
-                self.memory.enforce_context_limits()
                 iteration += 1
 
             if iteration > max_iterations:

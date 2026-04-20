@@ -1,7 +1,7 @@
 """
 Standard observer implementations.
 """
-from .base import AgentEventObserver
+from .base import AgentEventObserver, ToolStartDecision
 from ..tools.manager import ToolExecutionController
 
 class DefaultObserver(AgentEventObserver):
@@ -10,7 +10,7 @@ class DefaultObserver(AgentEventObserver):
     def on_turn_start(self) -> None: pass
     def on_iteration_start(self, iteration: int, max_iterations: int) -> None: pass
     def on_llm_progress(self, info: str) -> None: pass
-    def on_tool_start(self, tool_name: str, tool_id: str) -> None: pass
+    def on_tool_start(self, tool_name, tool_id, tool_args): return ToolStartDecision.CONTINUE
     def on_tool_complete(self, tool_name: str, tool_id: str, success: bool, result: str) -> None: pass
     def on_turn_complete(self, response: dict) -> None: pass
     def on_error(self, error: str) -> None: pass
@@ -28,8 +28,9 @@ class PrintObserver(AgentEventObserver, ToolExecutionController):
     def on_llm_progress(self, info: str) -> None:
         print(f"💬 [LLM]: {info[:200]}")
     
-    def on_tool_start(self, tool_name: str, tool_id: str) -> None:
+    def on_tool_start(self, tool_name: str, tool_id: str, tool_args: str | dict | None) -> ToolStartDecision:
         print(f"🔧 [TOOL START]: {tool_name}")
+        return ToolStartDecision.CONTINUE
     
     def on_tool_complete(self, tool_name: str, tool_id: str, success: bool, result: str) -> None:
         status = "✅" if success else "❌"
