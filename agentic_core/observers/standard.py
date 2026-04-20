@@ -33,7 +33,7 @@ class PrintObserver(AgentEventObserver, ToolExecutionController):
     
     def on_tool_complete(self, tool_name: str, tool_id: str, success: bool, result: str) -> None:
         status = "✅" if success else "❌"
-        print(f"{status} [TOOL COMPLETE]: {tool_name} -> {str(result)[:100]}")
+        print(f"{status} [TOOL COMPLETE]: {tool_name} -> {str(result)[:500]}")
     
     def on_turn_complete(self, response: dict) -> None:
         print(f"🏁 [TURN COMPLETE]")

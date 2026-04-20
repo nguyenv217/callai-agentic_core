@@ -38,9 +38,8 @@ def create_openai_agent(
         )
         result = await agent.run_turn("Hello!", DefaultObserver())
     """
-
-    llm_kwargs = {"base_url": base_url} if base_url else {}
-    llm = OpenAILLM(api_key=api_key, model=model, **llm_kwargs, **kwargs)
+    base_url = base_url or "https://api.openai.com/v1"
+    llm = OpenAILLM(api_key=api_key, model=model, base_url=base_url, **kwargs)
     memory = MemoryManager()
     memory.set_system_prompt(system_prompt)
     tools = ToolManager(mcp_config_path=mcp_config_path)
@@ -113,6 +112,7 @@ async def chat(
         runner: An AgentRunner instance. If this is supplied, you don't need to use the below arguments.
         provider: "openai", "anthropic", or "ollama"
         api_key: Your API key (required for openai/anthropic)
+        base_url: If using provider 'openai', for custom inference endpoint (OpenAI-compatible)
         model: Model name (defaults to provider's recommended)
         **kwargs: Any additional arguments to pass to the agent creation function.
     
