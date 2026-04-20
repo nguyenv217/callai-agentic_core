@@ -52,8 +52,6 @@ class ToolManager:
         self.tools_schema = []
         self._plugins: dict[str, BaseTool] = {}
         
-        self._universal_tools = ["list_mcp_catalog", "load_mcp_tool"]
-
         # --- MCP State ---
         self.mcp_config_path = mcp_config_path
         self._mcp_config_dict = {}
@@ -62,11 +60,16 @@ class ToolManager:
         self._mcp_initialized = False
         self._mcp_init_in_progress = False
         self.extra_env = extra_env
-
+        
+        # Discovery tools config
+        self._discovery_tools = ["list_mcp_catalog", "load_mcp_tool"]
+        self._loaded_discovery_tools = False
+        self.enable_mcp_discovery = enable_mcp_discovery
         if enable_mcp_discovery:
             from .mcp import ListMCPTools, LoadMCPTool
             self.register_tool(ListMCPTools(self))
             self.register_tool(LoadMCPTool(self))
+            self._loaded_discovery_tools = True
         
         # Toolsets initialization (Base logic)
         self.toolsets = toolsets or {}
@@ -199,17 +202,17 @@ class ToolManager:
     # PUBLIC API
     # ==========================================
 
-    def get_tools(self, toolset="all"):
+    def get_tools_from_toolset(self, toolset="all"):
         """Get tools for a specific toolset."""
         # Get base tools
         tools = [t for t in self.tools_schema if t['function']['name'] in self.toolsets.get(toolset, [])]
         
         # Always inject dynamically loaded MCP tools
         tools.extend([t.schema for t in self._mcp_loaded_tools])
-        
+
         # Always inject universal MCP meta-tools if MCP is active
         existing_names = [t['function']['name'] for t in tools]
-        for tool_name in self._universal_tools:
+        for tool_name in self._discovery_tools:
             if tool_name not in existing_names and tool_name in self._plugins:
                 tools.append(self._plugins[tool_name].schema)
         
@@ -248,7 +251,7 @@ class ToolManager:
                         # during its own validation phase. (or not, and it will returns an error)
                         pass
 
-            if tool_name in self._universal_tools:
+            if tool_name in self._discovery_tools:
                 await self.ensure_mcp_initialized()
 
             context = {
@@ -287,6 +290,11 @@ class ToolManager:
         """Forces MCP initialization and preloads requested tools before turn 1."""
         if not self.mcp_config_path:
             return
+        
+        if config.enable_mcp_discovery and not self._loaded_discovery_tools:
+            from .mcp import ListMCPTools, LoadMCPTool
+            self.register_tool(ListMCPTools(self))
+            self.register_tool(LoadMCPTool(self))
 
         # If the user specifically requested servers or tools, we must eagerly initialize
         if config.mcp_active_servers or config.mcp_preload_tools:
@@ -297,12 +305,11 @@ class ToolManager:
             
             # Preload the specific tools directly into the active set
             if config.mcp_preload_tools:
-                registry = getattr(self, '_mcp_standby_registry', {})
+                registry = self._mcp_standby_registry
                 for tool_name in config.mcp_preload_tools:
                     if tool_name in registry:
                         adapter = registry[tool_name]
                         self.register_tool(adapter, load_mcp=True)
-                        if 'all' in self.toolsets and tool_name not in self.toolsets['all']:
-                            self.toolsets['all'].append(tool_name)
+                        self._mcp_loaded_tools
                     else:
                         logger.warning(f"MCP tool '{tool_name}' not found in standby registry during preload.")
