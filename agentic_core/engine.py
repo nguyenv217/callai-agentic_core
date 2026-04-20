@@ -2,6 +2,8 @@ from typing import AsyncIterator, Iterator
 from dataclasses import dataclass
 import json
 
+from agentic_core.tools.base import ToolSchema
+
 from .interfaces.llm import ILLMClient
 from .tools.manager import ToolManager
 from .memory.manager import MemoryManager
@@ -12,15 +14,18 @@ from .llm_providers.base import LLMResponse
 import logging
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class RunnerConfig:
     max_iterations: int = 20
-    toolset: str = "none"
     system_prompt: str | None = None
-    tools: list['schema'] | None = None # type: ignore
-    clear_loaded_tool: bool = True
+    tools: list[ToolSchema] | None = None        # BOTH none-MCP and MCP tools. MCP tools included here but not loaded in last turns must be specified in `mcp_preload_tools` also to initialize properly
+    toolset: str = "none"                        # Additionally, specify a preconfigured `toolset` registered with tool. Passing `tools` will take priority over this settings to encourage clearer tooling injection.
+    # MCP configs
+    clear_loaded_tool: bool = True               # Whether to keep the last turn loaded MCP tools
     mcp_active_servers: list[str] | None = None  # e.g. ["github", "memory"]
     mcp_preload_tools: list[str] | None = None   # e.g. ["github_create_issue"]
+    enable_mcp_discovery: bool = True
 
 class AgentRunner:
     def __init__(
@@ -30,7 +35,7 @@ class AgentRunner:
         memory: MemoryManager,
     ):
         self.llm = llm_client
-        self.tool_manager = tool_manager
+        self.tool_manager = tool_manager # tools sound better
         self.memory = memory
         self.session_completion_tokens = 0
 
@@ -63,10 +68,16 @@ class AgentRunner:
 
         observer.on_turn_start()
         
-        # Preparation phase to setup configureed MCP servers and tools
+        # Preparation phase to setup configureed MCP servers and tools. MCP settings go here
         await self.tool_manager.prepare_turn(config)
-            
-        active_tools = config.tools or self.tool_manager.get_tools(config.toolset)
+        
+        # Tools preprocssing. Verbose here but is more granular now and assume no one is modifying tool_manager.toolsets directly. 
+        active_tools = config.tools or self.tool_manager.get_tools_from_toolset(config.toolset)
+        active_tools.extend(self.tool_manager.get_mcp_loaded_tools()) 
+        
+        if config.enable_mcp_discovery:
+            active_tools.extend(self.tool_manager.get_discovery_tools()) 
+
         iteration = 1
 
         final_response = {"text": "", "tool_calls": [], "usage": {}}

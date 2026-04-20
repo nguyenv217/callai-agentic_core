@@ -57,8 +57,8 @@ async def test_tool_manager_lazy_mcp_init(mock_mcp_manager):
     # Verify the tool was moved to standby AND actively loaded
     assert "mock_github_create_issue" in manager._mcp_standby_registry
     
-    active_schemas = manager.get_tools()
-    active_tool_names = [t['function']['name'] for t in active_schemas]
+    active_loaded_schemas = manager.get_mcp_loaded_tools()
+    active_tool_names = [t['function']['name'] for t in active_loaded_schemas]
     assert "mock_github_create_issue" in active_tool_names
 
 @pytest.mark.asyncio

@@ -86,9 +86,9 @@ result = await chat(
 
 ---
 
-## Using MCP Tools (GitHub, Filesystem, etc.)
+## Using MCP Tools
 
-> Note: MCP tools require Node.js installed on your system to run npx commands
+> Note: Many MCP servers require Node.js installed on your system to run npx commands. Do check with the your specified servers' documentation.
 
 MCP (Model Context Protocol) lets your agent use external tools. Here's how:
 
@@ -152,6 +152,28 @@ Refer to `examples/mcp_config.json` for a few no-config, plug-and-play example s
 1. The agent sees available MCP tools via `list_mcp_catalog`
 2. It loads the tools it needs via `load_mcp_tool`
 3. It uses them to answer your question
+
+**Advanced**   
+By default, `agentic-core` injects Meta-Tools into the agent's context to enable autonomous tool management:
+
+* `list_mcp_catalog`: The agent can browse available servers and their tool definitions.
+* `load_mcp_tool`: The agent can "install" a tool into its active session on-the-fly.
+
+This "Lazy Loading" approach keeps your prompt context small and saves tokens by only loading the specific tools the agent decides it needs for the task.
+
+If you already know which tools the agent will need, you can bypass the discovery turns entirely using `mcp_preload_tools` and setting `enable_mcp_discovery=False` in your `RunnerConfig`. This is highly recommended for production environments to reduce latency and costs.
+
+```python
+from agentic_core.engine import RunnerConfig
+
+config = RunnerConfig(
+    mcp_active_servers=["sqlite"],       # Initialize these servers immediately
+    mcp_preload_tools=["sqlite_query"]   # Move these tools to 'Active' before Turn 1. NOTE that you must prefix the tool name with server name 
+)
+
+# The agent starts with 'sqlite_query' already in its toolkit
+agent.chat("How many users are in the database?", config=config)
+```
 
 ---
 

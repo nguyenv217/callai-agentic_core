@@ -206,20 +206,15 @@ class ToolManager:
 
     def get_tools_from_toolset(self, toolset="all") -> ToolSchema:
         """Get tools for a specific toolset."""
-        # Get base tools
-        tools = [t for t in self.tools_schema if t['function']['name'] in self.toolsets.get(toolset, [])]
-
-        # Always inject universal MCP meta-tools if MCP is active
-        existing_names = [t['function']['name'] for t in tools]
-        for tool_name in self._discovery_tools:
-            if tool_name not in existing_names and tool_name in self._plugins:
-                tools.append(self._plugins[tool_name].schema)
-        
-        return tools
+        return [t for t in self.tools_schema if t['function']['name'] in self.toolsets.get(toolset, [])]
     
+    def get_discovery_tools(self) -> ToolSchema:
+        """Get discovery tools."""
+        return [t for t in self.tools_schema if t['function']['name'] in self._discovery_tools]
+
     def get_mcp_loaded_tools(self) -> ToolSchema:
         return [t.schema for t in self._mcp_loaded_tools]
-
+    
     def clear_loaded_tools(self):
         """Clears the list of loaded MCP tools."""
         self._mcp_loaded_tools.clear()
