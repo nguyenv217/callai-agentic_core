@@ -19,6 +19,7 @@ class OpenAILLM(ILLMClient):
         model: str = "gpt-4o",
         base_url: str = "https://api.openai.com/v1",
         client: OpenAI | None = None,
+        timeout: float = 30,
         **kwargs
     ):
         if not _openai_imported:
@@ -27,7 +28,7 @@ class OpenAILLM(ILLMClient):
         if client:
             self.client = client
         elif api_key:
-            self.client = OpenAI(api_key=api_key, base_url=base_url)
+            self.client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
         else:
             raise RuntimeError("Please pass either a valid api_key as 'api_key' or a configured OpenAI client instance as 'client")
             

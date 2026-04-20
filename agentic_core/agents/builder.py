@@ -4,7 +4,11 @@ Agent Builder - High-level agent constructors for quick setup.
 This module provides simple, idiot-proof ways to create agents without
 understanding the underlying protocols.
 """
-from typing import Optional
+from __future__ import annotations
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from openai import OpenAI
 
 from ..engine import AgentRunner
 from ..memory.manager import MemoryManager
@@ -25,10 +29,22 @@ def create_openai_agent(
     mcp_config_path: Optional[str] = None,
     observer: Optional[AgentEventObserver] = None,
     base_url: Optional[str] = None,
+    timeout: float = 30,
+    client: OpenAI | None = None,
     **kwargs
 ) -> AgentRunner:
     """
     Create an OpenAI agent in one line.
+
+    Args:
+        observer: An AgentEventObserver instance.
+        system_prompt: The agent's persona 
+        client: An OpenAI client instance. If this is supplied, you don't need to use the below arguments.
+        api_key: Your OpenAI API key
+        model: Model name (defaults to provider's recommended)
+        timeout: Timeout in seconds (defaults to 30s)
+        mcp_config_path: Path to MCP config (optional)
+        kwargs: Any additional arguments to pass to the agent creation function (will be passed as extra_body to client request).
     
     Example:
         agent = create_openai_agent(
@@ -39,7 +55,7 @@ def create_openai_agent(
         result = await agent.run_turn("Hello!", DefaultObserver())
     """
     base_url = base_url or "https://api.openai.com/v1"
-    llm = OpenAILLM(api_key=api_key, model=model, base_url=base_url, **kwargs)
+    llm = OpenAILLM(api_key=api_key, model=model, base_url=base_url, client=client, timeout=timeout, **kwargs)
     memory = MemoryManager()
     memory.set_system_prompt(system_prompt)
     tools = ToolManager(mcp_config_path=mcp_config_path)
