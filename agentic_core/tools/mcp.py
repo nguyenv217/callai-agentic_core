@@ -160,11 +160,6 @@ class LoadMCPTool(BaseTool):
             adapter = registry[tool_name]
             self._tool_manager.register_tool(adapter, load_mcp=True)
             
-            # Add to toolsets
-            if 'all' in self._tool_manager.toolsets:
-                if tool_name not in self._tool_manager.toolsets['all']:
-                    self._tool_manager.toolsets['all'].append(tool_name)
-            
             loaded.append(tool_name)
             
         if loaded:
