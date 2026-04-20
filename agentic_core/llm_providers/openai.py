@@ -2,6 +2,8 @@
 OpenAI LLM Provider.
 """
 from typing import List, Dict, Any, AsyncIterator
+
+from agentic_core.interfaces.config import ConfigurationError
 from .base import ILLMClient, LLMResponse
 
 _openai_imported=True
@@ -30,7 +32,7 @@ class OpenAILLM(ILLMClient):
         elif api_key:
             self.client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
         else:
-            raise RuntimeError("Please pass either a valid api_key as 'api_key' or a configured AsyncOpenAI client instance as 'client'")
+            raise ConfigurationError("Please pass either a valid api_key as 'api_key' or a configured AsyncOpenAI client instance as 'client'")
             
         self.model = model
         self.extra_kwargs = kwargs
