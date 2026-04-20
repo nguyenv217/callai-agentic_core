@@ -18,7 +18,9 @@
 
 ### Installation
 ```bash
-pip install "agentic-core[all]"
+git clone https://github.com/nguyenv217/callai-agentic_core # clone this repo
+
+pip install .
 ```
 ### If you have an OpenAI key:
 
