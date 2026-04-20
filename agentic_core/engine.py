@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class RunnerConfig:
     max_iterations: int = 20
     toolset: str = "none"
-    system_prompt: str = "You are a helpful AI assistant."
+    system_prompt: str | None = None
     tools: list['schema'] | None = None # type: ignore
     clear_loaded_tool: bool = True
     mcp_active_servers: list[str] | None = None  # e.g. ["github", "memory"]
@@ -41,7 +41,8 @@ class AgentRunner:
 
         max_iterations = config.max_iterations
 
-        self.memory.set_system_prompt(config.system_prompt)
+        if config.system_prompt:
+            self.memory.set_system_prompt(config.system_prompt)
         
         # Normalize and add user input
         messages = [{"role": "user", "content": user_input}] if isinstance(user_input, str) else user_input
