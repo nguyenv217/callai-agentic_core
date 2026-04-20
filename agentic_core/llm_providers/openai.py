@@ -74,6 +74,7 @@ class OpenAILLM(ILLMClient):
             yield LLMResponse(
                 success=True,
                 text=msg.content or "",
+                reasoning= getattr(msg, "reasoning_content", "") or getattr(msg, "reasoning", ""),
                 tool_calls=[tc.model_dump() for tc in msg.tool_calls] if msg.tool_calls else [],
                 usage={
                     "prompt_tokens": response.usage.prompt_tokens, 
