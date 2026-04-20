@@ -104,7 +104,58 @@ async def test_agent_execution_loop_with_tool():
     assert "12" in result["text"]
     assert mock_llm.call_count == 2
     
-    # Verify memory states
+    
+# Verify memory states
+# --- PARALLEL TOOL EXECUTION TEST ---
+
+class SlowTool(BaseTool):
+    """A tool that simulates a slow async operation."""
+    def __init__(self):
+        super().__init__()
+        self._name = "slow_task"
+        self._schema = {
+            "type": "function",
+            "function": {
+                "name": "slow_task",
+                "description": "Simulates a slow task",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        }
+    
+    async def execute(self, args: dict, context: dict) -> str:
+        import asyncio, time
+        await asyncio.sleep(0.2)
+        return json.dumps({"status": "completed", "time": time.time()})
+
+@pytest.mark.asyncio
+async def test_parallel_tool_execution_timing():
+    """Ensures multiple tool calls are executed concurrently."""
+    import time
+    # LLM returns two tool calls in one turn, then final text
+    resp1 = LLMResponse(
+        success=True, text="", error=None, usage={},
+        tool_calls=[
+            {"id": "t1", "function": {"name": "slow_task", "arguments": "{}"}},
+            {"id": "t2", "function": {"name": "slow_task", "arguments": "{}"}}
+        ]
+    )
+    resp2 = LLMResponse(
+        success=True, text="All tasks completed.", tool_calls=[], usage={}, error=None
+    )
+    mock_llm = MockLLM([resp1, resp2])
+    agent = create_openai_agent(api_key="mock_key")
+    agent.llm = mock_llm
+    agent.tool_manager.register_tool(SlowTool())
+    config = RunnerConfig(toolset="all")
+    start = time.monotonic()
+    result = await agent.run_turn("Run two slow tasks.", DefaultObserver(), config=config)
+    duration = time.monotonic() - start
+    assert result["success"] is True
+    # Both tasks should finish in roughly the time of the longest one (~0.2s), not sum (~0.4s)
+    assert duration < 0.35, f"Parallel execution took too long: {duration}s"
+
     history = agent.memory.get_history()
+    
     assert history[-2]["role"] == "tool" # The tool execution was recorded
     assert "12" in history[-2]["content"] # The math result was injected to context
+
