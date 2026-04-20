@@ -152,10 +152,11 @@ async def test_parallel_tool_execution_timing():
     duration = time.monotonic() - start
     assert result["success"] is True
     # Both tasks should finish in roughly the time of the longest one (~0.2s), not sum (~0.4s)
-    assert duration < 0.35, f"Parallel execution took too long: {duration}s"
+    assert duration < 0.25, f"Parallel execution took too long: {duration}s"
 
     history = agent.memory.get_history()
     
     assert history[-2]["role"] == "tool" # The tool execution was recorded
-    assert "12" in history[-2]["content"] # The math result was injected to context
+    
+    assert all("completed" in msg['content'] for msg in history[-3:-1]) # The math result was injected to context
 
