@@ -1,12 +1,12 @@
 """
 OpenAI LLM Provider.
 """
-from typing import List, Dict, Any, Iterator
+from typing import List, Dict, Any, AsyncIterator
 from .base import ILLMClient, LLMResponse
 
 _openai_imported=True
 try:
-    from openai import OpenAI
+    from openai import AsyncOpenAI
 except ImportError:
     _openai_imported=False
 
@@ -18,7 +18,7 @@ class OpenAILLM(ILLMClient):
         api_key: str | None = None, 
         model: str = "gpt-4o",
         base_url: str = "https://api.openai.com/v1",
-        client: OpenAI | None = None,
+        client: AsyncOpenAI | None = None,
         timeout: float = 30,
         **kwargs
     ):
@@ -28,21 +28,21 @@ class OpenAILLM(ILLMClient):
         if client:
             self.client = client
         elif api_key:
-            self.client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
+            self.client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
         else:
-            raise RuntimeError("Please pass either a valid api_key as 'api_key' or a configured OpenAI client instance as 'client")
+            raise RuntimeError("Please pass either a valid api_key as 'api_key' or a configured AsyncOpenAI client instance as 'client'")
             
         self.model = model
         self.extra_kwargs = kwargs
     
-    def ask(
+    async def ask(
         self, 
         messages: List[Dict[str, Any]], 
         tools: List[Dict[str, Any]] | None = None, 
         **kwargs
-    ) -> Iterator[LLMResponse]:
+    ) -> AsyncIterator[LLMResponse]:
         """
-        Send a chat completion request to OpenAI.
+        Send a chat completion request to OpenAI asynchronously.
         
         Args:
             messages: Conversation history.
@@ -62,8 +62,7 @@ class OpenAILLM(ILLMClient):
             if tools:
                 req_kwargs["tools"] = tools
 
-            # Make the API call
-            response = self.client.chat.completions.create(**req_kwargs)
+            response = await self.client.chat.completions.create(**req_kwargs)
             
             msg = response.choices[0].message
             yield LLMResponse(
@@ -78,8 +77,6 @@ class OpenAILLM(ILLMClient):
             )
 
         except Exception as e:
-            # We import here to ensure the core doesn't crash if openai isn't installed
-            # but a user accidentally instantiates the provider
             try:
                 import openai
             except ImportError:
