@@ -2,6 +2,7 @@ from typing import AsyncIterator, Iterator
 from dataclasses import dataclass
 import json
 
+from agentic_core.interfaces.config import ConfigurationError
 from agentic_core.tools.base import ToolSchema
 
 from .interfaces.llm import ILLMClient
@@ -23,7 +24,7 @@ class RunnerConfig:
         max_iterations: The maximum number of iterations the agent can take before failing.
         system_prompt: A prompt to be used as the system prompt for the agent.
         tools: A list of tools to be used by the agent. This includes both non-MCP and MCP tools of your choice. MCP tools included here but not loaded in last turns must be specified in `mcp_preload_tools` also to initialize properly
-        toolset: The name of a preconfigured `toolset` registered with tool_manager. Passing `tools` will take priority over this settings to encourage clearer tooling injection.
+        toolset: The name of a preconfigured `toolset` registered with tool_manager. Passing `tools` will take priority over this settings to encourage clearer tools injection.
         clear_loaded_tool: Whether to keep the last turn loaded MCP tools
         mcp_active_servers: A list of MCP server names to be used for the agent. This is useful when you only want to use a specific set of servers. It is best accompanied with `mcp_preload_tools` and `enable_mcp_discovery=False` to conserve resources.
         mcp_preload_tools: A list of MCP tool names to be preloaded for the agent. This is useful when you know what MCP tools you want to use. 
@@ -33,23 +34,27 @@ class RunnerConfig:
     system_prompt: str | None = None
     tools: list[ToolSchema] | None = None        
     toolset: str | None = None                   
-    # MCP configs
-    clear_loaded_tool: bool = True               
+    
+    # MCP (Model Context Protocol) Settings
+    mcp_clear_loaded_tools: bool = True               
     mcp_active_servers: list[str] | None = None  # e.g. ["github", "memory"]. Supply this before supplying mcp_preload_tools.
     mcp_preload_tools: list[str] | None = None   # e.g. ["github_create_issue"]
-    enable_mcp_discovery: bool = False           
+    mcp_enable_discovery: bool = False           
 
     def __post_init__(self):
         if self.max_iterations < 1: 
             raise ValueError("`max_iterations` must be >= 1")
         if self.tools and self.toolset:
-            logger.warning("[RunnerConfig] Both tools and toolset were specified at the same time.")
+            logger.warning("[RunnerConfig] Both tools and toolset were specified at the same time. Will prioritize `tools`.")
+
+        self.toolset = self.toolset or "none"   
+        mcp_preload_tools = self.mcp_active_servers or []
+        mcp_active_servers = self.mcp_active_servers or []
+
+        # Force this convention over implicit alive MCP server discovery (prone to error?) 
+        if (self.mcp_preload_tools and not self.mcp_active_servers) or (not all(any(t.startswith(sn) for sn in mcp_active_servers) for t in mcp_preload_tools)):
+            raise ConfigurationError("The hosting servers of some tools in `mcp_preload_tools` are not found in `mcp_active_servers`")
         
-        self.toolset = self.toolset or "none"
-
-        if self.enable_mcp_discovery and not (self.mcp_active_servers or self.mcp_preload_tools):
-            logger.warning("[RunnerConfig] `enable_mcp_discovery` is set to `True`, but no MCP servers or tools were specified.")
-
 class AgentRunner:
     def __init__(
         self,
@@ -76,7 +81,7 @@ class AgentRunner:
     async def run_turn(self, user_input: str | list[dict], observer: AgentEventObserver, config: RunnerConfig | None = None) -> dict:
         config = config or RunnerConfig()
 
-        if config.clear_loaded_tool:
+        if config.mcp_clear_loaded_tools:
             self.tool_manager.clear_loaded_tools()
 
         max_iterations = config.max_iterations
@@ -98,7 +103,7 @@ class AgentRunner:
         active_tools = config.tools or self.tool_manager.get_tools_from_toolset(config.toolset)
         active_tools.extend(self.tool_manager.get_mcp_loaded_tools()) 
         
-        if config.enable_mcp_discovery:
+        if config.mcp_enable_discovery:
             active_tools.extend(self.tool_manager.get_discovery_tools()) 
 
         active_tools = list(set(active_tools))

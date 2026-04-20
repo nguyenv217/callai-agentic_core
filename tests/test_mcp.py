@@ -59,7 +59,7 @@ async def test_load_mcp_tool_execution(mock_mcp_manager):
     from the standby registry into the active execution context.
     """
     manager = ToolManager(mcp_config_path="dummy_config.json")
-    config = RunnerConfig(mcp_active_servers=["mock_github"])
+    config = RunnerConfig(mcp_active_servers=["mock_github"], mcp_enable_discovery=True)
     
     # Eagerly initialize to populate the standby registry
     await manager.prepare_turn(config)

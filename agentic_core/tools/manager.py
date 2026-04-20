@@ -71,10 +71,7 @@ class ToolManager:
         self._loaded_discovery_tools = False
         self.enable_mcp_discovery = enable_mcp_discovery
         if enable_mcp_discovery:
-            from .mcp import ListMCPTools, LoadMCPTool
-            self.register_tool(ListMCPTools(self))
-            self.register_tool(LoadMCPTool(self))
-            self._loaded_discovery_tools = True
+            self._register_discovery_tools()
         
         # Toolsets initialization (Base logic)
         self.toolsets = toolsets or {}
@@ -85,6 +82,13 @@ class ToolManager:
         
         # Ensure cleanup of background threads on exit
         atexit.register(self.cleanup)
+
+
+    def _register_discovery_tools(self):
+        from .mcp import ListMCPTools, LoadMCPTool
+        self.register_tool(ListMCPTools(self))
+        self.register_tool(LoadMCPTool(self))
+        self._loaded_discovery_tools = True
 
 
     def register_tool(self, tool_instance: BaseTool, load_mcp=False):
@@ -266,7 +270,7 @@ class ToolManager:
                         # during its own validation phase. (or not, and it will returns an error)
                         pass
             
-            # load all servers if agent call discovery tools
+            # Load all servers if agent call discovery tools
             if tool_name in self._discovery_tools:
                 await self.ensure_mcp_initialized()
 
@@ -301,42 +305,52 @@ class ToolManager:
         except Exception as e:
             logger.exception(f"Tool execution failed for {tool_name}")
             return f"Error parsing or executing tool arguments: {e}"
+        
 
     async def prepare_turn(self, config: RunnerConfig):
         """Forces MCP initialization and preloads requested tools before turn 1."""
-        # If want to set up MCP for turn but don't have any MCP configuration yet 
-        if not (config.mcp_active_servers or config.enable_mcp_discovery):
-            return # nothing to do here, don't waste token on universal tools or waste time for setup
-
-        if not (self.mcp_config_path or len(self._mcp_config_dict) > 0):
-            raise ConfigurationError(f"No MCP configuration found. Please create an agent with a valid config path or use add_mcp_server().")
         
-        # there are supplied mcp_preload_tools without their corresponding hosting servers specified 
+        config_exists = (self.mcp_config_path or len(self._mcp_config_dict) > 0)
 
-        mcp_preload_tools = config.mcp_active_servers or []
-        mcp_active_servers = config.mcp_active_servers or []
-        tools_with_missing_server = []
-        for tool in mcp_preload_tools:
-                if not any(tool.startswith(server_name) for server_name in mcp_active_servers):
-                    tools_with_missing_server.append(tool)
+        if not config.mcp_preload_tools and not config.mcp_active_servers:
+            if config.mcp_enable_discovery:
+                if not config_exists: 
+                    raise ConfigurationError(f"Please supply valid MCP server configuration to enable MCP discovery. See `docs/MCP_config.json` for further discussion on security concerns.")
+                elif not self._loaded_discovery_tools:
+                    self._register_discovery_tools()
+            else:
+                return
         
-        if len(tools_with_missing_server) > 0:
-            raise ConfigurationError(f"The following requested tools are missing their corresponding hosting servers: {tools_with_missing_server}")
+        elif config.mcp_preload_tools and not config.mcp_active_servers:
+            if config_exists: 
+                raise ConfigurationError("`config.mcp_preload_tools` is supplied but not `mcp_active_servers`. Please explicitly pass `mcp_active_servers` at least containing corresponding hosting servers.")
+            raise ConfigurationError("No MCP configuration found.")
         
-        if config.enable_mcp_discovery and not self._loaded_discovery_tools:
-            from .mcp import ListMCPTools, LoadMCPTool
-            self.register_tool(ListMCPTools(self))
-            self.register_tool(LoadMCPTool(self))
+        elif not config.mcp_preload_tools and config.mcp_active_servers:
+            if not config_exists:
+                raise ConfigurationError("No MCP configuration found.")
 
-        # If we reach here, user definitely specified something
-        await self.initialize_mcp(allowed_servers=config.mcp_active_servers)
+            if not config.mcp_enable_discovery:
+                raise ConfigurationError("You are loading MCP servers but no MCP discover tools are enabled.")
+            
+            if not self._loaded_discovery_tools:
+                self._register_discovery_tools()  
 
-        # Preload the specific tools directly into the active set
-        if config.mcp_preload_tools:
-            registry = self._mcp_standby_registry
-            for tool_name in config.mcp_preload_tools:
-                if tool_name in registry:
-                    adapter = registry[tool_name]
-                    self.register_tool(adapter, load_mcp=True)
-                else:
-                    logger.warning(f"MCP tool '{tool_name}' not found in standby registry during preload.")
+            await self.initialize_mcp(allowed_servers=config.mcp_active_servers) # allowlist
+
+        else:
+            # If we reached this stage, RunnerConfig __post__init__ already validated whether every suppled tool has its accompanying hosting servers supplied as well
+            await self.initialize_mcp(allowed_servers=config.mcp_active_servers)
+
+            # Preload the specific tools directly into the active set
+            if config.mcp_preload_tools:
+                registry = self._mcp_standby_registry
+                for tool_name in config.mcp_preload_tools:
+                    if tool_name in registry:
+                        adapter = registry[tool_name]
+                        self.register_tool(adapter, load_mcp=True)
+                    else:
+                        logger.warning(f"MCP tool '{tool_name}' not found in standby registry during preload.")
+
+            if config.mcp_enable_discovery and not self._loaded_discovery_tools:
+                self._register_discovery_tools()  
