@@ -1,4 +1,4 @@
-from typing import AsyncIterator, Union, List, Dict, Iterator
+from typing import AsyncIterator, Iterator
 from dataclasses import dataclass
 import json
 
@@ -45,7 +45,7 @@ class AgentRunner:
                 yield item                                                                                         
         return _wrapper()
 
-    async def run_turn(self, user_input: Union[str, List[Dict]], observer: AgentEventObserver, config: RunnerConfig | None = None) -> Dict:
+    async def run_turn(self, user_input: str | list[dict], observer: AgentEventObserver, config: RunnerConfig | None = None) -> dict:
         config = config or RunnerConfig()
 
         if config.clear_loaded_tool:
