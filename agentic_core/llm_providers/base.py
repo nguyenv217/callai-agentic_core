@@ -1,25 +1,17 @@
 """
 LLM Provider base interfaces.
 """
-from typing import Iterator, List, Dict, Any, Protocol
+from typing import Iterator, List, Dict, Any, Protocol, AsyncIterator
+from dataclasses import dataclass
 
-
+@dataclass
 class LLMResponse:
     """Response from an LLM provider."""
-    
-    def __init__(
-        self,
-        success: bool,
-        text: str | None = None,
-        tool_calls: List[Dict] | None = None,
-        usage: Dict | None = None,
-        error: str | None = None
-    ):
-        self.success = success
-        self.text = text
-        self.tool_calls = tool_calls
-        self.usage = usage
-        self.error = error
+    success: bool
+    text: str | None = None
+    tool_calls: List[Dict] | None = None
+    usage: Dict | None = None
+    error: str | None = None
 
 
 class ILLMClient(Protocol):
@@ -34,7 +26,7 @@ class ILLMClient(Protocol):
         messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]] | None = None,
         **kwargs
-    ) -> Iterator[LLMResponse]:
+    ) -> Iterator[LLMResponse] | AsyncIterator[LLMResponse]: # THIS WILL BE STANDARDIZED LATER TO ASYNC, please migrate
         """
         Send a request to the LLM.
         
