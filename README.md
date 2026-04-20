@@ -336,3 +336,4 @@ Agents interacting with APIs that return massive, deeply nested JSON payloads ma
 **MITIGATIONS:**  
 * Each `BaseTool` class inherits an `is_allowed_path()` method that reliably prevents path traversal. Implementation of tools dealing with local filesystem may use this to improve security. 
 * Utilize `ToolExecutionController.on_prompt_respond()` and `ToolExecutionController.on_prompt_confirmation()` to design safe, human-in-the-loop agentic applications.
+* `AgentEventObserver` implementing `on_tool_start()` provides means to enforce human validation before assembling tool coroutine pool and executing, with different levels of control (use `ToolStartDecision`).
