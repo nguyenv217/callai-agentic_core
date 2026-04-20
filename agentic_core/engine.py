@@ -66,11 +66,12 @@ class AgentRunner:
                 
                 conversation = self.memory.get_history()
                 logger.info(f"Tools turn {iteration}: {[t['function']['name'] for t in active_tools]}")
-                response_iterator = self.llm.ask(conversation, active_tools)
+                
+                response_iterator = self.llm.ask(conversation, active_tools) # Is async iterator
 
                 turn_response = {"text": "", "tool_calls": []}
                 
-                for response in response_iterator:
+                async for response in response_iterator:
                     if response.success:
                         if response.text: turn_response["text"] += response.text
                         if response.tool_calls: turn_response["tool_calls"].extend(response.tool_calls)
