@@ -6,14 +6,6 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from agentic_core.tools.manager import ToolManager
 from agentic_core.engine import RunnerConfig
 
-import logging
-logging.basicConfig(
-    filename="test_mcp_debug.log",
-    level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-
 @pytest.fixture
 def mock_mcp_manager():
     """Mocks the MCP initialization to prevent actual subprocess spawning."""
@@ -42,15 +34,14 @@ async def test_tool_manager_lazy_mcp_init(mock_mcp_manager):
     # 1. Initialize manager with a config path (triggers MCP readiness, but shouldn't boot yet)
     manager = ToolManager(mcp_config_path="dummy_config.json")
     
-    assert manager._mcp_initialized is False
     assert len(manager._mcp_standby_registry) == 0
 
     # 2. Prepare turn with an explicit MCP preload request
-    config = RunnerConfig(mcp_preload_tools=["mock_github_create_issue"])
+    config = RunnerConfig(mcp_preload_tools=["mock_github_create_issue"], mcp_active_servers=["mock_github"])
     await manager.prepare_turn(config)
 
-    # 3. Assertions
-    assert manager._mcp_initialized is True
+    assert len(manager._mcp_standby_registry) > 0
+
     mock_mcp_manager.initialize.assert_awaited_once()
     mock_mcp_manager.list_all_tools.assert_awaited_once()
     
@@ -75,6 +66,7 @@ async def test_load_mcp_tool_execution(mock_mcp_manager):
     
     # Ensure it is in standby, but NOT in loaded tools yet
     assert "mock_github_create_issue" in manager._mcp_standby_registry
+    assert manager._mcp_loaded_tools is not None
     loaded_names = [t.name for t in manager._mcp_loaded_tools]
     assert "mock_github_create_issue" not in loaded_names
 
