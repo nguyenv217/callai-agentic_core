@@ -116,19 +116,19 @@ class AgentRunner:
                     tasks.append(self.tool_manager.execute(tool_name, parsed_args, controller=observer))
                     tc_meta.append((tc["id"], tool_name))
 
-                    import asyncio
-                    tool_results = await asyncio.gather(*tasks, return_exceptions=True)
+                import asyncio
+                tool_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                    for i, tool_result in enumerate(tool_results):
-                        tc_id, tool_name = tc_meta[i]
-                        success = not isinstance(tool_result, Exception)
-                        observer.on_tool_complete(tool_name, tc_id, success, tool_result)
-                        
-                        self.memory.add_tool_result(
-                            tool_call_id=tc_id,
-                            name=tool_name,
-                            content=str(tool_result)
-                        )
+                for i, tool_result in enumerate(tool_results):
+                    tc_id, tool_name = tc_meta[i]
+                    success = not isinstance(tool_result, Exception)
+                    observer.on_tool_complete(tool_name, tc_id, success, tool_result)
+                    
+                    self.memory.add_tool_result(
+                        tool_call_id=tc_id,
+                        name=tool_name,
+                        content=str(tool_result)
+                    )
 
                     # try:
                     #     result = await self.tool_manager.execute(tool_name, parsed_args, controller=observer)
