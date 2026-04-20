@@ -14,18 +14,25 @@ from .llm_providers.base import LLMResponse
 import logging
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class RunnerConfig:
     max_iterations: int = 20
     system_prompt: str | None = None
     tools: list[ToolSchema] | None = None        # BOTH none-MCP and MCP tools. MCP tools included here but not loaded in last turns must be specified in `mcp_preload_tools` also to initialize properly
-    toolset: str = "none"                        # Additionally, specify a preconfigured `toolset` registered with tool. Passing `tools` will take priority over this settings to encourage clearer tooling injection.
+    toolset: str | None = None                   # Additionally, specify a preconfigured `toolset` registered with tool. Passing `tools` will take priority over this settings to encourage clearer tooling injection.
     # MCP configs
     clear_loaded_tool: bool = True               # Whether to keep the last turn loaded MCP tools
     mcp_active_servers: list[str] | None = None  # e.g. ["github", "memory"]
     mcp_preload_tools: list[str] | None = None   # e.g. ["github_create_issue"]
-    enable_mcp_discovery: bool = True
+    enable_mcp_discovery: bool = True            # Whether to enable user to dynamically browse and load MCP tools. Recommended 'False' if `mcp_preload_tools` is specified.  
+
+    def __post_init__(self):
+        if self.max_iterations < 1: 
+            raise ValueError("`max_iterations` must be >= 1")
+        if self.tools and self.toolset:
+            logger.warning("Both tools and toolset were specified at the same time.")
+        
+        self.toolset = self.toolset or "none"
 
 class AgentRunner:
     def __init__(
@@ -35,7 +42,7 @@ class AgentRunner:
         memory: MemoryManager,
     ):
         self.llm = llm_client
-        self.tool_manager = tool_manager # tools sound better
+        self.tool_manager = tool_manager 
         self.memory = memory
         self.session_completion_tokens = 0
 
@@ -71,7 +78,7 @@ class AgentRunner:
         # Preparation phase to setup configureed MCP servers and tools. MCP settings go here
         await self.tool_manager.prepare_turn(config)
         
-        # Tools preprocssing. Verbose here but is more granular now and assume no one is modifying tool_manager.toolsets directly. 
+        # Tools preprocssing. Verbose here but is more granular now and assume no one is modifying `tool_manager.toolsets` directly. 
         active_tools = config.tools or self.tool_manager.get_tools_from_toolset(config.toolset)
         active_tools.extend(self.tool_manager.get_mcp_loaded_tools()) 
         
