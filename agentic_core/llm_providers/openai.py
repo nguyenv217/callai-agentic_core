@@ -47,6 +47,10 @@ class OpenAILLM(ILLMClient):
         Args:
             messages: Conversation history.
             tools: A list of JSON schemas for tools (NOT the ToolManager object).
+            **kwargs: Extra body parameters to pass to the OpenAI API.
+        
+        Yields:
+            AsyncIterator[LLMResponse]: An iterator of LLMResponse objects.
         """
         try:
             # Build request kwargs dynamically to avoid SDK validation errors
