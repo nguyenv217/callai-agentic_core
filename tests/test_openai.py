@@ -4,7 +4,7 @@ import pytest
 import pytest_asyncio
 from unittest.mock import MagicMock
 from unittest.mock import AsyncMock
-from agentic_core.interfaces.llm import LLMResponse
+from agentic_core.llm_providers.base import LLMResponse
 from agentic_core.llm_providers.openai import OpenAILLM
 
 # Skip if openai is not installed in the test environment

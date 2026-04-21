@@ -5,10 +5,10 @@ import json
 from agentic_core.interfaces.config import ConfigurationError
 from agentic_core.tools.base import ToolSchema
 
-from .interfaces.llm import ILLMClient
+from .llm_providers.base import ILLMClient
 from .tools.manager import ToolManager
 from .memory.manager import MemoryManager
-from .interfaces.events import AgentEventObserver
+from .observers.base import AgentEventObserver
 from .observers.base import ToolStartDecision
 from .llm_providers.base import LLMResponse
 

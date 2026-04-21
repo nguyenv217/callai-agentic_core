@@ -14,7 +14,6 @@ class LLMResponse:
     error: str | None = None
     reasoning: str | None = None
 
-
 class ILLMClient(Protocol):
     """
     Protocol for LLM clients.
