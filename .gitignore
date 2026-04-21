@@ -41,6 +41,7 @@ __pycache__/
 
 # Ignore node stuff
 node_modules/
+log.txt
 
 # Ignore Mac files
 *.swp

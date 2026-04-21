@@ -140,7 +140,7 @@ config = RunnerConfig(
 )
 ```
 
-**RECOMMENDED**: For a detailed guide on building and registering tools, see [HERE](docs/Tools.md).
+**RECOMMENDED**: For a detailed guide on building and registering tools, see [docs/docs/TOOLS_GUIDE.md](docs/TOOLS_GUIDE.md).
 
 ---
 
@@ -234,7 +234,7 @@ config = RunnerConfig(
 agent.chat("How many users are in the database?", config=config)
 ```
 
-Please see this more detailed [explanation](docs/MCP_config.md) in how to configuring `RunnerConfig` to fully realize the MCP protocol in your project.
+Please see this more detailed [explanation](docs/MCP_CONFIG_GUIDE.md) in how to configuring `RunnerConfig` to fully realize the MCP protocol in your project.
 
 ---
 
