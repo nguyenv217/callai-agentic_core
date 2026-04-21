@@ -18,9 +18,9 @@ class RunnerConfig:
 
     Args:
         max_iterations: The maximum number of iterations the agent can take before failing.
-        system_prompt: A prompt to be used as the system prompt for the agent.
+        system_prompt: A prompt to be used as the system prompt for the agent. This overwrites any manually system prompt written to the memory manager before `run_turn()`.      
         tools: A list of tools to be used by the agent. This includes both non-MCP and MCP tools of your choice. MCP tools included here but not loaded in last turns must be specified in `mcp_preload_tools` also to initialize properly
-        toolset: The name of a preconfigured `toolset` registered with tool_manager. Passing `tools` will take priority over this settings to encourage clearer tools injection.
+        toolset: The name of a preconfigured `toolset` registered with tool_manager. Passing `tools` will take priority over this settings to encourage clearer tools injection. Additionally, this will attach the toolset-specific prompt to system prompt (if any).
         clear_loaded_tool: Whether to keep the last turn loaded MCP tools
         mcp_active_servers: A list of MCP server names to be used for the agent. This is useful when you only want to use a specific set of servers. It is best accompanied with `mcp_preload_tools` and `enable_mcp_discovery=False` to conserve resources.
         mcp_preload_tools: A list of MCP tool names to be preloaded for the agent. This is useful when you know what MCP tools you want to use. 

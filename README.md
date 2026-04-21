@@ -5,7 +5,7 @@
 
 1. [Quick Start](#the-30-second-quick-start)
 2. [The Simple `chat()` Function](#the-simple-chat-function)
-3. [MCP integration (GitHub, Filesystem, etc.)](#using-mcp-tools-github-filesystem-etc)
+3. [Tooling system: Bring-your-own-tools & MCP integration (GitHub, Filesystem, etc.)](#using-tools-implementing-basetool-or-integrate-mcp-servers)
 4. [Agent creation (Advanced)](#creating-your-own-agent-advanced)
 5. [Configuration Options](#configuration-options)
 6. [Project Structure](#project-structure)
@@ -86,11 +86,70 @@ result = await chat(
 
 ---
 
-## Using MCP Tools
+## Using Tools (Implementing `BaseTool` or integrate MCP servers)
+
+### Custom Tools via `BaseTool`
+
+The `BaseTool` base class give you robust but structured method to create and use tools in your project. It is designed to extend functionality with a consistent framework (e.g, designing agent swarms with `spawn_agents`, `create_task`, etc.).
+If you want to write your own Python tools, inherit from `BaseTool`, register it with `ToolManager`, before specifying it in your agent workflow via `RunnerConfig`:
+
+```python
+from agentic_core.tools.base import BaseTool
+from agentic_core.tools.manager import ToolManager
+
+class UpperCaseTool(BaseTool):
+    name = "uppercase"
+    schema = {
+        "type": "function",
+        "function": {
+            "name": "uppercase",
+            "description": "Converts text to upper case.",
+            "parameters": {
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"]
+            }
+        }
+    }
+
+    def execute(self, args: dict, context: dict) -> str:
+        return args["text"].upper()
+
+# Register and use
+tools = ToolManager()
+uppercase_tool = UpperCaseTool()
+tools.register_tool(uppercase_tool)
+
+# === More advanced usage: `toolset` ===
+tools = ToolManager(
+    toolsets = [
+        "my_custom_toolset": {
+            "tools": ["uppercase"],
+            "prompt": "This prompt is dynamically injected when toolset=my_custom_toolset"
+        }
+        "my_other_toolset": ["some_other_tool", "other_tool2", ...] # Or this if you dont want to inject system prompt
+    ]
+)
+tools.register_tool(uppercase_tool)
+
+# Then pass to `RunnerConfig`
+config = RunnerConfig(
+    system_prompt = "My base sytem prompt."
+    tools = [uppercase_tool.schema, ...] # only inject these tools, this parameter takes priority over `toolset`
+    toolset = "my_custom_toolset" # or use a toolset for a specific known set of specific tools with a custom prompt
+)
+```
+
+**RECOMMENDED**: For a detailed guide on building and registering tools, see [HERE](docs/Tools.md).
+
+---
+
+### MCP Tools (Dynamic Integration)
 
 > Note: Many MCP servers require Node.js installed on your system to run npx commands. Do check with the your specified servers' documentation.
 
-MCP (Model Context Protocol) lets your agent use external tools. Here's how:
+MCP (Model Context Protocol) lets your agent use external tools via standardized protocols. 
+`agentic_core` natively supports them and even gives you easy means to dynamically discover and load these tools in order to save on your token usage! Here's how to use it:
 
 ### Step 1: Create `mcp.json`
 
