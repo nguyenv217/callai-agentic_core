@@ -45,11 +45,20 @@ class AgentRunner:
         if config.mcp_clear_loaded_tools:
             self.tool_manager.clear_loaded_tools()
 
-        max_iterations = config.max_iterations
-
         if config.system_prompt:
-            self.memory.set_system_prompt(config.system_prompt)
-        
+            # If a toolset also defines a prompt, prepend it to the system prompt.
+            toolset_prompt = self.tool_manager.get_toolset_prompt(config.toolset) if config.toolset else None
+            if toolset_prompt:
+                combined_prompt = f"{toolset_prompt}\n\n{config.system_prompt}"
+                self.memory.set_system_prompt(combined_prompt)
+            else:
+                self.memory.set_system_prompt(config.system_prompt)
+        else:
+            # No explicit system_prompt; fall back to toolset prompt if available.
+            toolset_prompt = self.tool_manager.get_toolset_prompt(config.toolset) if config.toolset else None
+            if toolset_prompt:
+                self.memory.set_system_prompt(toolset_prompt if not self.memory.system_prompt_exists() else config.system_prompt + "\n\n" + toolset_prompt)
+
         messages = [{"role": "user", "content": user_input}] if isinstance(user_input, str) else user_input
         for message in messages:
             self.memory.add_message(message)
@@ -68,6 +77,7 @@ class AgentRunner:
 
         # active_tools = list(set(active_tools)) # it's unlikely that they will colide because: 1. no modification to `toolsets`, 2. get_mcp_loaded_tools() never contains discovery tools. 3. active_tools is ephemeral
 
+        max_iterations = config.max_iterations
         iteration = 1
 
         final_response = {"text": "", "reasoning": "", "tool_calls": [], "usage": {}}

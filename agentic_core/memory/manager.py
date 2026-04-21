@@ -11,6 +11,9 @@ class MemoryManager:
         self._hash_obj = hashlib.sha256()
         self._current_hash = None
 
+    def system_prompt_exists(self):
+        return self.system_prompt is not None
+
     def set_system_prompt(self, content: str):
         self.system_prompt = {"role": "system", "content": content}
         self._update_hash()

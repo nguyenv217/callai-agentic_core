@@ -74,7 +74,21 @@ class ToolManager:
             self._register_discovery_tools()
         
         # Toolsets initialization (Base logic)
-        self.toolsets = toolsets or {}
+        # Support optional prompts per toolset. `toolsets` can be a dict mapping toolset name to either a list of tool names
+        # or a dict with keys 'tools' (list) and optional 'prompt' (str).
+        self.toolsets = {}
+        self.toolset_prompts: dict[str, str] = {}
+        if toolsets:
+            for name, spec in toolsets.items():
+                if isinstance(spec, dict):
+                    tools = spec.get('tools', [])
+                    prompt = spec.get('prompt')
+                else:
+                    tools = spec  # assume list of tool names
+                    prompt = None
+                self.toolsets[name] = list(tools)
+                if prompt:
+                    self.toolset_prompts[name] = prompt
         self.toolsets.setdefault('all', [])
         for ts in self.toolsets.values():
             self.toolsets['all'].extend(ts)
@@ -226,6 +240,10 @@ class ToolManager:
     def get_tools_from_toolset(self, toolset="all") -> list[ToolSchema]:
         """Get tools for a specific toolset."""
         return [t for t in self.tools_schema if t['function']['name'] in self.toolsets.get(toolset, [])]
+
+    def get_toolset_prompt(self, toolset: str) -> str | None:
+        """Return the custom prompt associated with a toolset, if any."""
+        return self.toolset_prompts.get(toolset)
     
     def get_discovery_tools(self) -> list[ToolSchema]:
         """Get discovery tools."""
