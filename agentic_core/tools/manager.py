@@ -142,7 +142,7 @@ class ToolManager:
 
     async def shutdown_mcp(self):
         if self._mcp_manager:
-            await self._mcp_manager.close()
+            await self._mcp_manager.close() # this triggers shutdown event for all active serveers
             self._mcp_manager = None
 
     async def ensure_mcp_initialized(self) -> None:
