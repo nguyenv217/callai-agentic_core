@@ -27,6 +27,9 @@ class PrintObserver(AgentEventObserver, ToolExecutionController):
     
     def on_llm_progress(self, info: str) -> None:
         print(f"💬 [LLM]: {info[:200]}")
+
+    def on_tool_call_session_start(self, reasoning_text, tool_calls, iteration, max_iterations):
+        print(f"💡 [ITERATION {iteration}/{max_iterations}]: {reasoning_text[:500]}")
     
     def on_tool_start(self, tool_name: str, tool_id: str, tool_args: str | dict | None) -> ToolStartDecision:
         print(f"🔧 [TOOL START]: {tool_name}")

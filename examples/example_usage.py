@@ -22,6 +22,9 @@ from pathlib import Path
 os.environ['MCP_SERVER_MEMORY_FILE'] = str((Path(__file__).parent.parent / "memory.jsonl").resolve())
 os.environ['MCP_CONFIG_PATH'] = str((Path(__file__).parent / "mcp_config.json").resolve())
 
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', filename="debug.log")
+
 async def main():
     # ============================================================
     # Example: OpenAI-compatible (just pass your key and OpenAI-compatible endpoint)
@@ -49,6 +52,7 @@ Only use these tools when necessary to conserve resources.
     config = RunnerConfig(
         system_prompt=system_prompt,
         max_iterations=20,
+        mcp_active_servers=['memory'],
         mcp_preload_tools=["memory_create_entities", "memory_add_observations", "memory_search_nodes"] # some basic tools from server 'memory' preloaded
         )
 

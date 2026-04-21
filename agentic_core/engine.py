@@ -113,7 +113,7 @@ class AgentRunner:
 
         iteration = 1
 
-        final_response = {"text": "", "tool_calls": [], "usage": {}}
+        final_response = {"text": "", "reasoning": "", "tool_calls": [], "usage": {}}
 
         try:
             # The Agentic Loop
@@ -128,11 +128,12 @@ class AgentRunner:
                 if not isinstance(response_iterator, AsyncIterator): # hotfix before standardization
                     response_iterator = AgentRunner._to_async_gen(response_iterator)
 
-                turn_response = {"text": "", "tool_calls": []}
+                turn_response = {"text": "", "reasoning": "", "tool_calls": []}
                 
                 async for response in response_iterator:
                     if response.success:
                         if response.text: turn_response["text"] += response.text
+                        if response.reasoning: turn_response["reasoning"] += response.reasoning
                         if response.tool_calls: turn_response["tool_calls"].extend(response.tool_calls)
                         if response.usage:
                             self.last_usage_meta = response.usage
@@ -146,14 +147,25 @@ class AgentRunner:
                 if not turn_response["tool_calls"]:
                     self.memory.add_message({"role": "assistant", "content": turn_response["text"]})
                     final_response["text"] = turn_response["text"]
+                    final_response["reasoning"] = turn_response["reasoning"]
+                    final_response['usage'] = self.last_usage_meta
                     break
 
+                # ==== If we reach here, means it's a tool calling session ====
                 # Handle Tool Calls
                 self.memory.add_message({
                     "role": "assistant", 
                     "content": turn_response.get("text", ""), 
                     "tool_calls": turn_response["tool_calls"]
                 })
+
+                reasoning_text = turn_response.get("reasoning") or turn_response.get("text")
+                observer.on_tool_call_session_start(
+                    reasoning_text=reasoning_text,
+                    tool_calls=turn_response["tool_calls"],
+                    iteration=iteration,
+                    max_iterations=max_iterations
+                )
 
                 tasks = []
                 tc_meta = []
