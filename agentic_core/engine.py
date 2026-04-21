@@ -1,4 +1,4 @@
-from typing import AsyncIterator, Iterator
+from typing import AsyncIterator, Iterator, Any
 from dataclasses import dataclass
 import json
 
@@ -8,7 +8,7 @@ from agentic_core.tools.base import ToolSchema
 from .llm_providers.base import ILLMClient
 from .tools.manager import ToolManager
 from .memory.manager import MemoryManager
-from .observers.base import AgentEventObserver
+from .observers.base import AgentEventObserver, DecisionEvent, LastIterationDecision
 from .observers.base import ToolStartDecision
 from .llm_providers.base import LLMResponse
 
@@ -65,7 +65,7 @@ class AgentRunner:
         self.llm = llm_client
         self.tool_manager = tool_manager 
         self.memory = memory
-        self.session_completion_tokens = 0
+        self.last_usage_meta: None | Any = None
 
     @staticmethod
     def _to_async_gen(sync_gen: Iterator[LLMResponse]) -> AsyncIterator[LLMResponse]: # QUICK FIX BEFORE STANDARDIZATION
@@ -77,6 +77,10 @@ class AgentRunner:
                 await asyncio.sleep(0)                                                                             
                 yield item                                                                                         
         return _wrapper()
+    
+    def _add_error_tool_result(self, tool_name: str, tool_id: str, msg: str, observer: AgentEventObserver): # helper for less verbosity
+        observer.on_tool_complete(tool_name, tool_id, False, msg)
+        self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=msg)
 
     async def run_turn(self, user_input: str | list[dict], observer: AgentEventObserver, config: RunnerConfig | None = None) -> dict:
         config = config or RunnerConfig()
@@ -89,7 +93,6 @@ class AgentRunner:
         if config.system_prompt:
             self.memory.set_system_prompt(config.system_prompt)
         
-        # Normalize and add user input
         messages = [{"role": "user", "content": user_input}] if isinstance(user_input, str) else user_input
         for message in messages:
             self.memory.add_message(message)
@@ -99,7 +102,7 @@ class AgentRunner:
         # Preparation phase to setup configureed MCP servers and tools. MCP settings go here
         await self.tool_manager.prepare_turn(config)
         
-        # Tools preprocssing. Verbose here but is more granular now and assume no one is modifying `tool_manager.toolsets` directly. 
+        # Tools preprocssing. Verbose but assume no one is modifying `tool_manager.toolsets` directly. 
         active_tools = config.tools or self.tool_manager.get_tools_from_toolset(config.toolset)
         active_tools.extend(self.tool_manager.get_mcp_loaded_tools()) 
         
@@ -121,8 +124,8 @@ class AgentRunner:
                 logger.info(f"Tools turn {iteration}: {[t['function']['name'] for t in active_tools]}")
                 
                 response_iterator = self.llm.ask(conversation, active_tools) 
-                # quick fix 
-                if not isinstance(response_iterator, AsyncIterator):
+                
+                if not isinstance(response_iterator, AsyncIterator): # hotfix before standardization
                     response_iterator = AgentRunner._to_async_gen(response_iterator)
 
                 turn_response = {"text": "", "tool_calls": []}
@@ -132,7 +135,7 @@ class AgentRunner:
                         if response.text: turn_response["text"] += response.text
                         if response.tool_calls: turn_response["tool_calls"].extend(response.tool_calls)
                         if response.usage:
-                            self.session_completion_tokens += response.usage.get('completion_tokens', 0)
+                            self.last_usage_meta = response.usage
                     else:
                         observer.on_error(response.error or "Unknown LLM error")
                         return {"error": response.error}
@@ -160,22 +163,28 @@ class AgentRunner:
                     tool_args = tc['function'].get("arguments", {})
                     tool_id = tc.get("id", "")
 
-                    decision: ToolStartDecision = observer.on_tool_start(tool_name, tool_id, tool_args)
-                    if decision == ToolStartDecision.SKIP:
+                    decision_event: DecisionEvent[ToolStartDecision] = observer.on_tool_start(tool_name, tool_id, tool_args)
+                    if decision_event.action == ToolStartDecision.SKIP:
                         continue
-                    elif decision == ToolStartDecision.ABANDON:
+                    elif decision_event.action == ToolStartDecision.SKIP_WITH_MSG:
+                        self._add_error_tool_result(tool_name, tool_id, decision_event.message, observer)
+                        continue
+                    elif decision_event.action == ToolStartDecision.ABANDON:
                         break
+                    elif decision_event.action == ToolStartDecision.ABANDON_WITH_MSG:
+                        self._add_error_tool_result(tool_name, tool_id, decision_event.message, observer)
+                        break
+                    else:
+                        try:
+                            parsed_args = json.loads(tool_args) if isinstance(tool_args, str) else tool_args
+                        except json.JSONDecodeError as e:
+                            error_msg = f"Error: Invalid JSON arguments provided. Please fix the syntax and try again. Details: {str(e)}"
+                            observer.on_tool_complete(tool_name, tool_id, False, error_msg)
+                            self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=error_msg)
+                            continue
 
-                    try:
-                        parsed_args = json.loads(tool_args) if isinstance(tool_args, str) else tool_args
-                    except json.JSONDecodeError as e:
-                        error_msg = f"Error: Invalid JSON arguments provided. Please fix the syntax and try again. Details: {str(e)}"
-                        observer.on_tool_complete(tool_name, tool_id, False, error_msg)
-                        self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=error_msg)
-                        continue
-
-                    tasks.append(self.tool_manager.execute(tool_name, parsed_args, controller=observer))
-                    tc_meta.append((tc["id"], tool_name))
+                        tasks.append(self.tool_manager.execute(tool_name, parsed_args, controller=observer))
+                        tc_meta.append((tc["id"], tool_name))
 
                 if len(tasks) > 0:
                     import asyncio
@@ -193,8 +202,19 @@ class AgentRunner:
                         )
 
                     self.memory.enforce_context_limits()
-                    
+
                 iteration += 1
+                if iteration == max_iterations:
+                    decision_event: DecisionEvent[LastIterationDecision] = observer.on_final_iteration()
+                    if decision_event.action == LastIterationDecision.CONTINUE:
+                        continue
+                    elif decision_event.action == LastIterationDecision.LEAVE_MESSAGE:
+                        self.memory.add_message({
+                            "role":'user',
+                            "content": decision_event.message
+                        })
+                    elif decision_event.action == LastIterationDecision.ABANDON:
+                        break
 
             if iteration > max_iterations:
                 observer.on_error(f"Agent failed to provide a final answer after {max_iterations} iterations.")
