@@ -8,7 +8,7 @@ The `RunnerConfig` provides flexible ways to integrate external MCP servers into
 |-----------|------|-------------|
 | `mcp_active_servers` | `List[str]` | A list of server names to initialize. If omitted, no servers are booted until requested. |
 | `mcp_preload_tools` | `List[str]` | Specific tools to inject directly into the agent's active schema on Turn 1. |
-| `enable_mcp_discovery` | `bool` | If `True`, gives the agent tools to browse and load from your configured MCP servers dynamically. |
+| `mcp_enable_discovery` | `bool` | If `True`, gives the agent tools to browse and load from your configured MCP servers dynamically. |
 
 ## Configuration Scenarios
 
