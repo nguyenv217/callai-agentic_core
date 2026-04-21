@@ -73,7 +73,7 @@ class ToolManager:
         if enable_mcp_discovery:
             self._register_discovery_tools()
         
-        # Toolsets initialization (Base logic)
+        # Toolsets initialization
         # Support optional prompts per toolset. `toolsets` can be a dict mapping toolset name to either a list of tool names
         # or a dict with keys 'tools' (list) and optional 'prompt' (str).
         self.toolsets = {}
@@ -237,7 +237,7 @@ class ToolManager:
     # PUBLIC API
     # ==========================================
 
-    def get_tools_from_toolset(self, toolset="all") -> list[ToolSchema]:
+    def get_tools_from_toolset(self, toolset: str = "all") -> list[ToolSchema]:
         """Get tools for a specific toolset."""
         return [t for t in self.tools_schema if t['function']['name'] in self.toolsets.get(toolset, [])]
 
@@ -258,6 +258,11 @@ class ToolManager:
 
     def get_active_servers(self) -> list[str]:
         return self._mcp_manager.get_active_servers() if self._mcp_manager else []
+    
+    def add_toolset(self, name: str, tools: list[str], prompt: str | None = None):
+        self.toolsets[name] = list(tools)
+        if prompt:
+            self.toolset_prompts[name] = prompt
 
     async def execute(self, tool_name: str, args: dict, controller: ToolExecutionController) -> str:
         """Routes execution to the registered plugin (Standard or MCP). Executes asynchronously."""
