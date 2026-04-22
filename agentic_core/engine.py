@@ -158,7 +158,7 @@ class AgentRunner:
                             self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=error_msg)
                             continue
 
-                        tasks.append(self.tool_manager.execute(tool_name, parsed_args, controller=observer))
+                        tasks.append(self.tool_manager.execute(tool_name, parsed_args, controller=observer, max_chars=config.max_chars))
                         tc_meta.append((tc["id"], tool_name))
 
                 if len(tasks) > 0:

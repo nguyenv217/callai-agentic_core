@@ -21,16 +21,17 @@ class RunnerConfig:
         system_prompt: A prompt to be used as the system prompt for the agent. This overwrites any manually system prompt written to the memory manager before `run_turn()`.      
         tools: A list of tools to be used by the agent. This includes both non-MCP and MCP tools of your choice. MCP tools included here but not loaded in last turns must be specified in `mcp_preload_tools` also to initialize properly
         toolset: The name of a preconfigured `toolset` registered with tool_manager. Passing `tools` will take priority over this settings to encourage clearer tools injection. Additionally, this will attach the toolset-specific prompt to system prompt (if any).
-        clear_loaded_tool: Whether to keep the last turn loaded MCP tools
+        max_chars: Result of each tool call is limited to `max_chars` characters to save tokens. Set to None for no limits. Default is 10000.
+        mcp_clear_loaded_tool: Whether to keep the last turn loaded MCP tools
         mcp_active_servers: A list of MCP server names to be used for the agent. This is useful when you only want to use a specific set of servers. It is best accompanied with `mcp_preload_tools` and `enable_mcp_discovery=False` to conserve resources.
         mcp_preload_tools: A list of MCP tool names to be preloaded for the agent. This is useful when you know what MCP tools you want to use. 
-        enable_mcp_discovery: Whether to enable user to dynamically browse and load MCP tools. Recommended 'False' if `mcp_preload_tools` is specified
+        mcp_enable_discovery: Whether to enable user to dynamically browse and load MCP tools. Recommended 'False' if `mcp_preload_tools` is specified
     '''
     max_iterations: int = 20
     system_prompt: str | None = None
     tools: list[ToolSchema] | None = None        
     toolset: str | None = None                   
-    
+    max_chars: int | None = 10000
     # MCP (Model Context Protocol) Settings
     mcp_clear_loaded_tools: bool = True               
     mcp_active_servers: list[str] | None = None  # e.g. ["github", "memory"]. Supply this before supplying mcp_preload_tools.

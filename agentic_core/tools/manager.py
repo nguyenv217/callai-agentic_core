@@ -266,7 +266,7 @@ class ToolManager:
         if prompt:
             self.toolset_prompts[name] = prompt
 
-    async def execute(self, tool_name: str, args: dict, controller: ToolExecutionController) -> str:
+    async def execute(self, tool_name: str, args: dict, controller: ToolExecutionController, max_chars: int | None = 10000) -> str:
         """Routes execution to the registered plugin (Standard or MCP). Executes asynchronously."""
         if tool_name not in self._plugins:
             return f"Error: Tool '{tool_name}' not found or not registered."
@@ -316,14 +316,14 @@ class ToolManager:
             self.active_sessions = context.get("active_sessions", self.active_sessions)
 
             # Context limit enforcement
-            MAX_CHARS = 10000
             result_str = str(result)
-            logger.info(f"Tool result: {result_str}")
-            if len(result_str) > MAX_CHARS:
-                result_str = (
-                    result_str[:MAX_CHARS] +
-                    f"\n\n... [Output truncated to {MAX_CHARS} characters to save context window]"
-                )
+            if max_chars:
+                logger.info(f"Tool result: {result_str}")
+                if len(result_str) > max_chars:
+                    result_str = (
+                        result_str[:max_chars] +
+                        f"\n\n... [Output truncated to save context window]"
+                    )
 
             return result_str
 
