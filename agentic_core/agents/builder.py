@@ -12,15 +12,12 @@ if TYPE_CHECKING:
 
 from ..engine import AgentRunner
 from ..memory.manager import MemoryManager
-from ..tools.manager import ToolManager
-from ..observers.base import AgentEventObserver
-from ..observers.standard import DefaultObserver, PrintObserver
+from ..tools import ToolManager
+from ..observers.standard import DefaultObserver, PrintObserver, AgentEventObserver
 
 # Import our new isolated providers
-from ..llm_providers.openai import OpenAILLM
-from ..llm_providers.anthropic import AnthropicLLM
-from ..llm_providers.ollama import OllamaLLM
-from ..engine import RunnerConfig
+from ..llm_providers import OpenAILLM, AnthropicLLM, OllamaLLM
+from ..interfaces import RunnerConfig
 
 def create_openai_agent(
     api_key: str,

@@ -3,7 +3,7 @@ OpenAI LLM Provider.
 """
 from typing import List, Dict, Any, AsyncIterator
 
-from agentic_core.interfaces.config import ConfigurationError
+from ..interfaces import ConfigurationError
 from .base import ILLMClient, LLMResponse
 
 _openai_imported=True

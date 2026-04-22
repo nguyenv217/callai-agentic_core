@@ -2,7 +2,7 @@
 Standard observer implementations.
 """
 from .base import AgentEventObserver, ToolStartDecision, DecisionEvent
-from ..tools.manager import ToolExecutionController
+from ..tools import ToolExecutionController
 
 class DefaultObserver(AgentEventObserver):
     """A no-op observer that prints nothing. Use this if you don't care about events."""

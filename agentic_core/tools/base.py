@@ -1,4 +1,3 @@
-# callai/engine/tools/base.py
 from abc import ABC, abstractmethod
 from typing import Literal, TypedDict, Mapping, Any
 
@@ -10,6 +9,7 @@ class ToolSchemaFunction(TypedDict):
 class ToolSchema(TypedDict):
     type: Literal['function']
     funtion: ToolSchemaFunction
+
 
 class BaseTool(ABC):
     """Interface for all executable tools."""

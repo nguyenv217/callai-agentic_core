@@ -7,8 +7,8 @@ import inspect
 import logging
 import json
 
-from agentic_core.interfaces.config import ConfigurationError
-from agentic_core.tools.base import ToolSchema
+from ..interfaces import ConfigurationError
+from .base import ToolSchema
 
 if TYPE_CHECKING:
     from .base import BaseTool

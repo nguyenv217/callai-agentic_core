@@ -10,7 +10,7 @@ from agentic_core.agents import chat, create_openai_agent  # That's it!
 from pathlib import Path
 from dotenv import load_dotenv
 
-from agentic_core.interfaces.config import ConfigurationError
+from agentic_core.interfaces import ConfigurationError
 
 env_path = Path(__file__).resolve().parents[1] / ".env"
 if not load_dotenv(dotenv_path=env_path):

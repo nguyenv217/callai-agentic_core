@@ -11,8 +11,7 @@ import json
 from typing import Any, Callable, Dict, List, TYPE_CHECKING, TypedDict
 from pathlib import Path
 
-from agentic_core.interfaces.config import ConfigurationError
-
+from ..interfaces import ConfigurationError
 from .base import BaseTool
 
 if TYPE_CHECKING:
