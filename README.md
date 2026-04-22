@@ -18,9 +18,8 @@
 
 ### Installation
 ```bash
-git clone https://github.com/nguyenv217/callai-agentic_core # clone this repo
-
-pip install .
+git clone https://github.com/nguyenv217/callai-agentic_core 
+pip install callai-agentic_core/
 ```
 ### If you have an OpenAI key:
 
@@ -67,18 +66,31 @@ print(result)
 
 ## The Simple `chat()` Function
 
-The easiest way to use Agentic Core:
+The easiest way to use `agentic_core`:
 
 ```python
 from agentic_core.agents import chat
+from agentic_core.interfaces import RunnerConfig
 
+# Simple usage
 result = await chat(
-    model="gpt-4o",           # Optional, provider has good defaults
-    base_url="https://...",      # Optional, for OpenAI-compatible providers
-    system_prompt="You are...",  # Optional, defaults to helpful assistant
-    mcp_config_path="mcp.json",  # Optional, for MCP tools
-    verbose=False,            # Set True to see all events
-    temperature=0.7,          # Optional, LLM parameters
+    message="What's the weather in Tokyo?",
+    provider="openai",
+    api_key="sk-...",
+    verbose=True
+)
+
+# Advanced usage with RunnerConfig
+result = await chat(
+    message="Analyze this repo",
+    provider="openai",
+    api_key="sk-...",
+    config=RunnerConfig(
+        max_iterations=10,
+        system_prompt="You are a senior software engineer.",
+        mcp_enable_discovery=True
+    ),
+    mcp_config_path="mcp.json"
 )
 ```
 
@@ -122,13 +134,13 @@ tools.register_tool(uppercase_tool)
 
 # === More advanced usage: `toolset` ===
 tools = ToolManager(
-    toolsets = [
+    toolsets = {
         "my_custom_toolset": {
             "tools": ["uppercase"],
             "prompt": "This prompt is dynamically injected when toolset=my_custom_toolset"
-        }
-        "my_other_toolset": ["some_other_tool", "other_tool2", ...] # Or this if you dont want to inject system prompt
-    ]
+        },
+        "my_other_toolset": ["some_other_tool", "other_tool2", ...] # Or just a list if no custom prompt is needed
+    }
 )
 tools.register_tool(uppercase_tool)
 
@@ -295,13 +307,13 @@ from agentic_core.agents import (
 | `base_url` | str | provider default | Custom API endpoint (e.g. for Local LLMs or Proxies) |
 | `provider` | str | "openai" | "openai", "anthropic", or "ollama" |
 | `api_key` | str | None | Required for openai/anthropic |
-| `model` | str | provider default | Model to use |
+| `model` | str | provider default | Model name |
 | `system_prompt` | str | "You are a helpful assistant." | Agent persona |
 | `mcp_config_path` | str | None | Path to MCP config |
 | `verbose` | bool | False | Print all events |
 | `temperature` | float | provider default | LLM creativity |
 | `max_tokens` | int | provider default | Max response size |
-
+| `config` | `RunnerConfig` | None | Custom execution loop configuration |
 ### ToolManager with MCP
 
 ```python
