@@ -11,54 +11,11 @@ from agentic_core.llm_providers.base import LLMResponse
 from agentic_core.observers.standard import DefaultObserver
 from agentic_core.tools.base import BaseTool
 
-# --- MOCKS ---
-
-class MockLLM(ILLMClient):
-    """Mocks an LLM to simulate a multi-turn tool interaction."""
-    def __init__(self, sequence: list[LLMResponse]):
-        self.sequence = sequence
-        self.call_count = 0
-        self.model = "mock-gpt"
-
-    def ask(self, messages: list[dict], tools: list[dict] | None = None, **kwargs) -> Iterator[LLMResponse]:
-        if self.call_count < len(self.sequence):
-            response = self.sequence[self.call_count]
-            self.call_count += 1
-            yield response
-        else:
-            yield LLMResponse(success=False, error="Mock sequence exhausted.")
-
-class CalculatorTool(BaseTool):
-    """A simple tool for testing the dispatch engine."""
-    def __init__(self):
-        super().__init__()
-        self._name = "add_numbers"
-        self._schema = {
-            "type": "function",
-            "function": {
-                "name": "add_numbers",
-                "description": "Adds two numbers together",
-                "parameters": {
-                    "type": "object", 
-                    "properties": {
-                        "a": {"type": "number"},
-                        "b": {"type": "number"}
-                    }
-                }
-            }
-        }
-    
-    def execute(self, args: dict, context: dict) -> str:
-        # Handles potential stringified JSON from the framework
-        if isinstance(args, str):
-            args = json.loads(args)
-        result = args.get('a', 0) + args.get('b', 0)
-        return json.dumps({"result": result})
-
+# --- MOCKS moved to conftest.py ---
 # --- TESTS ---
 
 @pytest.mark.asyncio
-async def test_agent_execution_loop_with_tool():
+async def test_agent_execution_loop_with_tool(mock_llm_class, calculator_tool):
     """
     Integration test: Validates that the engine can route a request to the LLM, 
     extract the tool call, execute the local Python tool, and return to the LLM.
@@ -74,12 +31,12 @@ async def test_agent_execution_loop_with_tool():
         success=True, text="The sum of 5 and 7 is 12.", tool_calls=[], usage={}, error=None
     )
     
-    mock_llm = MockLLM([resp1, resp2])
+    mock_llm = mock_llm_class([resp1, resp2])
     
     # 2. Initialize Agent Architecture
     agent = create_openai_agent(api_key="mock_key")
     agent.llm = mock_llm  # Inject our mock
-    agent.tool_manager.register_tool(CalculatorTool())
+    agent.tool_manager.register_tool(calculator_tool)
     
     # 3. Execute
     config = RunnerConfig(toolset="all")
@@ -105,27 +62,9 @@ def test_memory_default_tool_truncation():
     assert truncated_text.startswith('[{"id": 0')
     
 # --- PARALLEL TOOL EXECUTION TEST ---
-class SlowTool(BaseTool):
-    """A tool that simulates a slow async operation."""
-    def __init__(self):
-        super().__init__()
-        self._name = "slow_task"
-        self._schema = {
-            "type": "function",
-            "function": {
-                "name": "slow_task",
-                "description": "Simulates a slow task",
-                "parameters": {"type": "object", "properties": {}}
-            }
-        }
-    
-    async def execute(self, args: dict, context: dict) -> str:
-        import asyncio, time
-        await asyncio.sleep(0.2)
-        return json.dumps({"status": "completed", "time": time.time()})
-
+# --- MOCKS moved to conftest.py ---
 @pytest.mark.asyncio
-async def test_parallel_tool_execution_timing():
+async def test_parallel_tool_execution_timing(mock_llm_class, slow_tool):
     """Ensures multiple tool calls are executed concurrently."""
     import time
     # LLM returns two tool calls in one turn, then final text
@@ -139,10 +78,10 @@ async def test_parallel_tool_execution_timing():
     resp2 = LLMResponse(
         success=True, text="All tasks completed.", tool_calls=[], usage={}, error=None
     )
-    mock_llm = MockLLM([resp1, resp2])
+    mock_llm = mock_llm_class([resp1, resp2])
     agent = create_openai_agent(api_key="mock_key")
     agent.llm = mock_llm
-    agent.tool_manager.register_tool(SlowTool())
+    agent.tool_manager.register_tool(slow_tool)
     config = RunnerConfig(toolset="all")
     start = time.monotonic()
     result = await agent.run_turn("Run two slow tasks.", DefaultObserver(), config=config)
@@ -156,4 +95,3 @@ async def test_parallel_tool_execution_timing():
     assert history[-2]["role"] == "tool" # The tool execution was recorded
     
     assert all("completed" in msg['content'] for msg in history[-3:-1]) # The math result was injected to context
-
