@@ -6,7 +6,7 @@
 1. [Quick Start](#the-30-second-quick-start)
 2. [The Simple `chat()` Function](#the-simple-chat-function)
 3. [Tooling system: Bring-your-own-tools & MCP integration (GitHub, Filesystem, etc.)](#using-tools-implementing-basetool-or-integrate-mcp-servers)
-4. [Agent creation (Advanced)](#creating-your-own-agent-advanced)
+4. [Agent creation (Advanced) & Memory Management](#creating-your-own-agent-advanced--custom-memory-management-strategy)
 5. [Configuration Options](#configuration-options)
 6. [Project Structure](#project-structure)
 7. [Troubleshooting](#troubleshooting)
@@ -70,7 +70,7 @@ The easiest way to use `agentic_core`:
 
 ```python
 from agentic_core.agents import chat
-from agentic_core.interfaces import RunnerConfig
+from agentic_core.config import RunnerConfig
 
 # Simple usage
 result = await chat(
@@ -235,7 +235,7 @@ This "Lazy Loading" approach keeps your prompt context small and saves tokens by
 If you already know which tools the agent will need, you can bypass the discovery turns entirely using `mcp_preload_tools` and setting `enable_mcp_discovery=False` in your `RunnerConfig`. This is highly recommended for production environments to reduce latency and costs.
 
 ```python
-from agentic_core.engine import RunnerConfig
+from agentic_core.config import RunnerConfig
 
 config = RunnerConfig(
     mcp_active_servers=["sqlite"],       # Initialize these servers immediately
@@ -250,14 +250,16 @@ Please see this more detailed [explanation](docs/MCP_CONFIG_GUIDE.md) in how to 
 
 ---
 
-## Creating Your Own Agent (Advanced)
+## Creating Your Own Agent (Advanced) & Custom Memory Management Strategy
 
 If you need more control, you can create agents manually:
 
 ```python
-import asyncio
-from agentic_core import AgentRunner, MemoryManager, ToolManager
-from agentic_core.agents import OpenAILLM, PrintObserver
+from agentic_core.engine import AgentRunner 
+from agentic_core.memory import MemoryManager
+from agentic_core.tools import ToolManager
+from agentic_core.llm_providers import OpenAILLM
+from agentic_core.observers import PrintObserver
 
 # 1. Create components
 llm = OpenAILLM(api_key="sk-...", model="gpt-4o")
@@ -276,10 +278,30 @@ result = await agent.run_turn(
 print(result)
 ```
 
+### Memory Management & Context Truncation
+
+To prevent token overflow in long conversations, `MemoryManager` supports configurable truncation. By default, it uses a `DefaultTruncationStrategy` that intelligently prunes tool outputs and long text before deleting entire messages.
+
+```python
+from agentic_core.memory.manager import MemoryManager
+from agentic_core.memory.strategies import DefaultTruncationStrategy
+
+# Custom strategy: lower thresholds for aggressive pruning
+strategy = DefaultTruncationStrategy(tool_threshold=1000, text_threshold=500)
+
+# Memory manager: limit to 20 messages and 4000 total characters
+memory = MemoryManager(
+    max_messages=20, 
+    max_chars=4000, 
+    strategy=strategy
+)
+```
+You can also implement your own truncation logic by inheriting from the `TruncationStrategy` interface.
+
 ### Available LLM Adapters
 
 ```python
-from agentic_core.agents import (
+from agentic_core.llm_providers import (
     OpenAILLM,      # OpenAI-compatible endpoints
     AnthropicLLM,   # Anthropic Claude
     OllamaLLM,      # Local Ollama
@@ -289,7 +311,7 @@ from agentic_core.agents import (
 ### Available Observers
 
 ```python
-from agentic_core.agents import (
+from agentic_core.observers import (
     DefaultObserver,  # Silent, does nothing
     PrintObserver,    # Prints everything (great for debugging)
 )
@@ -317,7 +339,7 @@ from agentic_core.agents import (
 ### ToolManager with MCP
 
 ```python
-from agentic_core import ToolManager
+from agentic_core.tools import ToolManager
 
 tools = ToolManager(
     mcp_config_path="mcp.json",  # Enable MCP: str | Path
@@ -333,7 +355,7 @@ tools = ToolManager(
 
 ---
 
-## Project Structure
+## Structure
  
  ```
  agentic_core/
@@ -347,8 +369,8 @@ tools = ToolManager(
  │   ├── anthropic.py         # Anthropic Claude provider
  │   └── ollama.py            # Local Ollama provider
  ├── memory/                  # Context and state management
- │   └── manager.py           # MemoryManager
- ├── tools/                   # Tooling and MCP integration
+ │   ├── manager.py           # MemoryManager
+ │   └── strategies.py        # Truncation strategies
  │   ├── base.py              # BaseTool (for custom tools)
  │   ├── manager.py           # ToolManager
  │   └── mcp.py               # MCP Protocol support
@@ -357,7 +379,6 @@ tools = ToolManager(
  │   └── standard.py          # Default/Print observers
  └── interfaces/              # Type definitions and Protocols
      ├── llm.py
-     ├── memory.py
      └── events.py
  ```
 
