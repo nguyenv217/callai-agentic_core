@@ -2,13 +2,17 @@ import hashlib
 import json
 from typing import List, Dict
 
+from .strategies import TruncationStrategy, DefaultTruncationStrategy
+
 class MemoryManager:
-    def __init__(self, max_messages: int = 50, max_chars: int = 80000):
+    def __init__(self, max_messages: int = 50, max_chars: int = 80000, strategy: TruncationStrategy = None):
         self.messages: List[Dict] = []
         self.system_prompt: Dict = None
         self.max_messages = max_messages
         self.max_chars = max_chars
+        self.strategy = strategy or DefaultTruncationStrategy()
         self._hash_obj = hashlib.sha256()
+        self._current_hash = None
         self._current_hash = None
 
     def system_prompt_exists(self):
@@ -47,50 +51,23 @@ class MemoryManager:
     def get_hash(self) -> str:
         if self._current_hash is None:
             self._update_hash()
-        return self._current_hash
 
     def enforce_context_limits(self):
-        """
-        Prevents context window overflow. Uses smart truncation for tool outputs 
-        to preserve JSON schema integrity whenever possible.
-        """
-        total_chars = sum(len(str(m.get("content", ""))) for m in self.messages)
+        """Delegates complexity to the pluggable strategy."""
+        # First handle the structural pruning (message count)
+        self._enforce_message_limit()
         
-        # If we exceed the limit, prune starting from the oldest non-system messages
-        if total_chars > self.max_chars and (len(self.messages) > 0):
-            running_total = 0
-            
-            # Iterate backwards (newest to oldest)
-            for i in range(len(self.messages) - 1, -1, -1): 
-                msg = self.messages[i]
-                content_str = str(msg.get("content", ""))
-                running_total += len(content_str)
-                
-                # Only heavily truncate tool outputs (where massive payloads usually occur)
-                if running_total > self.max_chars and msg.get("role") == "tool":
-                    # Use a dynamic threshold: 25% of max_chars, capped at 3000
-                    threshold = min(3000, self.max_chars // 4)
-                    if len(content_str) > threshold:
-                        try:
-                            # Smart Truncation: Try to preserve JSON structure
-                            data = json.loads(content_str)
-                            if isinstance(data, list):
-                                # Keep only the first 3 items to maintain the schema example
-                                msg["content"] = json.dumps(data[:3]) + "\n\n... [ARRAY TRUNCATED: Exceeded context limits] ..."
-                            elif isinstance(data, dict):
-                                # Truncate dict string representation
-                                msg["content"] = content_str[:threshold] + "\n\n... [JSON TRUNCATED: Exceeded context limits] ..."
-                        except json.JSONDecodeError:
-                            # Fallback for plain text
-                            msg["content"] = content_str[:threshold] + "\n\n... [TEXT TRUNCATED: Exceeded context limits] ..."
-                        
-                        # Adjust running total after truncation
-                        running_total -= (len(content_str) - len(msg["content"]))
+        # Use the strategy for content-level truncation
+        self.messages = self.strategy.truncate(self.messages, self.max_chars)
         
         self._update_hash()
 
     def _enforce_message_limit(self):
         """Prunes messages in valid structural pairs to maintain LLM API context validity."""
+        will_change = False
+        if len(self.messages) > self.max_messages:
+            will_change = True
+
         while len(self.messages) > self.max_messages:
             if not self.messages:
                 break
@@ -126,7 +103,9 @@ class MemoryManager:
             else:
                 self.messages.pop(0)
         
-        self._update_hash()
+        if will_change:
+            self._update_hash()
+        
 
     def _update_hash(self):
         self._hash_obj = hashlib.sha256()
