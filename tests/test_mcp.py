@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
 from agentic_core.tools.manager import ToolManager
-from agentic_core.interfaces.config import RunnerConfig
+from agentic_core.config import RunnerConfig
 
 @pytest.fixture
 def mock_mcp_manager():

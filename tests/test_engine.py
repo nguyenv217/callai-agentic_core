@@ -4,7 +4,7 @@ import json
 import asyncio
 from typing import Iterator
 from agentic_core.agents.builder import create_openai_agent
-from agentic_core.interfaces.config import RunnerConfig
+from agentic_core.config import RunnerConfig
 from agentic_core.llm_providers.base import ILLMClient, LLMResponse
 from agentic_core.observers.standard import DefaultObserver
 from agentic_core.tools.base import BaseTool
