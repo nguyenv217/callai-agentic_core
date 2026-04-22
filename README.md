@@ -1,5 +1,15 @@
 # Agentic Core
-**TL;DR**: Got an API key? You can start an agent in one line. No classes, no protocols, no boilerplate.
+
+- **If you want an autonomous agent immediately**: Got an API key? You can start an agent in one line. No classes, no protocols, no boilerplate.
+- **If you want to build production-ready multi-agent system with clear, structured interfaces**: That's even better. This engine gives you:
+  - native MCP integration with dynamic load and discovery options, 
+  - customized client wrapper option for smart routing strategies, 
+  - smart-default or your own domain-specific memory truncation strategies, 
+  - clear decision actions at each step of the agent's plan, 
+  - and a simple but extendable base tool class that can be used to implement arbitrarily complex workflows.
+
+**Example Applications**: Tool-calling Assistant Bots, DAG-based Agent Swarms (using custom dispatch tools), Legal Consultant Bot with RAG-based tools, and many more.
+
 
 ## Table of Contents
 
