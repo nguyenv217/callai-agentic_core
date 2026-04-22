@@ -3,7 +3,7 @@ Observer base interface.
 """
 from abc import ABC
 from typing import Generic, TypeVar
-from enum import Enum
+from enum import Enum, auto
 from dataclasses import dataclass
 
 class ToolStartDecision(Enum):
@@ -13,15 +13,15 @@ class ToolStartDecision(Enum):
     Options:
         CONTINUE: proceed with execution
         SKIP: skip this tool only
-        ABANDON: skip every tool in this turn
+        ABANDON: halt all execution and return final response immediately 
         SKIP_WITH_MSG: skip this tool, BUT leave a message for the agent as the tool result
-        ABANDON_WITH_MSG: skip every tool in this turn, BUT leave a message for the agent as the tool result
+        BREAK_WITH_MSG: skip every tool in this turn, BUT leave a message for the agent as the tool result
     """
-    CONTINUE = 0   # proceed with execution
-    SKIP = 1       # skip this tool only
-    ABANDON = 2    # skip every tool in this turn
-    SKIP_WITH_MSG = 3   # skip this tool, BUT leave a message for the agent as the tool result
-    ABANDON_WITH_MSG = 4 # skip every tool in this turn and leave a message for the agent as the tool result
+    CONTINUE = auto()  
+    SKIP = auto()      
+    ABANDON = auto()   
+    SKIP_WITH_MSG = auto()  
+    BREAK_WITH_MSG = auto() 
 
 class LastIterationDecision(Enum):
     """
@@ -29,12 +29,12 @@ class LastIterationDecision(Enum):
     
     Options:
         CONTINUE: proceed with the last iteration (agent may continue calling tools until iteration budget is depleted)
-        LEAVE_MESSAGE: leave a final message for the agent
+        LEAVE_MESSAGE: leave a final message for the agent and continue with the last iteration
         ABANDON: return immediately
     """
-    CONTINUE = 0
-    LEAVE_MESSAGE = 1
-    ABANDON = 2
+    CONTINUE = auto()
+    LEAVE_MESSAGE = auto()
+    ABANDON = auto()
 
 Action = TypeVar("Action", ToolStartDecision, LastIterationDecision)
 
@@ -45,8 +45,8 @@ class DecisionEvent(Generic[Action]):
     message: str | None = None
 
     def __post_init__(self):
-        if isinstance(self.action, ToolStartDecision) and (self.action in [ToolStartDecision.SKIP_WITH_MSG, ToolStartDecision.ABANDON_WITH_MSG] and self.message is None):
-            raise ValueError("ToolStartDecision.SKIP_WITH_MSG and ToolStartDecision.ABANDON_WITH_MSG cannot be used without a message")
+        if isinstance(self.action, ToolStartDecision) and (self.action in [ToolStartDecision.SKIP_WITH_MSG, ToolStartDecision.BREAK_WITH_MSG] and self.message is None):
+            raise ValueError("ToolStartDecision.SKIP_WITH_MSG and ToolStartDecision.BREAK_WITH_MSG cannot be used without a message")
         if isinstance(self.action, LastIterationDecision) and (self.action in [LastIterationDecision.LEAVE_MESSAGE] and self.message is None):
             raise ValueError("LastIterationDecision.LEAVE_MESSAGE cannot be used without a message")
 

@@ -55,7 +55,7 @@ class AgentRunner:
             # No explicit system_prompt; fall back to toolset prompt if available.
             toolset_prompt = self.tool_manager.get_toolset_prompt(config.toolset) if config.toolset else None
             if toolset_prompt:
-                self.memory.set_system_prompt(toolset_prompt if not self.memory.system_prompt_exists() else config.system_prompt + "\n\n" + toolset_prompt)
+                self.memory.set_system_prompt(toolset_prompt if not self.memory.system_prompt_exists() else  toolset_prompt + "\n\n" + self.memory.system_prompt['content'])
 
         messages = [{"role": "user", "content": user_input}] if isinstance(user_input, str) else user_input
         for message in messages:
@@ -72,8 +72,6 @@ class AgentRunner:
         
         if config.mcp_enable_discovery:
             active_tools.extend(self.tool_manager.get_discovery_tools()) 
-
-        # active_tools = list(set(active_tools)) # it's unlikely that they will colide because: 1. no modification to `toolsets`, 2. get_mcp_loaded_tools() never contains discovery tools. 3. active_tools is ephemeral
 
         max_iterations = config.max_iterations
         iteration = 1
@@ -147,8 +145,8 @@ class AgentRunner:
                         self._add_error_tool_result(tool_name, tool_id, decision_event.message, observer)
                         continue
                     elif decision_event.action == ToolStartDecision.ABANDON:
-                        break
-                    elif decision_event.action == ToolStartDecision.ABANDON_WITH_MSG:
+                        return {"success": True, **final_response}
+                    elif decision_event.action == ToolStartDecision.BREAK_WITH_MSG:
                         self._add_error_tool_result(tool_name, tool_id, decision_event.message, observer)
                         break
                     else:
