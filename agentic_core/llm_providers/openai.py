@@ -84,12 +84,7 @@ class OpenAILLM(ILLMClient):
             )
 
         except Exception as e:
-            try:
-                import openai
-            except ImportError:
-                yield LLMResponse(success=False, error="OpenAI library is not installed.", text=None)
-                return
-                
+            import openai
             error_msg = str(e)
             if isinstance(e, openai.AuthenticationError):
                 error_msg = f"FATAL AUTH ERROR: Invalid or missing OpenAI API key. ({e})"
