@@ -5,7 +5,7 @@ from .llm_providers import ILLMClient, LLMResponse
 from .tools import ToolManager
 from .memory.manager import MemoryManager
 from .observers import AgentEventObserver, DecisionEvent, LastIterationDecision, ToolStartDecision
-from .interfaces import RunnerConfig
+from .config import RunnerConfig
 
 import logging
 logger = logging.getLogger(__name__)

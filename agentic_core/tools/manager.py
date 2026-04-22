@@ -7,7 +7,7 @@ import inspect
 import logging
 import json
 
-from ..interfaces import ConfigurationError
+from ..config import ConfigurationError
 from .base import ToolSchema
 
 if TYPE_CHECKING:

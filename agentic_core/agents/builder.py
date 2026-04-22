@@ -17,7 +17,7 @@ from ..observers.standard import DefaultObserver, PrintObserver, AgentEventObser
 
 # Import our new isolated providers
 from ..llm_providers import OpenAILLM, AnthropicLLM, OllamaLLM
-from ..interfaces import RunnerConfig
+from ..config import RunnerConfig
 
 def create_openai_agent(
     api_key: str,

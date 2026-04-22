@@ -11,7 +11,7 @@ import json
 from typing import Any, Callable, Dict, List, TYPE_CHECKING, TypedDict
 from pathlib import Path
 
-from ..interfaces import ConfigurationError
+from ..config import ConfigurationError
 from .base import BaseTool
 
 if TYPE_CHECKING:
