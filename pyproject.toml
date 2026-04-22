@@ -23,12 +23,11 @@ dependencies = [
 
 [project.optional-dependencies]
 # Reserved for future addition
-agentic_core_rag = []
 openai = ["openai>=2.24.0"]
 anthropic = ["anthropic"]
 ollama = ["ollama>=0.6.1"]
 mcp = ["mcp>=1.27.0"]
-all = ["openai", "anthropic", "ollama", "mcp", "agentic_core_rag"]
+all = ["openai", "anthropic", "ollama", "mcp"]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
