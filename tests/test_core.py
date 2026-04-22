@@ -90,10 +90,21 @@ async def test_agent_execution_loop_with_tool():
     assert "12" in result["text"]
     assert mock_llm.call_count == 2
     
+def test_memory_default_tool_truncation():
+    """Validates that massive JSON arrays are safely truncated."""
+    memory = MemoryManager(max_chars=150) # Set extremely low limit for testing
     
-# Verify memory states
+    large_payload = [{"id": i, "data": "x" * 50} for i in range(10)]
+    memory.add_message({"role": "tool", "content": json.dumps(large_payload), "tool_call_id": "123"})
+    
+    memory.enforce_context_limits()
+    truncated_text = memory.messages[-1]["content"]
+    
+    # It should keep the first few items but append the truncation warning
+    assert "ARRAY TRUNCATED" in truncated_text
+    assert truncated_text.startswith('[{"id": 0')
+    
 # --- PARALLEL TOOL EXECUTION TEST ---
-
 class SlowTool(BaseTool):
     """A tool that simulates a slow async operation."""
     def __init__(self):
