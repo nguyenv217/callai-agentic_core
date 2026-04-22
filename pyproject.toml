@@ -16,25 +16,24 @@ authors = [
     { name = "nguyenv", email = "182782819+nguyenv217@users.noreply.github.com" }
 ]
 
-# Core dependencies required for the engine to run
 dependencies = [
     "anyio>=3.0.0",
     "python-dotenv>=1.0.0"
 ]
 
 [project.optional-dependencies]
-# Lazy-loaded dependencies
+rag = [
+    "numpy>=1.24.0",
+    "tiktoken>=0.5.0",
+    "chromadb>=0.4.0"
+]
 openai = ["openai>=2.24.0"]
 anthropic = ["anthropic"]
 ollama = ["ollama>=0.6.1"]
-mcp = ["mcp>=1.27.0"] # Adjust based on the official MCP python SDK version
-
-# Convenience extra to install everything
-all = ["openai", "anthropic", "ollama", "mcp"]
-
-# Developer tools for when you are working on the repo
+mcp = ["mcp>=1.27.0"]
+all = ["openai", "anthropic", "ollama", "mcp", "rag"]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
-    "ruff>=0.3.0"  # Fast linter/formatter
+    "ruff>=0.3.0"
 ]
