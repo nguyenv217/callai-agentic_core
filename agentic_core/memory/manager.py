@@ -57,11 +57,9 @@ class MemoryManager:
         total_chars = sum(len(str(m.get("content", ""))) for m in self.messages)
         
         # If we exceed the limit, prune starting from the oldest non-system messages
-        # If we exceed the limit, prune starting from the oldest non-system messages
-        if total_chars > getattr(self, 'max_chars', 80000) and (len(self.messages) > 0):
+        if total_chars > self.max_chars and (len(self.messages) > 0):
             running_total = 0
             
-            # Iterate backwards (newest to oldest)
             # Iterate backwards (newest to oldest)
             for i in range(len(self.messages) - 1, -1, -1): 
                 msg = self.messages[i]

@@ -77,7 +77,7 @@ class ToolManager:
         # Toolsets initialization
         # Support optional prompts per toolset. `toolsets` can be a dict mapping toolset name to either a list of tool names
         # or a dict with keys 'tools' (list) and optional 'prompt' (str).
-        self.toolsets = {}
+        self.toolsets: dict[str, list[str]] = {}
         self.toolset_prompts: dict[str, str] = {}
         if toolsets:
             for name, spec in toolsets.items():
