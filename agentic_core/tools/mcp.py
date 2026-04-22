@@ -8,7 +8,7 @@ bridging the gap between MCP's JSON-RPC protocol and callai's BaseTool interface
 from __future__ import annotations
 import asyncio
 import json
-from typing import Any, Dict, List, TYPE_CHECKING, TypedDict
+from typing import Any, Callable, Dict, List, TYPE_CHECKING, TypedDict
 from pathlib import Path
 
 from agentic_core.interfaces.config import ConfigurationError
@@ -317,17 +317,19 @@ class MCPClientManager:
     Uses the official Python MCP SDK for stdio-based connections.
     """
     
-    def __init__(self, config_path: str | Path | None = None, config: Dict[str, Any] | None = None):
+    def __init__(self, config_path: str | Path | None = None, config: Dict[str, Any] | None = None, on_server_death: Callable[[str, Exception], Any] | None = None):
         """
         Initialize the MCP client manager.
         
         Args:
             config_path: Path to the MCP servers configuration file (Optional)
             config: Direct MCP configuration dictionary (Optional)
+            on_server_death: Hook on event of server death (Optional)
         """
         self.config_path = config_path
         self.config = config
         self.sessions: List[_MCPSession] = []
+        self.on_server_death = on_server_death
 
     def load_config(self) -> Dict[str, Any]:
         """
@@ -501,6 +503,10 @@ class MCPClientManager:
                                 
             except Exception as e:
                 logger.exception(f"[{server_name}] Server task died unexpectedly: {e}")
+
+                if self.on_server_death:
+                    self.on_server_death(server_name, e)
+                
                 session_ref["error"] = e
                 if not init_event.is_set():
                     init_event.set()

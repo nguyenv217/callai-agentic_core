@@ -17,14 +17,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-MCP_INIT_TIMEOUT = 30
-
 class ToolExecutionController(Protocol):
     """Protocol for tool execution control."""
     on_chat_notified: Callable[[str], None] | None = None
     on_prompt_respond: Callable[[str], str] | None = None
     on_prompt_confirmation: Callable[[str, Callable, Callable | None], None] | None = None
-
 
 class ToolManager:
     """
@@ -37,7 +34,8 @@ class ToolManager:
         mcp_config_path: str | Path | None = None,
         enable_mcp_discovery: bool = True,
         extra_env: dict[str, str] | None = None,
-        extra_context: dict[str, Any] | None = None
+        extra_context: dict[str, Any] | None = None,
+        on_server_error: Callable[[str, Exception], None] | None = None
     ):
         """
         Initializes the ToolManager.
@@ -48,7 +46,9 @@ class ToolManager:
             mcp_config_path: The path to the MCP servers configuration file.
             enable_mcp_discovery: If True, the ToolManager will inject MCP discovery tools on each agent run.
             extra_env: Extra environment variables to pass to MCPClient initialization.
+            on_server_error: Hook on event of a MCP server death. The function implementing this should expect `server_name` and the exception as arguments.
         """
+
         self.active_sessions = {}
         self.seed = 0
         self.extra_context = extra_context or {}
@@ -58,6 +58,7 @@ class ToolManager:
         
         # --- MCP State ---
         self.mcp_config_path = mcp_config_path
+        self.on_server_error = on_server_error
         self._mcp_config_dict = {}
         self._mcp_standby_registry: dict[str, MCPToolAdapter] = {}  
         self._mcp_loaded_tools: Set[BaseTool] = set()
@@ -129,7 +130,8 @@ class ToolManager:
         
         mcp_manager = MCPClientManager(
             config=self._mcp_config_dict, # config takes priority over config_path
-            config_path=self.mcp_config_path 
+            config_path=self.mcp_config_path,
+            on_server_death=self.on_server_error
         )
         initialized = await mcp_manager.initialize(allowed_servers=allowed_servers, extra_env=self.extra_env)
         if not initialized:
