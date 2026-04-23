@@ -221,7 +221,7 @@ manager.register_tool(UpperCaseTool())
 doc_edit_tool = DocumentEditorTool()
 manager.register_tool(doc_edit_tool)
 
-# If you forgot to register `toolset`, use `tool_manager.add_toolset(name, tools, prompt)`
+# If you forgot to register `toolset`, use `manager.add_toolset(name, tools, prompt)`
 manager.add_toolset("other_plain_toolset", ["some_random_tool1", "random_tool2"])
 ```
 ---
