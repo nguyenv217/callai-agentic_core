@@ -24,8 +24,7 @@ class MemoryManager:
         self.strategy = strategy or DefaultTruncationStrategy()
         self._hash_obj = hashlib.sha256()
         self._current_hash = None
-        self._current_hash = None
-        self.truncate_by_pop = False
+        # self.truncate_by_pop = False
 
     def system_prompt_exists(self):
         return self.system_prompt is not None
@@ -63,6 +62,7 @@ class MemoryManager:
     def get_hash(self) -> str:
         if self._current_hash is None:
             self._update_hash()
+        return self._current_hash
 
     def enforce_context_limits(self):
         """Delegates complexity to the pluggable strategy."""
@@ -85,18 +85,15 @@ class MemoryManager:
             will_change = True
 
         while len(self.messages) > self.max_messages:
-            if not self.messages:
-                break
-                
             first_msg = self.messages[0]
             first_role = first_msg.get("role")
             
             if first_role == "user":
                 assistant_idx = next((i for i in range(1, len(self.messages)) if self.messages[i].get("role") == "assistant"), None)
                 if assistant_idx is not None:
-                    self._truncate_keep_structure([0, 1])
+                    self.messages.pop(0)
                 else:
-                    self._truncate_keep_structure()
+                    self.messages.pop(0)
                     
             elif first_role == "assistant":
                 tool_calls = first_msg.get("tool_calls", [])
@@ -107,30 +104,20 @@ class MemoryManager:
                     if len(tool_indices) >= num_tool_results_needed:
                         for idx in reversed(tool_indices[:num_tool_results_needed]):
                             self.messages.pop(idx)
-                        self._truncate_keep_structure()
+                        self.messages.pop(0)
                     else:
-                        self._truncate_keep_structure()
+                        self.messages.pop(0)
                 else:
                     if len(self.messages) > 1 and self.messages[1].get("role") == "tool":
-                        self._truncate_keep_structure(1)
+                        self.messages.pop(1)
                     else:
-                        self._truncate_keep_structure()
+                        self.messages.pop(0)
             else:
-                self._truncate_keep_structure()
+                self.messages.pop(0)
         
         if will_change:
             self._update_hash()
     
-    def _truncate_keep_structure(self, indexes: list[int] | int = 0, placeholder: str | None = "[TRUNCATED]"):
-        if self.truncate_by_pop:
-            if isinstance(indexes, int): 
-                self.messages.pop(indexes)
-                return 
-            for idx in sorted(indexes, reverse=True): self.messages.pop(idx)
-        else:
-            for idx in indexes:
-                if idx < len(self.messages) and self.messages[idx].get('content'): self.messages[idx]['content'] = placeholder
-
     def _update_hash(self):
         self._hash_obj = hashlib.sha256()
         if self.system_prompt:
