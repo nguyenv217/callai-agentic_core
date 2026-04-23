@@ -450,18 +450,18 @@ await chat("Hello", provider="ollama", verbose=True)
 
 This tool is designed to be as lightweight and robust as possible. While `agentic-core` safely handles execution, developers must secure the deployment environment. Below are some important considerations:
 
-### 1. Remote Code Execution via MCP Config
+### 1. Remote Code Execution via MCP Config:
 The `mcp_config.json` dictates exactly which terminal commands your system will run (via the `command` and `args` fields). **Never allow end-users to upload, modify, or provide their own `mcp_config.json`.** This file must remain strictly server-side.
 
 ### 2. Prompt Injection to Tool Execution: 
-If an agent is given a tool that reads external data (like fetching a webpage or reading a user-submitted file), a malicious payload in that data can instruct the LLM to execute other available tools. Because the engine loop automatically runs `await self.tools.execute(...)`, the agent could be hijacked into executing destructive actions (e.g., via a GitHub or filesystem MCP) without human oversight.
+If an agent is given a tool that reads external data (like fetching a webpage or reading a user-submitted file), a malicious payload in that data can instruct the LLM to execute other available tools. The agent could be hijacked into executing destructive actions (e.g., via a GitHub or filesystem MCP) without human oversight. SO, do use `AgentEventObserver.on_tool_start()` method for granular control over agent's actions. 
 
-### 3. Denial of Service via Payload Serialization
+### 3. Denial of Service via Payload Serialization:
 Agents interacting with APIs that return massive, deeply nested JSON payloads may experience performance degradation during the engine's double-serialization checks. To mitigate this, limit the scope of the data your tools are allowed to fetch.
 
 **MITIGATIONS:**  
-* The tool strictly requires MCP configuration via `RunnerConfig` to be valid and well-formed, however this is not fool-proof.  
+* The tool strictly requires MCP configuration via `RunnerConfig` to be valid and well-formed to avoid malicious runtime tool injection.  
 * Each `BaseTool` class inherits an `is_allowed_path()` method that reliably prevents path traversal. Implementation of tools dealing with local filesystem may use this to improve security. 
-* Utilize `ToolExecutionController.on_prompt_respond()` and `ToolExecutionController.on_prompt_confirmation()` to design safe, human-in-the-loop agentic applications.
+* Utilize `ToolExecutionController.on_prompt_respond()` (blocks, prompt the user for feedback) and `ToolExecutionController.on_prompt_confirmation()` (blocks, prompt the user to confirm (y/n) with event hooks) for control **during tool execution**.
 * `AgentEventObserver` implementing `on_tool_start()` provides means to enforce human validation before assembling tool coroutine pool and executing, with different levels of control (use `ToolStartDecision`).
 * Write your system prompt carefully and choose your MCP servers wisely.
