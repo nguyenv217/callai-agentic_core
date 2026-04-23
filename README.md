@@ -29,6 +29,7 @@
 ### Installation
 ```bash
 git clone https://github.com/nguyenv217/callai-agentic_core 
+cd callai-agentic_core
 pip install ".[all]"
 ```
 *Note: To install only specific providers, use `pip install ".[openai]"` or `pip install ".[anthropic]"`.*

@@ -2,6 +2,21 @@
 
 The RAG Suite allows you to give your agent a long-term memory or a domain-specific knowledge base using vector embeddings.
 
+### Installation
+```bash
+git clone https://github.com/nguyenv217/callai-agentic_core 
+cd callai-agentic_core
+pip install ".[rag-sqllite]" # or other built-in backend below
+```
+
+| Option | Description |
+| --- | --- |
+| `[rag-chromadb]` | Uses `ChromaDB` for vector storage. |
+| `[rag-sqllite]` | Uses `sqlalchemy` for SQLite. **Note**: SQLite doesn't natively support vector indexing. |
+| `[rag-openai]` | Enables OpenAI-compatible async embedder endpoints. |
+| `[rag-transformer]` | Includes `SentenceTransformers` for local embedder usage. |
+| `[rag-all]` | All of the above. |
+
 ## Components
 
 1. **Embedders**: Convert text to vectors.
@@ -12,21 +27,32 @@ The RAG Suite allows you to give your agent a long-term memory or a domain-speci
    - `SQLiteVectorStore`: Lightweight, file-based storage (Recommended for most cases).
    - `ChromaDBStore`: High-performance vector database.
 
+Or import your own backends by implementing `IEmbeddingProvider` and `IVectorStore`.
+
 ## Quick Start Example
 
 ```python
 import asyncio
 from agentic_core.agents import chat
-from agentic_core.tools.rag.core import RAGConfig
-from agentic_core.tools.rag.providers.embedders import OpenAIEmbedder
-from agentic_core.tools.rag.stores.sqlite_store import SQLiteVectorStore
-from agentic_core.tools.rag.tools import SearchKnowledgeTool, IngestKnowledgeTool
+from agentic_core.tools.rag import (
+    RAGConfig,
+    OpenAIEmbedder,
+    SQLiteVectorStore,
+    SearchKnowledgeTool, IngestKnowledgeTool
+)
 
 async def main():
     # 1. Setup RAG components
     embedder = OpenAIEmbedder(api_key="sk-...")
     store = SQLiteVectorStore(db_path="my_knowledge.db")
-    config = RAGConfig()
+    config = RAGConfig(
+        chunk_size=1000,
+        distance_metric="cosine",
+        suite_prompt=(
+            "You have access to an internal knowledge base."
+            "Retrieve facts with your search and ingest tool. Cite your answers."
+            ) # This is injected into your base system prompt
+    )
     
     # 2. Initialize the RAG Tools
     # These tools act as the bridge between the agent and the vector store
@@ -53,7 +79,9 @@ async def main():
 asyncio.run(main())
 ```
 
-## Key Configuration Options (\`RAGConfig\`)
+**NOTE**: Each tool instance is stateful, i.e. if you populate a tool instance with data, this data is only available to that instance unless you provide a persistent database file.
+
+## Key Configuration Options (`RAGConfig`)
 
 | Parameter | Default | Description |
 |---|---|---|
