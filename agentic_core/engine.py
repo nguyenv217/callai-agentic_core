@@ -43,6 +43,7 @@ class AgentRunner:
         if config.mcp_clear_loaded_tools:
             self.tools.clear_loaded_tools()
 
+        # === Sytem prompt ===
         if config.system_prompt:
             # If a toolset also defines a prompt, prepend it to the system prompt.
             toolset_prompt = self.tools.get_toolset_prompt(config.toolset) if config.toolset else None
@@ -57,6 +58,7 @@ class AgentRunner:
             if toolset_prompt:
                 self.memory.set_system_prompt(toolset_prompt if not self.memory.system_prompt_exists() else  toolset_prompt + "\n\n" + self.memory.system_prompt['content'])
 
+        # === User input ===
         messages = [{"role": "user", "content": user_input}] if isinstance(user_input, str) else user_input
         for message in messages:
             self.memory.add_message(message)
@@ -157,8 +159,15 @@ class AgentRunner:
                             observer.on_tool_complete(tool_name, tool_id, False, error_msg)
                             self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=error_msg)
                             continue
-
-                        tasks.append(self.tools.execute(tool_name, parsed_args, controller=observer, max_chars=config.max_chars))
+                        
+                        # === Execution ===
+                        tasks.append(
+                            self.tools.execute(
+                                tool_name, parsed_args, controller=observer, 
+                                max_chars=config.max_chars,
+                                extra_context=config.extra_context,
+                            )
+                        )
                         tc_meta.append((tc["id"], tool_name))
 
                 if len(tasks) > 0:

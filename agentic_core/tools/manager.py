@@ -119,8 +119,16 @@ class ToolManager:
     # MCP NATIVE SUPPORT (Hidden from end-user)
     # ==========================================
     
-    async def initialize_mcp(self, allowed_servers: list[str] | None = None):
-        """Connects to MCP servers and pre-loads tool definitions into standby."""
+    async def initialize_mcp(self, allowed_servers: list[str] | None = None, extra_env: dict[str, str] | None = None) -> int:
+        """Connects to MCP servers and pre-loads tool definitions into standby.
+        Args:
+        allowed_servers: 
+            List of server names to connect to instead of connecting to all 
+            configured servers. Defaults to None.
+        extra_env: 
+            Dictionary of extra environment variables to be used when 
+            creating the connection to the MCP server. Defaults to None
+        """
         # Dynamic import prevents crashing if user doesn't have MCP dependencies installed
         try:
             from .mcp import MCPClientManager, MCPToolAdapter
@@ -128,12 +136,17 @@ class ToolManager:
             logger.warning("MCP dependencies missing. Skipping MCP initialization.")
             return -1
         
+        self._mcp_init_in_progress = True
+        
         mcp_manager = MCPClientManager(
             config=self._mcp_config_dict, # config takes priority over config_path
             config_path=self.mcp_config_path,
             on_server_death=self.on_server_error
         )
-        initialized = await mcp_manager.initialize(allowed_servers=allowed_servers, extra_env=self.extra_env)
+        initialized = await mcp_manager.initialize(allowed_servers=allowed_servers, extra_env=extra_env or self.extra_env)
+
+        self._mcp_init_in_progress = False
+
         if not initialized:
             logger.info("No MCP servers configured or available.")
             return -1
@@ -156,6 +169,7 @@ class ToolManager:
         logger.info(f"Initialized {len(self._mcp_standby_registry)} MCP tools in standby mode.")
         return len(self._mcp_standby_registry)
 
+
     async def shutdown_mcp(self):
         if self._mcp_manager:
             await self._mcp_manager.close() # this triggers shutdown event for all active serveers
@@ -166,8 +180,6 @@ class ToolManager:
         if not self.mcp_config_path or self._mcp_init_in_progress:
             return
             
-        self._mcp_init_in_progress = True
-        
         try:
             await asyncio.wait_for(self.initialize_mcp(), timeout=15.0)
             # self._mcp_initialized = True
@@ -176,8 +188,6 @@ class ToolManager:
             logger.error("MCP initialization timed out after 15 seconds.")
         except Exception as e:
             logger.error(f"MCP initialization failed: {e}")
-        finally:
-            self._mcp_init_in_progress = False
 
     def cleanup(self):
         """
@@ -266,7 +276,14 @@ class ToolManager:
         if prompt:
             self.toolset_prompts[name] = prompt
 
-    async def execute(self, tool_name: str, args: dict, controller: ToolExecutionController, max_chars: int | None = 10000) -> str:
+    # ===== execute() =====   
+
+    async def execute(
+            self, tool_name: str, args: dict, controller: ToolExecutionController, 
+            max_chars: int | None = 10000,
+            extra_env: dict[str, str] | None = None,
+            extra_context: dict[str, Any] | None = None
+            ) -> str:
         """Routes execution to the registered plugin (Standard or MCP). Executes asynchronously."""
         if tool_name not in self._plugins:
             return f"Error: Tool '{tool_name}' not found or not registered."
@@ -299,11 +316,13 @@ class ToolManager:
             if tool_name in self._discovery_tools:
                 await self.ensure_mcp_initialized()
 
+            turn_extra_context = extra_context or self.extra_context
+
             context = {
                 "active_sessions": self.active_sessions,
                 "session_id": self.seed,
                 "controller": controller,
-                **self.extra_context
+                **turn_extra_context
             }
 
             plugin = self._plugins[tool_name]

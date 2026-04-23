@@ -529,38 +529,47 @@ class MCPClientManager:
     async def list_all_tools(self) -> List[Dict[str, Any]]:
         """
         List all tools from all connected MCP servers.
-        
+
         Returns:
             List of tool definitions with server info
         """
+
         all_tools = []
+
+        sessions = [(session["name"], session["session"]) for session in self.sessions]
         
-        for session_info in self.sessions:
-            server_name = session_info["name"]
-            session = session_info["session"]
-            
-            try:
-                tools_result = await session.list_tools()
-                
-                if hasattr(tools_result, 'tools'):
-                    tools = tools_result.tools
-                else:
-                    tools = tools_result
-                
-                for tool in tools:
-                    all_tools.append({
-                        "server_name": server_name,
-                        "session": session,
-                        "name": tool.name,
-                        "description": tool.description,
-                        "inputSchema": tool.inputSchema
-                    })
-            except Exception as e:
-                import traceback
-                print(f"Error listing tools from server '{server_name}': {e}")
-                traceback.print_exc()
-        
+        results = await asyncio.gather(
+            *(self._fetch_tools_info(session) for session in sessions),
+            return_exceptions=True
+        )
+
+        for session_name, result in zip(sessions, results):
+            if isinstance(result, Exception):
+                logger.exception(f"Error listing tools from server '{session_name[0]}': {result}")
+            else:
+                all_tools.extend(result)
+
         return all_tools
+
+    async def _fetch_tools_info(self, session_info: tuple[str, _MCPSessionProxy]):
+        server_name, session = session_info
+        tools_result = await session.list_tools()
+
+        if hasattr(tools_result, 'tools'):
+            tools = tools_result.tools
+        else:
+            tools = tools_result
+
+        return [
+            {
+                "server_name": server_name,
+                "session": session,
+                "name": tool.name,
+                "description": tool.description,
+                "inputSchema": tool.inputSchema
+            }
+            for tool in tools
+        ]
     
     async def close(self):
         """Close all MCP server connections gracefully."""
@@ -582,7 +591,7 @@ class MCPClientManager:
                 logger.info(f"Closed connection to '{server_name}'")
             except asyncio.TimeoutError:
                 logger.warning(f"Timeout while closing '{server_name}'. Force killing.")
-            except Exception as e:
-                print(f"Error closing MCP session for '{server_name}': {e}")
+            except Exception:
+                logger.exception(f"Error closing MCP session for '{server_name}'")
         
         self.sessions.clear()
