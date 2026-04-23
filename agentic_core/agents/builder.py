@@ -58,7 +58,7 @@ def create_openai_agent(
     tools = ToolManager(mcp_config_path=mcp_config_path)
     observer = observer or DefaultObserver()
     
-    return AgentRunner(llm_client=llm, tool_manager=tools, memory=memory)
+    return AgentRunner(llm_client=llm, tools=tools, memory=memory)
 
 
 def create_anthropic_agent(
@@ -76,7 +76,7 @@ def create_anthropic_agent(
     tools = ToolManager(mcp_config_path=mcp_config_path)
     observer = observer or DefaultObserver()
     
-    return AgentRunner(llm_client=llm, tool_manager=tools, memory=memory)
+    return AgentRunner(llm_client=llm, tools=tools, memory=memory)
 
 
 def create_ollama_agent(
@@ -95,7 +95,7 @@ def create_ollama_agent(
     tools = ToolManager(mcp_config_path=mcp_config_path)
     observer = observer or DefaultObserver()
     
-    return AgentRunner(llm_client=llm, tool_manager=tools, memory=memory)
+    return AgentRunner(llm_client=llm, tools=tools, memory=memory)
 
 
 async def chat(

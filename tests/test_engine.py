@@ -51,7 +51,7 @@ async def test_max_iterations_reached(mock_llm_class):
             self._schema = {"type": "function", "function": {"name": "loop_tool", "parameters": {"type": "object", "properties": {}}}}
         async def execute(self, args, ctx): return "Looping..."
 
-    agent.tool_manager.register_tool(LoopTool())
+    agent.tools.register_tool(LoopTool())
 
     config = RunnerConfig(max_iterations=3)
     result = await agent.run_turn("Loop me", DefaultObserver(), config=config)
@@ -71,7 +71,7 @@ async def test_tool_exception_handling(mock_llm_class, error_tool_factory):
     mock_llm = mock_llm_class([resp1, resp2])
     agent = create_openai_agent(api_key="mock_key")
     agent.llm = mock_llm
-    agent.tool_manager.register_tool(error_tool_factory(should_fail=True))
+    agent.tools.register_tool(error_tool_factory(should_fail=True))
 
     result = await agent.run_turn("Fail me", DefaultObserver())
 
@@ -84,10 +84,10 @@ async def test_tool_exception_handling(mock_llm_class, error_tool_factory):
 async def test_system_prompt_combination(mock_llm_class):
     """Test that toolset prompt and explicit system prompt are merged."""
     agent = create_openai_agent(api_key="mock_key")
-    agent.tool_manager.add_toolset("my_set", [], "TOOLSET PROMPT")
+    agent.tools.add_toolset("my_set", [], "TOOLSET PROMPT")
 
-    assert "my_set" in agent.tool_manager.toolsets
-    assert "my_set" in agent.tool_manager.toolset_prompts
+    assert "my_set" in agent.tools.toolsets
+    assert "my_set" in agent.tools.toolset_prompts
 
     config = RunnerConfig(toolset="my_set", system_prompt="USER SYSTEM PROMPT")
     agent.llm = mock_llm_class([LLMResponse(success=True, text="Hi", tool_calls=[], usage={}, error=None)])
@@ -109,7 +109,7 @@ async def test_observer_skip_tool(mock_llm_class, error_tool_factory):
     mock_llm = mock_llm_class([resp1, resp2])
     agent = create_openai_agent(api_key="mock_key")
     agent.llm = mock_llm
-    agent.tool_manager.register_tool(error_tool_factory())
+    agent.tools.register_tool(error_tool_factory())
 
     observer = ControlObserver(tool_decision=(ToolStartDecision.SKIP,))
 
@@ -131,7 +131,7 @@ async def test_observer_abandon_turn(mock_llm_class, error_tool_factory):
     mock_llm = mock_llm_class([resp1])
     agent = create_openai_agent(api_key="mock_key")
     agent.llm = mock_llm
-    agent.tool_manager.register_tool(error_tool_factory())
+    agent.tools.register_tool(error_tool_factory())
 
     observer = ControlObserver(tool_decision=(ToolStartDecision.ABANDON,))
 

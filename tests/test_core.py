@@ -36,7 +36,7 @@ async def test_agent_execution_loop_with_tool(mock_llm_class, calculator_tool):
     # 2. Initialize Agent Architecture
     agent = create_openai_agent(api_key="mock_key")
     agent.llm = mock_llm  # Inject our mock
-    agent.tool_manager.register_tool(calculator_tool)
+    agent.tools.register_tool(calculator_tool)
     
     # 3. Execute
     config = RunnerConfig(toolset="all")
@@ -81,7 +81,7 @@ async def test_parallel_tool_execution_timing(mock_llm_class, slow_tool):
     mock_llm = mock_llm_class([resp1, resp2])
     agent = create_openai_agent(api_key="mock_key")
     agent.llm = mock_llm
-    agent.tool_manager.register_tool(slow_tool)
+    agent.tools.register_tool(slow_tool)
     config = RunnerConfig(toolset="all")
     start = time.monotonic()
     result = await agent.run_turn("Run two slow tasks.", DefaultObserver(), config=config)
