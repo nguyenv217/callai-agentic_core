@@ -322,7 +322,7 @@ from agentic_core.llm_providers import (
 
 ```python
 from agentic_core.observers import (
-    DefaultObserver,  # Silent, does nothing
+    SilentObserver,  # Silent, does nothing
     PrintObserver,    # Prints everything (great for debugging)
 )
 ```

@@ -4,7 +4,7 @@ Standard observer implementations.
 from .base import AgentEventObserver, ToolStartDecision, DecisionEvent
 from ..tools import ToolExecutionController
 
-class DefaultObserver(AgentEventObserver):
+class SilentObserver(AgentEventObserver):
     """A no-op observer that prints nothing. Use this if you don't care about events."""
     
     def on_turn_start(self) -> None: pass

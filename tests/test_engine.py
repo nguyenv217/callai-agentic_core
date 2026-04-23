@@ -5,7 +5,7 @@ from typing import Iterator
 from agentic_core.agents.builder import create_openai_agent
 from agentic_core.config import RunnerConfig
 from agentic_core.llm_providers.base import ILLMClient, LLMResponse
-from agentic_core.observers.standard import DefaultObserver
+from agentic_core.observers.standard import SilentObserver
 from agentic_core.tools.base import BaseTool
 from agentic_core.observers import DecisionEvent, ToolStartDecision, LastIterationDecision
 from tests.conftest import ControlObserver
@@ -25,7 +25,7 @@ async def test_tool_json_decode_error(mock_llm_class):
     agent = create_openai_agent(api_key="mock_key")
     agent.llm = mock_llm
 
-    result = await agent.run_turn("Test JSON error", DefaultObserver())
+    result = await agent.run_turn("Test JSON error", SilentObserver())
 
     assert result["success"] is True
     assert "I fixed the JSON" in result["text"]
@@ -54,7 +54,7 @@ async def test_max_iterations_reached(mock_llm_class):
     agent.tools.register_tool(LoopTool())
 
     config = RunnerConfig(max_iterations=3)
-    result = await agent.run_turn("Loop me", DefaultObserver(), config=config)
+    result = await agent.run_turn("Loop me", SilentObserver(), config=config)
 
     assert result["success"] is True or "error" not in result
     assert mock_llm.call_count == 3
@@ -73,7 +73,7 @@ async def test_tool_exception_handling(mock_llm_class, error_tool_factory):
     agent.llm = mock_llm
     agent.tools.register_tool(error_tool_factory(should_fail=True))
 
-    result = await agent.run_turn("Fail me", DefaultObserver())
+    result = await agent.run_turn("Fail me", SilentObserver())
 
     assert result["success"] is True
     assert "The tool failed" in result["text"]
@@ -92,7 +92,7 @@ async def test_system_prompt_combination(mock_llm_class):
     config = RunnerConfig(toolset="my_set", system_prompt="USER SYSTEM PROMPT")
     agent.llm = mock_llm_class([LLMResponse(success=True, text="Hi", tool_calls=[], usage={}, error=None)])
 
-    await agent.run_turn("Hello", DefaultObserver(), config=config)
+    await agent.run_turn("Hello", SilentObserver(), config=config)
 
     assert "TOOLSET PROMPT" in agent.memory.system_prompt['content']
     assert "USER SYSTEM PROMPT" in agent.memory.system_prompt['content']

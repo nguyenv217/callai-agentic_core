@@ -8,7 +8,7 @@ from agentic_core.agents.builder import create_openai_agent
 from agentic_core.config import RunnerConfig
 from agentic_core.llm_providers.base import ILLMClient
 from agentic_core.llm_providers.base import LLMResponse
-from agentic_core.observers.standard import DefaultObserver
+from agentic_core.observers.standard import SilentObserver
 from agentic_core.tools.base import BaseTool
 
 # --- MOCKS moved to conftest.py ---
@@ -40,7 +40,7 @@ async def test_agent_execution_loop_with_tool(mock_llm_class, calculator_tool):
     
     # 3. Execute
     config = RunnerConfig(toolset="all")
-    result = await agent.run_turn("What is 5 plus 7?", DefaultObserver(), config=config)
+    result = await agent.run_turn("What is 5 plus 7?", SilentObserver(), config=config)
     
     # 4. Assertions
     assert result["success"] is True
@@ -84,7 +84,7 @@ async def test_parallel_tool_execution_timing(mock_llm_class, slow_tool):
     agent.tools.register_tool(slow_tool)
     config = RunnerConfig(toolset="all")
     start = time.monotonic()
-    result = await agent.run_turn("Run two slow tasks.", DefaultObserver(), config=config)
+    result = await agent.run_turn("Run two slow tasks.", SilentObserver(), config=config)
     duration = time.monotonic() - start
     assert result["success"] is True
     # Both tasks should finish in roughly the time of the longest one (~0.2s), not sum (~0.4s)

@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 from ..engine import AgentRunner
 from ..memory.manager import MemoryManager
 from ..tools import ToolManager
-from ..observers.standard import DefaultObserver, PrintObserver, AgentEventObserver
+from ..observers.standard import SilentObserver, PrintObserver, AgentEventObserver
 
 # Import our new isolated providers
 from ..llm_providers import OpenAILLM, AnthropicLLM, OllamaLLM
@@ -34,13 +34,14 @@ def create_openai_agent(
     Create an OpenAI agent in one line.
 
     Args:
-        observer: An AgentEventObserver instance.
         system_prompt: The agent's persona 
         client: An OpenAI client instance. If this is supplied, you don't need to use the below arguments.
         api_key: Your OpenAI API key
+        base_url: For OpenAI-compatible endpoints
         model: Model name (defaults to provider's recommended)
         timeout: Timeout in seconds (defaults to 30s)
         mcp_config_path: Path to MCP config (optional)
+        observer: An AgentEventObserver instance.
         kwargs: Any additional arguments to pass to the agent creation function (will be passed as extra_body to client request).
     
     Example:
@@ -49,14 +50,14 @@ def create_openai_agent(
             model="gpt-4o",
             system_prompt="You are a helpful coding assistant."
         )
-        result = await agent.run_turn("Hello!", DefaultObserver())
+        result = await agent.run_turn("Hello!", SilentObserver())
     """
     base_url = base_url or "https://api.openai.com/v1"
     llm = OpenAILLM(api_key=api_key, model=model, base_url=base_url, client=client, timeout=timeout, **kwargs)
     memory = MemoryManager()
     memory.set_system_prompt(system_prompt)
     tools = ToolManager(mcp_config_path=mcp_config_path)
-    observer = observer or DefaultObserver()
+    observer = observer or SilentObserver()
     
     return AgentRunner(llm_client=llm, tools=tools, memory=memory)
 
@@ -74,7 +75,7 @@ def create_anthropic_agent(
     memory = MemoryManager()
     memory.set_system_prompt(system_prompt)
     tools = ToolManager(mcp_config_path=mcp_config_path)
-    observer = observer or DefaultObserver()
+    observer = observer or SilentObserver()
     
     return AgentRunner(llm_client=llm, tools=tools, memory=memory)
 
@@ -93,7 +94,7 @@ def create_ollama_agent(
     memory = MemoryManager()
     memory.set_system_prompt(system_prompt)
     tools = ToolManager(mcp_config_path=mcp_config_path)
-    observer = observer or DefaultObserver()
+    observer = observer or SilentObserver()
     
     return AgentRunner(llm_client=llm, tools=tools, memory=memory)
 
@@ -132,7 +133,7 @@ async def chat(
     Returns:
         The agent's text response
     """
-    observer = PrintObserver() if verbose else DefaultObserver()
+    observer = PrintObserver() if verbose else SilentObserver()
 
     if runner: agent=runner
     elif provider == 'openai':
