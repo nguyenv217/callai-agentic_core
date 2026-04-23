@@ -5,7 +5,18 @@ from typing import List, Dict
 from .strategies import TruncationStrategy, DefaultTruncationStrategy
 
 class MemoryManager:
-    def __init__(self, max_messages: int = 50, max_chars: int = 80000, strategy: TruncationStrategy = None):
+    def __init__(self, max_messages: int | None = None, max_chars: int = 80000, strategy: TruncationStrategy = None):
+        """
+        Initialize the MemoryManager instance.
+
+        Args:
+            max_messages : int, optional
+                (Deprecated/Not recommended) The maximum number of messages to store. `max_messages` structurally pops older messages. May invalidate your message cache for many provders. Defaults to no limit.  
+            max_chars : int, optional
+                The maximum number of characters in the conversation history. Defaults to 80000.
+            strategy : TruncationStrategy, optional
+                A strategy for content-level truncation. Defaults to DefaultTruncationStrategy.
+        """
         self.messages: List[Dict] = []
         self.system_prompt: Dict = None
         self.max_messages = max_messages
@@ -14,6 +25,7 @@ class MemoryManager:
         self._hash_obj = hashlib.sha256()
         self._current_hash = None
         self._current_hash = None
+        self.truncate_by_pop = False
 
     def system_prompt_exists(self):
         return self.system_prompt is not None
@@ -54,7 +66,7 @@ class MemoryManager:
 
     def enforce_context_limits(self):
         """Delegates complexity to the pluggable strategy."""
-        # First handle the structural pruning (message count)
+        # First handle the structural pruning (message count) -> 
         self._enforce_message_limit()
         
         # Use the strategy for content-level truncation
@@ -63,7 +75,11 @@ class MemoryManager:
         self._update_hash()
 
     def _enforce_message_limit(self):
-        """Prunes messages in valid structural pairs to maintain LLM API context validity."""
+        """Prunes messages in valid structural pairs to maintain LLM API context validity.
+        NOTE: Deprecated `pop()` truncation and will defaults to replacing with placeholder instead to preserve structural integrity."""
+        if not self.max_messages:
+            return
+
         will_change = False
         if len(self.messages) > self.max_messages:
             will_change = True
@@ -78,10 +94,9 @@ class MemoryManager:
             if first_role == "user":
                 assistant_idx = next((i for i in range(1, len(self.messages)) if self.messages[i].get("role") == "assistant"), None)
                 if assistant_idx is not None:
-                    self.messages.pop(0) # pop user
-                    self.messages.pop(0) # pop assistant
+                    self._truncate_keep_structure([0, 1])
                 else:
-                    self.messages.pop(0)
+                    self._truncate_keep_structure()
                     
             elif first_role == "assistant":
                 tool_calls = first_msg.get("tool_calls", [])
@@ -92,20 +107,29 @@ class MemoryManager:
                     if len(tool_indices) >= num_tool_results_needed:
                         for idx in reversed(tool_indices[:num_tool_results_needed]):
                             self.messages.pop(idx)
-                        self.messages.pop(0) 
+                        self._truncate_keep_structure()
                     else:
-                        self.messages.pop(0)
+                        self._truncate_keep_structure()
                 else:
                     if len(self.messages) > 1 and self.messages[1].get("role") == "tool":
-                        self.messages.pop(1)
+                        self._truncate_keep_structure(1)
                     else:
-                        self.messages.pop(0)
+                        self._truncate_keep_structure()
             else:
-                self.messages.pop(0)
+                self._truncate_keep_structure()
         
         if will_change:
             self._update_hash()
-        
+    
+    def _truncate_keep_structure(self, indexes: list[int] | int = 0, placeholder: str | None = "[TRUNCATED]"):
+        if self.truncate_by_pop:
+            if isinstance(indexes, int): 
+                self.messages.pop(indexes)
+                return 
+            for idx in sorted(indexes, reverse=True): self.messages.pop(idx)
+        else:
+            for idx in indexes:
+                if idx < len(self.messages) and self.messages[idx].get('content'): self.messages[idx]['content'] = placeholder
 
     def _update_hash(self):
         self._hash_obj = hashlib.sha256()
