@@ -14,11 +14,11 @@ class AgentRunner:
     def __init__(
         self,
         llm_client: ILLMClient,
-        tool_manager: ToolManager,
+        tools: ToolManager,
         memory: MemoryManager,
     ):
         self.llm = llm_client
-        self.tool_manager = tool_manager 
+        self.tools = tools 
         self.memory = memory
         self.last_usage_meta: None | Any = None
 
@@ -41,11 +41,11 @@ class AgentRunner:
         config = config or RunnerConfig()
 
         if config.mcp_clear_loaded_tools:
-            self.tool_manager.clear_loaded_tools()
+            self.tools.clear_loaded_tools()
 
         if config.system_prompt:
             # If a toolset also defines a prompt, prepend it to the system prompt.
-            toolset_prompt = self.tool_manager.get_toolset_prompt(config.toolset) if config.toolset else None
+            toolset_prompt = self.tools.get_toolset_prompt(config.toolset) if config.toolset else None
             if toolset_prompt:
                 combined_prompt = f"{toolset_prompt}\n\n{config.system_prompt}"
                 self.memory.set_system_prompt(combined_prompt)
@@ -53,7 +53,7 @@ class AgentRunner:
                 self.memory.set_system_prompt(config.system_prompt)
         else:
             # No explicit system_prompt; fall back to toolset prompt if available.
-            toolset_prompt = self.tool_manager.get_toolset_prompt(config.toolset) if config.toolset else None
+            toolset_prompt = self.tools.get_toolset_prompt(config.toolset) if config.toolset else None
             if toolset_prompt:
                 self.memory.set_system_prompt(toolset_prompt if not self.memory.system_prompt_exists() else  toolset_prompt + "\n\n" + self.memory.system_prompt['content'])
 
@@ -64,14 +64,14 @@ class AgentRunner:
         observer.on_turn_start()
         
         # Preparation phase to setup configureed MCP servers and tools. MCP settings go here
-        await self.tool_manager.prepare_turn(config)
+        await self.tools.prepare_turn(config)
         
         # Tools preprocssing. Verbose but assume no one is modifying `tool_manager.toolsets` directly. 
-        active_tools = config.tools or self.tool_manager.get_tools_from_toolset(config.toolset)
-        active_tools.extend(self.tool_manager.get_mcp_loaded_tools()) 
+        active_tools = config.tools or self.tools.get_tools_from_toolset(config.toolset)
+        active_tools.extend(self.tools.get_mcp_loaded_tools()) 
         
         if config.mcp_enable_discovery:
-            active_tools.extend(self.tool_manager.get_discovery_tools()) 
+            active_tools.extend(self.tools.get_discovery_tools()) 
 
         max_iterations = config.max_iterations
         iteration = 1
@@ -158,7 +158,7 @@ class AgentRunner:
                             self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=error_msg)
                             continue
 
-                        tasks.append(self.tool_manager.execute(tool_name, parsed_args, controller=observer, max_chars=config.max_chars))
+                        tasks.append(self.tools.execute(tool_name, parsed_args, controller=observer, max_chars=config.max_chars))
                         tc_meta.append((tc["id"], tool_name))
 
                 if len(tasks) > 0:

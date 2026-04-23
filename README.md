@@ -225,7 +225,7 @@ Refer to `examples/mcp_config.json` for a few no-config, plug-and-play example s
  
  agent = AgentRunner(
      llm_client=OpenAILLM(api_key="sk-..."),
-     tool_manager=tools
+     tools=tools
  )
  ```
 
@@ -278,7 +278,7 @@ memory.set_system_prompt("You are a helpful coding assistant.")
 tools = ToolManager()
 
 # 2. Create agent
-agent = AgentRunner(llm_client=llm, tool_manager=tools, memory=memory)
+agent = AgentRunner(llm_client=llm, tools=tools, memory=memory)
 
 # 3. Run!
 result = await agent.run_turn(
