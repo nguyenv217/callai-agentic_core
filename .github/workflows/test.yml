@@ -5,7 +5,7 @@ on:
     paths-ignore:
       - 'docs/**'
       - '*.md'
-    branches: [ main ]
+    branches: [ main, feat/rag-toolsuite-new ]
   pull_request:
     branches: [ main ]
 
