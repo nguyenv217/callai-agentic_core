@@ -279,9 +279,9 @@ class ToolManager:
     # ===== execute() =====   
 
     async def execute(
-            self, tool_name: str, args: dict, controller: ToolExecutionController, 
+            self, tool_name: str, args: dict, 
+            controller: ToolExecutionController | None = None, 
             max_chars: int | None = 10000,
-            extra_env: dict[str, str] | None = None,
             extra_context: dict[str, Any] | None = None
             ) -> str:
         """Routes execution to the registered plugin (Standard or MCP). Executes asynchronously."""
