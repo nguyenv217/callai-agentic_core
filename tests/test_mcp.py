@@ -1,3 +1,6 @@
+import json
+import os
+
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
@@ -79,3 +82,100 @@ async def test_load_mcp_tool_execution(mock_mcp_manager):
     assert "Success: Loaded 1 tool(s)" in result
     loaded_names = [t.name for t in manager._mcp_loaded_tools]
     assert "mock_github_create_issue" in loaded_names
+
+    
+# We will start the mock server as a subprocess in a fixture
+import subprocess
+
+@pytest.fixture(scope="module")
+def mcp_server_process():
+    # Path to the mock server we created
+    server_path = os.path.abspath("tests/mock_mcp_server.py")
+    
+    # Start the server using python. 
+    # FastMCP.run() by default uses stdio if no transport is specified.
+    process = subprocess.Popen(
+        ["python3", server_path],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    yield process
+    process.terminate()
+
+@pytest.fixture
+def mcp_config_file(tmp_path):
+    config_dir = tmp_path / "mcp"
+    config_dir.mkdir()
+    config_file = config_dir / "config.json"
+    
+    # We need to tell the MCPClientManager how to start the server.
+    # Since we are testing the logic of MCPClientManager, we point it 
+    # to the script we just wrote.
+    config = {
+        "mcpServers": {
+            "test_server": {
+                "command": "python3",
+                "args": [os.path.abspath("tests/mock_mcp_server.py")]
+            }
+        }
+    }
+    config_file.write_text(json.dumps(config))
+    return config_file
+
+@pytest.mark.asyncio
+async def test_mcp_integration_flow(mcp_config_file):
+    # 1. Setup ToolManager with the temp config
+    manager = ToolManager(mcp_config_path=str(mcp_config_file))
+    
+    # 2. Prepare turn to initialize MCP servers
+    # We want to active 'test_server'
+    config = RunnerConfig(mcp_active_servers=["test_server"], mcp_enable_discovery=True)
+    await manager.prepare_turn(config)
+    
+    # 3. Verify tools were discovered and put in standby registry
+    # Expected tools from mock_mcp_server.py: echo, add
+    # Prefixed names: test_server_echo, test_server_add
+    standby = manager._mcp_standby_registry
+    assert "test_server_echo" in standby
+    assert "test_server_add" in standby
+    
+    # 4. Test the 'list_mcp_catalog' meta-tool
+    result = await manager.execute("list_mcp_catalog", {"server_name": "test_server"}, {})
+    assert "test_server_echo" in result
+    assert "test_server_add" in result
+    
+    # 5. Test 'load_mcp_tool' meta-tool
+    load_result = await manager.execute("load_mcp_tool", {"tool_names": ["test_server_echo"]})
+    assert "Success: Loaded 1 tool(s)" in load_result
+    
+    # 6. Verify tool is now in loaded tools
+    loaded_names = [t.name for t in manager._mcp_loaded_tools]
+    assert "test_server_echo" in loaded_names
+    
+    # 7. Actually EXECUTE the loaded MCP tool
+    execution_result = await manager.execute("test_server_echo", {"text": "Hello MCP!"}, {})
+    assert "Echo: Hello MCP!" in execution_result
+
+@pytest.mark.asyncio
+async def test_mcp_invalid_server(tmp_path):
+    config_file = tmp_path / "invalid_config.json"
+    config = {
+        "mcpServers": {
+            "bad_server": {
+                "command": "non_existent_command_12345",
+                "args": []
+            }
+        }
+    }
+    config_file.write_text(json.dumps(config))
+    
+    manager = ToolManager(mcp_config_path=str(config_file))
+    config = RunnerConfig(mcp_active_servers=["bad_server"], mcp_enable_discovery=True)
+    
+    # This should not crash the whole system but log error and return False
+    success = await manager.prepare_turn(config)
+    # Since prepare_turn is just a wrapper, we check the manager state
+    assert len(manager._mcp_standby_registry) == 0
+
