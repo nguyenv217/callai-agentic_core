@@ -3,7 +3,7 @@
 - **If you want an autonomous agent immediately**: Got an API key? You can start an agent in one line. No classes, no protocols, no boilerplate.
 - **If you want to build production-ready multi-agent system with clear, structured interfaces**: That's even better. This engine gives you:
   - native MCP integration with dynamic load and discovery options, 
-  - customized client wrapper option for smart routing strategies, 
+  - customize client wrapper option for smart routing strategies, 
   - smart-default or your own domain-specific memory truncation strategies, 
   - clear decision actions at each step of the agent's plan, 
   - and a simple but extendable base tool class that can be used to implement arbitrarily complex workflows.
@@ -13,7 +13,7 @@
 
 ## Table of Contents
 
-1. [Quick Start](#the-30-second-quick-start)
+1. [Quick Start](#quick-start)
 2. [The Simple `chat()` Function](#the-simple-chat-function)
 3. [Tooling system: Bring-your-own-tools & MCP integration (GitHub, Filesystem, etc.)](#using-tools-implementing-basetool-or-integrate-mcp-servers)
 4. [Agent creation (Advanced) & Memory Management](#creating-your-own-agent-advanced--custom-memory-management-strategy)
@@ -29,8 +29,11 @@
 ### Installation
 ```bash
 git clone https://github.com/nguyenv217/callai-agentic_core 
-pip install callai-agentic_core/
+cd callai-agentic_core
+pip install ".[all]"
 ```
+*Note: To install only specific providers, use `pip install ".[openai]"` or `pip install ".[anthropic]"`.*
+
 ### If you have an OpenAI key:
 
 ```python
@@ -42,6 +45,25 @@ async def main():
         message="What's the weather in Tokyo?",
         provider="openai",
         api_key="sk-..."  # Your OpenAI key
+    )
+    print(result)
+
+asyncio.run(main())
+```
+
+### If you are using an OpenAI-compatible API (e.g. HuggingFace, vLLM):
+
+```python
+import asyncio
+from agentic_core.agents import chat
+
+async def main():
+    result = await chat(
+        message="Hello!",
+        provider="openai",
+        api_key="your_hf_token",
+        base_url="https://router.huggingface.co/v1",
+        model="meta-llama/Llama-3.1-8B-Instruct"
     )
     print(result)
 
@@ -150,19 +172,18 @@ tools = ToolManager(
             "prompt": "This prompt is dynamically injected when toolset=my_custom_toolset"
         },
         "my_other_toolset": ["some_other_tool", "other_tool2", ...] # Or just a list if no custom prompt is needed
-    }
-)
-tools.register_tool(uppercase_tool)
-
+        },
+    )
+    
 # Then pass to `RunnerConfig`
 config = RunnerConfig(
     system_prompt = "My base sytem prompt."
     tools = [uppercase_tool.schema, ...] # only inject these tools, this parameter takes priority over `toolset`
-    toolset = "my_custom_toolset" # or use a toolset for a specific known set of specific tools with a custom prompt
+    toolset = "my_custom_toolset" # or a toolset for a specific known set of specific tools with a custom prompt
 )
 ```
 
-**RECOMMENDED**: For a detailed guide on building and registering tools, see [docs/docs/TOOLS_GUIDE.md](docs/TOOLS_GUIDE.md).
+**RECOMMENDED**: For a detailed guide on building and registering tools, see [docs/TOOLS_GUIDE.md](docs/TOOLS_GUIDE.md).
 
 ---
 
@@ -201,7 +222,7 @@ Refer to `examples/mcp_config.json` for a few no-config, plug-and-play example s
      message="Create a new issue in my repo about the bug",
      provider="openai",
      api_key="sk-...",
-     mcp_config_path="path/to/mcp.json"  # <-- This enables MCP!
+     mcp_config_path="mcp.json"  # <-- This enables MCP!
  )
  ```
  
@@ -242,7 +263,7 @@ By default, `agentic-core` injects Meta-Tools into the agent's context to enable
 
 This "Lazy Loading" approach keeps your prompt context small and saves tokens by only loading the specific tools the agent decides it needs for the task.
 
-If you already know which tools the agent will need, you can bypass the discovery turns entirely using `mcp_preload_tools` and setting `enable_mcp_discovery=False` in your `RunnerConfig`. This is highly recommended for production environments to reduce latency and costs.
+If you already know which tools the agent will need, you can bypass the discovery turns entirely using `mcp_preload_tools` and setting `enable_mcp_discovery=False` in your`RunnerConfig`. This is highly recommended for production environments to reduce latency and costs.
 
 ```python
 from agentic_core.config import RunnerConfig
@@ -252,8 +273,8 @@ config = RunnerConfig(
     mcp_preload_tools=["sqlite_query"]   # Move these tools to 'Active' before Turn 1. NOTE that you must prefix the tool name with server name 
 )
 
-# The agent starts with 'sqlite_query' already in its toolkit
-agent.chat("How many users are in the database?", config=config)
+# The agent starts with 'sqlite_query' already지 set in its toolkit
+agent.chat("How many users in the database?", config=config)
 ```
 
 Please see this more detailed [explanation](docs/MCP_CONFIG_GUIDE.md) in how to configuring `RunnerConfig` to fully realize the MCP protocol in your project.
@@ -283,14 +304,14 @@ agent = AgentRunner(llm_client=llm, tools=tools, memory=memory)
 # 3. Run!
 result = await agent.run_turn(
     user_input="Hello!",
-    observer=PrintObserver()  # Prints all events
+    observer=PrintObserver()
 )
 print(result)
 ```
 
 ### Memory Management & Context Truncation
 
-To prevent token overflow in long conversations, `MemoryManager` supports configurable truncation. By default, it uses a `DefaultTruncationStrategy` that intelligently prunes tool outputs and long text before deleting entire messages.
+To prevent token overflow in long conversations, `MemoryManager` supports configurable truncation. By default, it uses a `DefaultTruncationStrategy` that uses intelligently prunes tool outputs and long text before deleting entire messages.
 
 ```python
 from agentic_core.memory.manager import MemoryManager
@@ -381,12 +402,14 @@ tools = ToolManager(
  ├── memory/                  # Context and state management
  │   ├── manager.py           # MemoryManager
  │   └── strategies.py        # Truncation strategies
- │   ├── base.py              # BaseTool (for custom tools)
- │   ├── manager.py           # ToolManager
- │   └── mcp.py               # MCP Protocol support
  ├── observers/               # Event logging and observation
  │   ├── base.py              # Base Observer
  │   └── standard.py          # Default/Print observers
+ ├── tools/                   # Tooling system
+ │   ├── base.py              # `BaseTool`, schemas, etc.
+ │   ├── mcp.py               # MCP server management
+ │   ├── 🔍 rag/             # Custom RAG-based tool suite, supporting your custom backends, default options: ChromaDB, Sqlite. see 'docs/RAG_TOOLS.md'
+ │   └── manager.py           # `ToolManager` class
  └── interfaces/              # Type definitions and Protocols
      ├── llm.py
      └── events.py

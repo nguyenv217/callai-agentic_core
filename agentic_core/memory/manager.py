@@ -5,7 +5,18 @@ from typing import List, Dict
 from .strategies import TruncationStrategy, DefaultTruncationStrategy
 
 class MemoryManager:
-    def __init__(self, max_messages: int = 50, max_chars: int = 80000, strategy: TruncationStrategy = None):
+    def __init__(self, max_messages: int | None = None, max_chars: int = 80000, strategy: TruncationStrategy = None):
+        """
+        Initialize the MemoryManager instance.
+
+        Args:
+            max_messages : int, optional
+                (Deprecated/Not recommended) The maximum number of messages to store. `max_messages` structurally pops older messages. May invalidate your message cache for many provders. Defaults to no limit.  
+            max_chars : int, optional
+                The maximum number of characters in the conversation history. Defaults to 80000.
+            strategy : TruncationStrategy, optional
+                A strategy for content-level truncation. Defaults to DefaultTruncationStrategy.
+        """
         self.messages: List[Dict] = []
         self.system_prompt: Dict = None
         self.max_messages = max_messages
@@ -13,7 +24,7 @@ class MemoryManager:
         self.strategy = strategy or DefaultTruncationStrategy()
         self._hash_obj = hashlib.sha256()
         self._current_hash = None
-        self._current_hash = None
+        # self.truncate_by_pop = False
 
     def system_prompt_exists(self):
         return self.system_prompt is not None
@@ -51,10 +62,11 @@ class MemoryManager:
     def get_hash(self) -> str:
         if self._current_hash is None:
             self._update_hash()
+        return self._current_hash
 
     def enforce_context_limits(self):
         """Delegates complexity to the pluggable strategy."""
-        # First handle the structural pruning (message count)
+        # First handle the structural pruning (message count) -> 
         self._enforce_message_limit()
         
         # Use the strategy for content-level truncation
@@ -63,23 +75,23 @@ class MemoryManager:
         self._update_hash()
 
     def _enforce_message_limit(self):
-        """Prunes messages in valid structural pairs to maintain LLM API context validity."""
+        """Prunes messages in valid structural pairs to maintain LLM API context validity.
+        NOTE: Deprecated `pop()` truncation and will defaults to replacing with placeholder instead to preserve structural integrity."""
+        if not self.max_messages:
+            return
+
         will_change = False
         if len(self.messages) > self.max_messages:
             will_change = True
 
         while len(self.messages) > self.max_messages:
-            if not self.messages:
-                break
-                
             first_msg = self.messages[0]
             first_role = first_msg.get("role")
             
             if first_role == "user":
                 assistant_idx = next((i for i in range(1, len(self.messages)) if self.messages[i].get("role") == "assistant"), None)
                 if assistant_idx is not None:
-                    self.messages.pop(0) # pop user
-                    self.messages.pop(0) # pop assistant
+                    self.messages.pop(0)
                 else:
                     self.messages.pop(0)
                     
@@ -92,7 +104,7 @@ class MemoryManager:
                     if len(tool_indices) >= num_tool_results_needed:
                         for idx in reversed(tool_indices[:num_tool_results_needed]):
                             self.messages.pop(idx)
-                        self.messages.pop(0) 
+                        self.messages.pop(0)
                     else:
                         self.messages.pop(0)
                 else:
@@ -105,8 +117,7 @@ class MemoryManager:
         
         if will_change:
             self._update_hash()
-        
-
+    
     def _update_hash(self):
         self._hash_obj = hashlib.sha256()
         if self.system_prompt:
