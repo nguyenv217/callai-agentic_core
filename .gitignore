@@ -7,6 +7,8 @@ ehthumbs.db
 Desktop.ini
 
 # Ignore cache and secrets
+Dockerfile
+.dockerignore
 __pycache__/
 .pytest_cache/
 .pycache
