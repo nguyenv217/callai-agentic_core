@@ -40,8 +40,10 @@ __pycache__/
 *.so
 *.dylib
 
-# Ignore node stuff
+# Other stuff
 node_modules/
+package.json
+package-lock.json
 
 log.txt
 changes.log
