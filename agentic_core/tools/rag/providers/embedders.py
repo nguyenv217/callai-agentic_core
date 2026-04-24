@@ -80,6 +80,7 @@ class LocalEmbedder(IEmbeddingProvider):
         embeddings = self._model.encode(texts, convert_to_numpy=True, show_progress_bar=False)
         return embeddings.tolist()
 
+
 class MockEmbedder(IEmbeddingProvider):
     async def embed(self, texts: List[str]) -> List[List[float]]:
         import hashlib

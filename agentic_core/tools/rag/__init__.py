@@ -1,9 +1,6 @@
 from ..manager import ToolManager
 from .core import RAGConfig, IVectorStore, IEmbeddingProvider
 from .tools import SearchKnowledgeTool, IngestKnowledgeTool
-from .stores.chromadb_store import ChromaDBVectorStore
-from .stores.sqlite_store import SQLiteVectorStore
-from .providers.embedders import OpenAIEmbedder, OllamaEmbedder, LocalEmbedder, MockEmbedder
 
 def register_rag_suite(
     tool_manager: ToolManager, 
@@ -28,11 +25,6 @@ __all__ = [
     'IEmbeddingProvider',
     'SearchKnowledgeTool',
     'IngestKnowledgeTool',
-    'ChromaDBVectorStore',
-    'SQLiteVectorStore',
-    'OpenAIEmbedder',
-    'OllamaEmbedder',
-    'LocalEmbedder',
     'MockEmbedder',
     'register_rag_suite',
 ]
