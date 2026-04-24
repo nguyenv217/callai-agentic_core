@@ -4,13 +4,15 @@ import math
 
 from agentic_core.config import ConfigurationError
 
+_NOT_IMPORTED = False
 try:
     from sqlalchemy import Column, String, JSON, Integer, Text, text
     from sqlalchemy.orm import declarative_base
     from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
     from sqlalchemy.ext.asyncio import async_sessionmaker
 except ImportError:
-    raise ConfigurationError('`sqlalchemy` is not installed. Please install with `pip install SQLAlchemy`.')
+    _NOT_IMPORTED = True
+    
 
 from ..core import IVectorStore
 
@@ -32,6 +34,9 @@ class SQLiteVectorStore(IVectorStore):
         table_name: str = 'vector_entries',
         distance_metric: str = 'cosine'
     ):
+        if _NOT_IMPORTED:
+            raise ConfigurationError('`sqlalchemy` is not installed. Please install with `pip install SQLAlchemy`.')
+
         if db_path is None:
             db_path = 'rag_vectors.db'
         
