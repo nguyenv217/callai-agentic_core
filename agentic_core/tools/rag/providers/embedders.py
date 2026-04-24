@@ -61,6 +61,11 @@ class LocalEmbedder(IEmbeddingProvider):
         model_name: str = 'sentence-transformers/all-MiniLM-L6-v2',
         device: str = 'cpu'
     ):
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError:
+            raise ImportError('sentence-transformers required. Install with: `pip install sentence-transformers`')
+    
         self._model_name = model_name
         self._device = device
         self._model = None
@@ -68,10 +73,7 @@ class LocalEmbedder(IEmbeddingProvider):
     
     def _load_model(self):
         if self._model is None:
-            try:
-                from sentence_transformers import SentenceTransformer
-            except ImportError:
-                raise ImportError('sentence-transformers required. Install with: `pip install sentence-transformers`')
+            from sentence_transformers import SentenceTransformer
             
             self._model = SentenceTransformer(self._model_name, device=self._device)
     
