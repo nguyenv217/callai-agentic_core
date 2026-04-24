@@ -8,6 +8,7 @@ Desktop.ini
 
 # Ignore cache and secrets
 __pycache__/
+.pytest_cache/
 .pycache
 .cache
 .cache.sqlite
