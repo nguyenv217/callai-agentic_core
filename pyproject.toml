@@ -28,7 +28,7 @@ anthropic = ["anthropic"]
 ollama = ["ollama>=0.6.1"]
 mcp = ["mcp>=1.27.0"]
 
-rag-sqllite = [
+rag-sqlite = [
     "sqlalchemy", 
     "aiosqlite"
 ]
@@ -38,7 +38,7 @@ rag-transformers = ["sentence-transformers"]
 rag-openai = ["openai>=2.24.0"]
 
 rag-all = [
-    "agentic_core[rag-sqllite]",
+    "agentic_core[rag-sqlite]",
     "agentic_core[rag-chroma]",
     "agentic_core[rag-transformers]",
     "agentic_core[rag-openai]"
