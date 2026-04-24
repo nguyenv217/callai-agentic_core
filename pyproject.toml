@@ -28,7 +28,7 @@ anthropic = ["anthropic"]
 ollama = ["ollama>=0.6.1"]
 mcp = ["mcp>=1.27.0"]
 
-rag-sqllite = [
+rag-sqlite = [
     "sqlalchemy", 
     "aiosqlite"
 ]
