@@ -5,22 +5,48 @@ from .llm_providers import ILLMClient, LLMResponse
 from .tools import ToolManager
 from .memory.manager import MemoryManager
 from .observers import AgentEventObserver, DecisionEvent, LastIterationDecision, ToolStartDecision
-from .config import RunnerConfig
+from .config import ConfigurationError, RunnerConfig
 
 import logging
 logger = logging.getLogger(__name__)
 
 class AgentRunner:
+    """
+    A class that manages the execution of an agent, coordinating between an LLM client,
+    tools, memory, and configuration to perform tasks.
+
+    Attributes:
+        llm (ILLMClient): The LLM client used for generating responses.
+        tools (ToolManager): Manages the tools available to the agent.
+        memory (MemoryManager): Handles the agent's memory operations.
+        last_usage_meta (Any | None): Stores metadata from the last usage.
+        config (RunnerConfig): Configuration settings for the agent runner.
+    """
+
     def __init__(
         self,
         llm_client: ILLMClient,
         tools: ToolManager,
         memory: MemoryManager,
+        config: RunnerConfig | None = None,
+        observer: AgentEventObserver | None = None
     ):
+        """
+        Initializes the AgentRunner with the provided LLM client, tools, memory, and configuration.
+
+        Args:
+            llm_client (ILLMClient): The LLM client used for generating responses.
+            tools (ToolManager): Manages the tools available to the agent.
+            memory (MemoryManager): Handles the agent's memory operations.
+            config (RunnerConfig): Configuration settings for the agent runner. Can be overwritten at runtime.
+            observer (AgentEventObserver): Observer for agent events. Can be overwritten at runtime.
+        """
         self.llm = llm_client
         self.tools = tools 
         self.memory = memory
         self.last_usage_meta: None | Any = None
+        self.config = config or RunnerConfig()
+        self.observer = observer
 
     @staticmethod
     def _to_async_gen(sync_gen: Iterator[LLMResponse]) -> AsyncIterator[LLMResponse]: # QUICK FIX BEFORE STANDARDIZATION
@@ -37,8 +63,14 @@ class AgentRunner:
         observer.on_tool_complete(tool_name, tool_id, False, msg)
         self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=msg)
 
-    async def run_turn(self, user_input: str | list[dict], observer: AgentEventObserver, config: RunnerConfig | None = None) -> dict:
-        config = config or RunnerConfig()
+    async def run_turn(self, user_input: str | list[dict], observer: AgentEventObserver | None = None, config: RunnerConfig | None = None) -> dict:
+        if not observer:
+            if not self.observer:
+                raise ConfigurationError("`observer`: `AgentEventObserver` must be provided either during initialization or at runtime.")
+            else:
+                observer = self.observer
+
+        config = config or self.config
 
         if config.mcp_clear_loaded_tools:
             self.tools.clear_loaded_tools()
