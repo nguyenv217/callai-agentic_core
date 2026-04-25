@@ -1,5 +1,14 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .stores.sqlite_store import SQLiteVectorStore
+    from .stores.chromadb_store import ChromaDBVectorStore
+    from .providers.embedders import LocalEmbedder, MockEmbedder, OllamaEmbedder, OpenAIEmbedder
+
 from ..manager import ToolManager
 from .core import RAGConfig, IVectorStore, IEmbeddingProvider
+from .tools import RAGConfig, SearchKnowledgeTool, IngestKnowledgeTool
 
 _LOOKUP = {
     "SQLiteVectorStore": ".stores.sqlite_store",
@@ -32,7 +41,6 @@ def register_rag_suite(
     store: IVectorStore, 
     config: RAGConfig = None
 ):
-    from .tools import SearchKnowledgeTool, IngestKnowledgeTool
     config = config or RAGConfig()
     search_tool = SearchKnowledgeTool(store, embedder, config)
     ingest_tool = IngestKnowledgeTool(store, embedder, config)
