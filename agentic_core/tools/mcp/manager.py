@@ -4,6 +4,12 @@ import logging
 from typing import Any, Callable, Dict, List, Tuple, TypedDict
 from pathlib import Path
 
+try:
+    from mcp.client.stdio import stdio_client
+    from mcp import ClientSession, StdioServerParameters
+except ImportError:
+    raise ConfigurationError("Python `mcp` package is not installed. Please install with: `pip install mcp`")
+
 from ...config import ConfigurationError
 
 logger = logging.getLogger(__name__)
@@ -91,8 +97,6 @@ class GlobalMCPRegistry:
                 return self._sessions[identity_key]
 
             logger.info(f"[Registry] Creating new session for '{server_name}' (Identity: {identity_key})")
-        from mcp.client.stdio import stdio_client
-        from mcp import ClientSession, StdioServerParameters
         import re, os, shutil, asyncio
         
         raw_command = server_config.get("command", "python")
