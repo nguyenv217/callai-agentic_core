@@ -8,6 +8,7 @@ import logging
 import json
 
 from ..config import ConfigurationError
+from ..interfaces import DecisionAction, DecisionEvent
 from .base import ToolSchema
 
 if TYPE_CHECKING:
@@ -17,11 +18,21 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+from enum import Enum, auto
+class ToolOnPromptAction(Enum, DecisionAction):
+    CONFIRM = auto()
+    REJECT = auto()
+    REJECT_WITH_MSG = auto()
+
+    @property
+    def required_message(self):
+        return self == ToolOnPromptAction.REJECT_WITH_MSG
+
 class ToolExecutionController(Protocol):
     """Protocol for tool execution control."""
     on_chat_notified: Callable[[str], None] | None = None
-    on_prompt_respond: Callable[[str], str] | None = None
-    on_prompt_confirmation: Callable[[str, Callable, Callable | None], None] | None = None
+    on_prompt_respond: Callable[[Any], str] | None = None
+    on_prompt_confirmation: Callable[[Any], DecisionEvent[ToolOnPromptAction]] | None = None
 
 class ToolManager:
     """
