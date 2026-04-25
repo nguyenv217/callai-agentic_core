@@ -13,13 +13,14 @@ from .base import ToolSchema
 
 if TYPE_CHECKING:
     from .base import BaseTool
-    from ..engine import RunnerConfig
+    from ..engines.engine import RunnerConfig
     from .mcp.tools import MCPToolAdapter
 
 logger = logging.getLogger(__name__)
 
 from enum import Enum, auto
-class ToolOnPromptAction(Enum, DecisionAction):
+
+class ToolOnPromptAction(Enum):
     CONFIRM = auto()
     REJECT = auto()
     REJECT_WITH_MSG = auto()

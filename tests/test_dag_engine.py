@@ -2,8 +2,8 @@
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from agentic_core.engine import AgentRunner, RunnerConfig
-from agentic_core.dag_engine import DAGAgentRunner, NodeState, DAGEventObserver
+from agentic_core.engines.engine import AgentRunner, RunnerConfig
+from agentic_core.engines.dag_engine import DAGAgentRunner, NodeState, DAGEventObserver
 from agentic_core.llm_providers.base import ILLMClient, LLMResponse
 from agentic_core.tools import ToolManager
 from agentic_core.memory.manager import MemoryManager

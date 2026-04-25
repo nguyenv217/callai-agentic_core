@@ -10,7 +10,7 @@ from typing import Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from openai import OpenAI
 
-from ..engine import AgentRunner
+from ..engines.engine import AgentRunner
 from ..memory.manager import MemoryManager
 from ..tools import ToolManager
 from ..observers.standard import SilentObserver, PrintObserver, AgentEventObserver

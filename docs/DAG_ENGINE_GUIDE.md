@@ -39,7 +39,7 @@ Supports exponential backoff for transient errors (e.g., Rate Limits, Timeouts).
 
 ```python
 import asyncio
-from agentic_core.engine import AgentRunner, RunnerConfig
+from agentic_core.engines import AgentRunner, RunnerConfig
 from agentic_core.dag_engine import DAGAgentRunner
 from agentic_core.llm_providers.openai import OpenAILLM
 from agentic_core.tools import ToolManager

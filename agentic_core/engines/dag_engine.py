@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 import logging
 
 from .engine import AgentRunner, RunnerConfig
-from .memory.manager import MemoryManager
-from .observers import AgentEventObserver
+from ..memory.manager import MemoryManager
+from ..observers import AgentEventObserver
 
 logger = logging.getLogger(__name__)
 

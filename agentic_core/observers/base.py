@@ -3,7 +3,8 @@ Observer base interface.
 """
 from abc import ABC
 from enum import Enum, auto
-from ..interfaces import DecisionEvent
+from typing import Union
+from ..interfaces import DecisionEvent, DecisionAction
 
 class ToolStartDecision(Enum):
     """
@@ -43,8 +44,6 @@ class LastIterationDecision(Enum):
     def required_message(self):
         return self == LastIterationDecision.LEAVE_MESSAGE
 
-AgentDecisionEvent = DecisionEvent[ToolStartDecision | LastIterationDecision]
-
 class AgentEventObserver(ABC):
     """Base class for observing agent events."""
     
@@ -60,7 +59,7 @@ class AgentEventObserver(ABC):
     def on_tool_call_session_start(self, reasoning_text: str, tool_calls: list, iteration: int, max_iterations: int):
         pass
 
-    def on_tool_start(self, tool_name: str, tool_id: str, tool_arg: str | dict | None = None) -> AgentDecisionEvent[ToolStartDecision]: 
+    def on_tool_start(self, tool_name: str, tool_id: str, tool_arg: str | dict | None = None) -> DecisionEvent[ToolStartDecision]: 
         return DecisionEvent(action=ToolStartDecision.CONTINUE)
 
     def on_tool_complete(self, tool_name: str, tool_id: str, success: bool, result: str) -> None: 
@@ -72,5 +71,5 @@ class AgentEventObserver(ABC):
     def on_error(self, error: str) -> None: 
         pass
     
-    def on_final_iteration(self) -> AgentDecisionEvent[LastIterationDecision]: 
+    def on_final_iteration(self) -> DecisionEvent[LastIterationDecision]: 
         return DecisionEvent(action=LastIterationDecision.CONTINUE)

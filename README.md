@@ -286,7 +286,7 @@ Please see this more detailed [explanation](docs/MCP_CONFIG_GUIDE.md) in how to 
 If you need more control, you can create agents manually:
 
 ```python
-from agentic_core.engine import AgentRunner 
+from agentic_core.engines import AgentRunner 
 from agentic_core.memory import MemoryManager
 from agentic_core.tools import ToolManager
 from agentic_core.llm_providers import OpenAILLM
