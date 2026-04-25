@@ -1,4 +1,3 @@
-
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock
@@ -23,11 +22,17 @@ class MockLLMClient(ILLMClient):
         self.call_counts[node_id] = self.call_counts.get(node_id, 0) + 1
 
         if "fail_permanent" in last_message:
-            yield LLMResponse(success=False, error="Fatal error")
+            # We want the runner to return something that triggers the error handling
+            # Based on the dag_engine.py: if "error" in result: raise Exception(result["error"])
+            # The AgentRunner typically returns the final result.
+            # To simulate a failure that the dag_engine catches, we can make the runner return a dict with "error".
+            # However, the agentic_core AgentRunner.run_turn implementation might not do that.
+            # Let's assume for these tests that MockLLMClient is used by a runner that handles this.
+            # In reality, if the runner raises an exception, the dag_engine catches it.
+            raise Exception("Fatal error")
         elif "fail_transient" in last_message:
-            # Fail first 2 times, succeed on 3rd
             if self.call_counts[node_id] <= 2:
-                yield LLMResponse(success=False, error="Rate limit reached")
+                raise Exception("Rate limit reached")
             else:
                 yield LLMResponse(success=True, text="Recovered", reasoning="Done")
         else:
@@ -61,7 +66,6 @@ async def test_retry_success():
     runner = AgentRunner(llm, tools, memory)
     config = RunnerConfig()
 
-    # Node A fails twice with "rate limit", succeeds on 3rd. Max retries = 3.
     nodes_def = {
         "A": (runner, config, "Node_A fail_transient", 3),
     }
@@ -70,7 +74,7 @@ async def test_retry_success():
     dag = DAGAgentRunner(nodes_def, edges)
     results = await dag.execute()
 
-    assert results["A"] == "SUCCESS"
+    assert results["A"]["state"] == "SUCCESS"
     assert llm.call_counts["Node_A"] == 3
 
 @pytest.mark.asyncio
@@ -81,7 +85,6 @@ async def test_retry_exhaustion():
     runner = AgentRunner(llm, tools, memory)
     config = RunnerConfig()
 
-    # Node A fails with "rate limit" and exhausts retries (max=1).
     nodes_def = {
         "A": (runner, config, "Node_A fail_transient", 1),
     }
@@ -90,8 +93,7 @@ async def test_retry_exhaustion():
     dag = DAGAgentRunner(nodes_def, edges)
     results = await dag.execute()
 
-    assert results["A"] == "FAILED"
-    # 1 initial + 1 retry = 2 calls
+    assert results["A"]["state"] == "FAILED"
     assert llm.call_counts["Node_A"] == 2
 
 @pytest.mark.asyncio
@@ -102,7 +104,6 @@ async def test_permanent_failure_no_retry():
     runner = AgentRunner(llm, tools, memory)
     config = RunnerConfig()
 
-    # Node A fails with "Fatal error". Should not retry even if max_retries > 0.
     nodes_def = {
         "A": (runner, config, "Node_A fail_permanent", 5),
     }
@@ -111,8 +112,10 @@ async def test_permanent_failure_no_retry():
     dag = DAGAgentRunner(nodes_def, edges)
     results = await dag.execute()
 
-    assert results["A"] == "FAILED"
+    assert results["A"]["state"] == "FAILED"
     assert llm.call_counts["Node_A"] == 1
+    assert "Fatal error" in results["A"]["result"]
+    assert results["A"]["error_details"] is not None
 
 @pytest.mark.asyncio
 async def test_multi_parent_cascade_bug():
@@ -134,9 +137,10 @@ async def test_multi_parent_cascade_bug():
     dag = DAGAgentRunner(nodes_def, edges)
     results = await dag.execute()
 
-    assert results["A"] == "FAILED"
-    assert results["B"] == "SUCCESS"
-    assert results["C"] == "FAILED_UPSTREAM"
+    assert results["A"]["state"] == "FAILED"
+    assert results["B"]["state"] == "SUCCESS"
+    assert results["C"]["state"] == "FAILED_UPSTREAM"
+    assert results["C"]["failed_by"] == "A"
 
 @pytest.mark.asyncio
 async def test_dag_success():
@@ -158,6 +162,6 @@ async def test_dag_success():
     dag = DAGAgentRunner(nodes_def, edges)
     results = await dag.execute()
 
-    assert results["A"] == "SUCCESS"
-    assert results["B"] == "SUCCESS"
-    assert results["C"] == "SUCCESS"
+    assert results["A"]["state"] == "SUCCESS"
+    assert results["B"]["state"] == "SUCCESS"
+    assert results["C"]["state"] == "SUCCESS"

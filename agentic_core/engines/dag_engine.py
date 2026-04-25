@@ -1,5 +1,5 @@
-
 import asyncio
+import traceback
 from enum import Enum, auto
 from typing import Any, Dict, List, Set, Optional, Tuple
 from dataclasses import dataclass, field
@@ -10,6 +10,13 @@ from ..memory.manager import MemoryManager
 from ..observers import AgentEventObserver
 
 logger = logging.getLogger(__name__)
+
+class NodeExecutionError(Exception):
+    """Custom exception for errors during node execution."""
+    def __init__(self, node_id: str, message: str, original_exception: Optional[Exception] = None):
+        self.node_id = node_id
+        self.original_exception = original_exception
+        super().__init__(f"Node {node_id} failed: {message}")
 
 class NodeState(Enum):
     PENDING = auto()
@@ -32,6 +39,8 @@ class DAGNode:
     result: Any = None
     max_retries: int = 0
     current_retries: int = 0
+    error_details: Optional[str] = None
+    failed_by: Optional[str] = None
 
 class DAGEventObserver(AgentEventObserver):
     def on_node_queued(self, node_id: str, priority: int):
@@ -136,7 +145,7 @@ class DAGAgentRunner:
                         for p_id in self.in_edges[node_id]
                     ]
 
-                    context_prefix = "\\n\\nParent Context:\\n" + "\\n".join(parent_results) if parent_results else ""
+                    context_prefix = "\n\nParent Context:\n" + "\n".join(parent_results) if parent_results else ""
                     full_prompt = node.prompt + context_prefix
 
                     result = await node.runner.run_turn(
@@ -145,8 +154,8 @@ class DAGAgentRunner:
                         config=node.config
                     )
 
-                    if "error" in result:
-                        raise Exception(result["error"])
+                    if isinstance(result, dict) and "error" in result:
+                        raise NodeExecutionError(node_id, result["error"])
 
                     node.result = result
                     node.state = NodeState.SUCCESS
@@ -163,8 +172,10 @@ class DAGAgentRunner:
                             self.observer.on_node_queued(child_id, child.priority)
 
                 except Exception as e:
+                    tb_str = traceback.format_exc()
                     error_msg = str(e)
-                    # Determine if error is retryable (simplistic keyword check for v1)
+
+                    # Determine if error is retryable
                     retryable_keywords = ["timeout", "rate limit", "api error", "overloaded"]
                     is_retryable = any(kw in error_msg.lower() for kw in retryable_keywords)
 
@@ -180,9 +191,10 @@ class DAGAgentRunner:
                         # Re-queue the node
                         await self.queue.put((-node.priority, node_id))
                     else:
-                        logger.error(f"Node {node_id} failed permanently: {e}")
+                        logger.error(f"Node {node_id} failed permanently:\n{tb_str}")
                         node.state = NodeState.FAILED
                         node.result = error_msg
+                        node.error_details = tb_str
                         self.observer.on_node_complete(node_id, NodeState.FAILED, node.result)
                         await self._cascade_failure(node_id)
 
@@ -202,7 +214,10 @@ class DAGAgentRunner:
             node = self.nodes[node_id]
             if node.state not in (NodeState.SUCCESS, NodeState.FAILED):
                 node.state = NodeState.FAILED_UPSTREAM
-                self.observer.on_node_complete(node_id, NodeState.FAILED_UPSTREAM, "Upstream failure")
+                node.failed_by = failed_node_id
+                fail_msg = f"Upstream failure caused by node: {failed_node_id}"
+                node.result = fail_msg
+                self.observer.on_node_complete(node_id, NodeState.FAILED_UPSTREAM, fail_msg)
                 stack.extend(self.out_edges[node_id])
 
     async def execute(self):
@@ -221,6 +236,13 @@ class DAGAgentRunner:
                 w.cancel()
             await asyncio.gather(*workers, return_exceptions=True)
 
-        diagnostics = {node_id: node.state.name for node_id, node in self.nodes.items()}
+        diagnostics = {}
+        for node_id, node in self.nodes.items():
+            diagnostics[node_id] = {
+                "state": node.state.name,
+                "result": node.result,
+                "error_details": node.error_details,
+                "failed_by": node.failed_by
+            }
         self.observer.on_graph_complete(diagnostics)
         return diagnostics

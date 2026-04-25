@@ -237,7 +237,9 @@ class AgentRunner:
 
         except Exception as e:
             logger.exception(f"Error executing agent turn")
-            observer.on_error(f"Engine execution error: {str(e)}")
+            error_msg = f"Engine execution error: {str(e)}"
+            observer.on_error(error_msg)
+            final_response["error"] = error_msg
         finally:
             observer.on_turn_complete(final_response)
 
