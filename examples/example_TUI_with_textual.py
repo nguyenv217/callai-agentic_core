@@ -19,12 +19,6 @@ try:
 except ImportError:
     raise ImportError("Please install 'textual' to try out this example!")
 
-# Import agentic_core from the cloned repo
-import sys
-repo_path = str(Path("callai-agentic_core").resolve())
-if repo_path not in sys.path:
-    sys.path.insert(0, repo_path)
-
 from agentic_core.agents import create_openai_agent, chat
 from agentic_core.engines.engine import RunnerConfig
 
@@ -179,7 +173,7 @@ class CodexAgentTUI(App):
             base_url=os.getenv("AGENT_BASE_URL")
         )
         self.config = RunnerConfig(
-            system_prompt="You are Codex Agent, a highly advanced coding assistant. Format your responses cleanly with sections for Analysis, Flowcharts (using ASCII boxes), and Refined Code blocks.",
+            system_prompt="You are a highly advanced CLI coding agent. Format your responses cleanly with sections for Analysis, Flowcharts (using ASCII boxes), and Refined Code blocks.",
             max_iterations=10
         )
         # Removed the header append_text since it's now in compose()
@@ -209,7 +203,7 @@ class CodexAgentTUI(App):
                 config=self.config,
                 verbose=False
             )
-            self.append_markdown(f"**CODEX**\n\n{response}")
+            self.append_markdown(f"**Agent**\n\n{response}")
         except Exception as e:
             self.append_text(f"[red]Error: {str(e)}[/red]")
         
