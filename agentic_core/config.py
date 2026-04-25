@@ -37,7 +37,7 @@ class RunnerConfig:
     toolset: str | None = None                   
     extra_context: dict[str, Any] | None = None
     # MCP (Model Context Protocol) Settings
-    mcp_extra_env: dict[str, str] | None = None,
+    mcp_extra_env: dict[str, str] | None = None
     mcp_clear_loaded_tools: bool = True               
     mcp_active_servers: list[str] | None = None  # e.g. ["github", "memory"]. Supply this before supplying mcp_preload_tools.
     mcp_preload_tools: list[str] | None = None   # e.g. ["github_create_issue"]
@@ -50,7 +50,7 @@ class RunnerConfig:
             logger.warning("[RunnerConfig] Both tools and toolset were specified at the same time. Will prioritize `tools`.")
 
         self.toolset = self.toolset or "none"   
-        mcp_preload_tools = self.mcp_active_servers or []
+        mcp_preload_tools = self.mcp_preload_tools or []
         mcp_active_servers = self.mcp_active_servers or []
 
         # Force this convention over implicit alive MCP server discovery (prone to error?) 
