@@ -13,7 +13,7 @@ from .base import ToolSchema
 if TYPE_CHECKING:
     from .base import BaseTool
     from ..engine import RunnerConfig
-    from .mcp import MCPToolAdapter
+    from .mcp.tools import MCPToolAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ class ToolManager:
 
 
     def _register_discovery_tools(self):
-        from .mcp import ListMCPTools, LoadMCPTool
+        from .mcp.tools import ListMCPTools, LoadMCPTool
         self.register_tool(ListMCPTools(self))
         self.register_tool(LoadMCPTool(self))
         self._loaded_discovery_tools = True
@@ -131,7 +131,8 @@ class ToolManager:
         """
         # Dynamic import prevents crashing if user doesn't have MCP dependencies installed
         try:
-            from .mcp import MCPClientManager, MCPToolAdapter
+            from .mcp.manager import MCPClientManager
+            from .mcp.tools import MCPToolAdapter
         except ImportError:
             logger.warning("MCP dependencies missing. Skipping MCP initialization.")
             return -1
@@ -224,6 +225,7 @@ class ToolManager:
         Return
         """
         if self._mcp_init_in_progress:
+            logger.warning("MCP is initializing. Please wait or restart the program.")
             return 
 
         if args is None:
