@@ -1,10 +1,13 @@
-#  (2026-04-24)
+#  (2026-04-25)
 
 
 ### Bug Fixes
 
 * [no ci] old test branch pruned ([b9d6abe](https://github.com/nguyenv217/callai-agentic_core/commit/b9d6abe797aa7022c927da7e05d07be07da07013))
+* better configuratoin error handling. can still import placeholders for convenience ([466ea40](https://github.com/nguyenv217/callai-agentic_core/commit/466ea406b5bbb1e76f2f918a5b04f6fb3bb0223b))
 * cleaner seperation between runtime loaded tools and user configured ([272a88a](https://github.com/nguyenv217/callai-agentic_core/commit/272a88a9134e38175ab024a9a0872dcc2bba73f8))
+* clearer import pattern ([06974f9](https://github.com/nguyenv217/callai-agentic_core/commit/06974f9d20c3fb2e8d6f2d807e96bae516334e32))
+* clearer import pattern. supply the subpackages ([619990f](https://github.com/nguyenv217/callai-agentic_core/commit/619990f341acf076daa2fea804c8ab1e1725569f))
 * **engine:** async iterator support ([68735db](https://github.com/nguyenv217/callai-agentic_core/commit/68735db5658f48b36c8a1f233d93d2f291090c03))
 * **engine:** config.system_prompt should be optional so end-user can quickly build agent with preconfigured system prompt ([8ba1732](https://github.com/nguyenv217/callai-agentic_core/commit/8ba1732bee7680aca643927f8b7cbd8d41078641))
 * **engine:** indentation bug ([d4c733c](https://github.com/nguyenv217/callai-agentic_core/commit/d4c733c4865b779bdd11dd206308fb9f4c211e9a))
@@ -18,6 +21,7 @@
 * **naming:** fix tests failed because of naming inconsistentcies ([16d85df](https://github.com/nguyenv217/callai-agentic_core/commit/16d85df951d344c68d4406c84b59836aaadd8323))
 * **openai:** async client by default ([2a76691](https://github.com/nguyenv217/callai-agentic_core/commit/2a76691880e858c6f2756feac4f16def03c07667))
 * **openai:** hotfix to compatible with older sync clients ([10f5193](https://github.com/nguyenv217/callai-agentic_core/commit/10f5193ad94db4f8e0f3f558afa97d7f7468f176))
+* **RAG:** `__init__` importing too much will raise importerror if not installed extras. ([f9e7411](https://github.com/nguyenv217/callai-agentic_core/commit/f9e7411dfa4485ef6cb794c41031fbe65cd15abb))
 * **RAG:** default async openai ([7050139](https://github.com/nguyenv217/callai-agentic_core/commit/7050139f8cd48e8052bfa3255635aac909460ee6))
 * redunant error check logic ([4c99551](https://github.com/nguyenv217/callai-agentic_core/commit/4c9955186424900f169e2fbd8fa8e88449f412d2))
 * redundant logic and bug in engine for nonduplicated tools ([64f148f](https://github.com/nguyenv217/callai-agentic_core/commit/64f148fda57938fe04ff52cbbeda3650eb117770))
@@ -43,7 +47,9 @@
 * **mcp&tool:** add `extra_env` and `extra_context` for runner config anticipate multiple agent runner with different configs ([ca43773](https://github.com/nguyenv217/callai-agentic_core/commit/ca437730ab5ec96e6fb80df6594f7c3f62e5b5f0))
 * **mcp:** Add custom ([34f2058](https://github.com/nguyenv217/callai-agentic_core/commit/34f2058953542aa4688db855be2c232f3fd63256))
 * **mcp:** allow custom hook be registered with toolmanager for MCP server death ([e9a5d3d](https://github.com/nguyenv217/callai-agentic_core/commit/e9a5d3deb0d3617665c69a1e40bea342eb79aba8))
+* **mcp:** move MCP to tools/mcp/ for clearer seperation + singleton for session spawning to avoid dup ([aee5401](https://github.com/nguyenv217/callai-agentic_core/commit/aee5401cce8087b6c37caa1e87ecc426d690dfc5))
 * **memory:** explicit strategy for trunctation memory. user can supply this for their own domain-specific truncation strat ([7e0038a](https://github.com/nguyenv217/callai-agentic_core/commit/7e0038a09c1e5ff47e919f231b33b51ba936f9de))
+* no truncation memory strat to preserve prompt caching ([351e5c1](https://github.com/nguyenv217/callai-agentic_core/commit/351e5c1dfe126d80922ab38eab3f52ac22147637))
 * **openai:** more versatile client initialization ([717b5b2](https://github.com/nguyenv217/callai-agentic_core/commit/717b5b2061b857c421c80b7fbc8b0e176ea61654))
 * **RAG:** concrete implementation of common databases ([f42108b](https://github.com/nguyenv217/callai-agentic_core/commit/f42108b8351a40ea54185dc336316eb63a2c564f))
 * **RAG:** simple rag tooling package ([41bd09a](https://github.com/nguyenv217/callai-agentic_core/commit/41bd09a5516f6ee888ed41efdf2269297f7ee363))
