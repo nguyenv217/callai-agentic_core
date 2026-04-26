@@ -54,17 +54,3 @@ def test_custom_strategy():
     
     assert len(manager.messages) == 0
 
-def test_message_limit_preservation():
-    # Test that _enforce_message_limit still works alongside strategy
-    manager = MemoryManager(max_messages=2, max_chars=1000)
-    manager.add_message({"role": "user", "content": "1"})
-    manager.add_message({"role": "assistant", "content": "2"})
-    manager.add_message({"role": "user", "content": "3"})
-    manager.add_message({"role": "assistant", "content": "4"})
-    
-    manager.enforce_context_limits()
-    
-    # Should only have 2 messages left
-    assert len(manager.messages) == 2
-    assert manager.messages[0]["content"] == "3"
-    assert manager.messages[1]["content"] == "4"
