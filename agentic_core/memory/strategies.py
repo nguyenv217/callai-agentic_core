@@ -79,5 +79,5 @@ class DefaultTruncationStrategy(TruncationStrategy):
         return content[:threshold] + "\n... [LONG TEXT TRUNCATED] ..."
 
     def _truncate_image(self, content: str) -> str:
-        # Placeholder: could replace base64 data with a URL or descriptive text
+        # Placeholder: could replace base64 data with a URL or descriptive text.
         return "[IMAGE DATA REMOVED TO SAVE SPACE]"

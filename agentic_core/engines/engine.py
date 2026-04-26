@@ -43,15 +43,20 @@ class AgentRunner:
         self.config = config or RunnerConfig()
         self.observer = observer
 
+    # ======== Context management ========
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.tools.shutdown_mcp()
 
+    # ======== Helpers ========
+
     def _add_error_tool_result(self, tool_name: str, tool_id: str, msg: str, observer: AgentEventObserver):
         observer.on_tool_complete(tool_name, tool_id, False, msg)
         self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=msg)
+
+    # ======== Entry point ========
 
     async def run_turn(self, user_input: str | list[dict], observer: AgentEventObserver | None = None, config: RunnerConfig | None = None) -> AgentResponse:
         if not observer:
