@@ -153,8 +153,8 @@ class DAGAgentRunner:
                         config=node.config
                     )
 
-                    if isinstance(result, dict) and "error" in result:
-                        raise NodeExecutionError(node_id, result["error"])
+                    if result.error:
+                        raise NodeExecutionError(node_id, result.error)
 
                     node.result = result
                     node.state = NodeState.SUCCESS
