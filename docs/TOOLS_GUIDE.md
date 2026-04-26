@@ -174,9 +174,6 @@ As a safety net, `ToolManager` registers a synchronous `cleanup()` method with P
 ### 6.2 Extra Context
 * `extra_context` passed to the manager is merged into the `context` argument of every tool's `execute` call. Use it to share session state, authentication tokens, or temporary variables.
 
-### 6.3 Security – Path Validation
-* `BaseTool._is_allowed_path` provides a safe‑check for file‑system tools. It ensures the supplied path resolves inside a given base directory and rejects absolute paths or null bytes.
-
 ---
 
 ## 7. Real usage Example: static, stateful tool, and registration with custom toolsets
@@ -288,7 +285,7 @@ manager.add_toolset("other_plain_toolset", ["some_random_tool1", "random_tool2"]
 
 | Class / Function | Key Methods / Attributes |
 |------------------|--------------------------|
-| `BaseTool` | `name`, `schema`, `execute(args, context)`, `_is_allowed_path` |
+| `BaseTool` | `name`, `schema`, `execute(args, context)` |
 | `ToolManager` | `register_tool(tool_instance, load_mcp=False)`, `cleanup()`, `ensure_mcp_initialized()`, internal `_register_discovery_tools()` |
 | `ListMCPTools` (inherits `BaseTool`) | `execute(args, context)` – returns a human‑readable catalog |
 | `LoadMCPTool` (inherits `BaseTool`) | `execute(args, context)` – loads selected MCP tools |
