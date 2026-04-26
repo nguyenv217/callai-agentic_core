@@ -44,6 +44,9 @@ class DefaultTruncationStrategy(TruncationStrategy):
             role = msg.get("role")
             content = str(msg.get("content", ""))
 
+            if isinstance(msg.get("content"), list):
+                continue  # Skip image messages for now, non-critical
+
             if role == "tool":
                 # Truncate if it exceeds the default threshold OR the total limit
                 msg["content"] = self._truncate_tool(content, min(self.tool_threshold, max_chars))
