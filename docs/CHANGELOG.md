@@ -1,3 +1,14 @@
+# (2026-04-26)
+
+### Breaking Changes
+* **API Interface**: `chat()` and `AgentRunner.run_turn()` now return a structured `AgentResponse` object instead of a string or dict. Use `.text` to access the response content.
+
+### Features
+* **Session Management**: Added `session_id` to `chat()` to enable persistence of Memory and MCP connections across turns.
+* **Lifecycle Management**: `AgentRunner` now supports the async context manager protocol (`async with`), ensuring all MCP subprocesses are cleaned up immediately.
+* **Performance**: `GlobalMCPRegistry` now uses granular per-server locks, preventing global bottlenecks during concurrent server initialization in web environments.
+
+---
 #  (2026-04-25)
 
 

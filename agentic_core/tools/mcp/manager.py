@@ -12,7 +12,6 @@ try:
 except ImportError:
     raise ConfigurationError("Python `mcp` package is not installed. Please install with: `pip install mcp`")
 
-
 logger = logging.getLogger(__name__)
 
 class _MCPSessionProxy:
@@ -23,20 +22,11 @@ class _MCPSessionProxy:
 
     async def _send_to_actor(self, action, payload):
         """Safely injects a command into the actor's loop from ANY thread/loop."""
-        import asyncio
         import concurrent.futures
-        
-        # 1. Create a thread-safe future instead of an asyncio.Future
         thread_safe_fut = concurrent.futures.Future()
-        
         def _inject():
-            # This runs INSIDE the actor's loop
             self.request_queue.put_nowait((action, payload, thread_safe_fut))
-            
-        # 2. Inject the task into the background loop
         self.loop.call_soon_threadsafe(_inject)
-        
-        # 3. Safely await the cross-loop future in the caller's loop
         return await asyncio.wrap_future(thread_safe_fut)
 
     async def list_tools(self):
@@ -61,9 +51,10 @@ class GlobalMCPRegistry:
     underlying MCP server process, maximizing resource efficiency.
     """
     _instance: 'GlobalMCPRegistry' = None
-    _lock = asyncio.Lock()
     _sessions: dict[Tuple, _MCPSession] = {}
-    
+    _locks: dict[Tuple, asyncio.Lock] = {}
+    _global_lock = asyncio.Lock()
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(GlobalMCPRegistry, cls).__new__(cls)
@@ -71,12 +62,16 @@ class GlobalMCPRegistry:
 
     @staticmethod
     def _get_identity_key(server_config: dict[str, Any]) -> Tuple:
-        """Generates a hashable identity key from the server configuration."""
         command = server_config.get("command", "python")
         args = tuple(server_config.get("args", []))
-        # Sort environment items to ensure consistent hashing
         env = tuple(sorted(server_config.get("env", {}).items()))
         return (command, args, env)
+
+    async def _get_lock_for_identity(self, identity_key: Tuple) -> asyncio.Lock:
+        async with self._global_lock:
+            if identity_key not in self._locks:
+                self._locks[identity_key] = asyncio.Lock()
+            return self._locks[identity_key]
 
     async def acquire(
         self,
@@ -90,21 +85,21 @@ class GlobalMCPRegistry:
         Returns an existing session if available, or creates a new one.
         """
         identity_key = self._get_identity_key(server_config)
-
-        async with self._lock:
+        lock = await self._get_lock_for_identity(identity_key)
+        async with lock:
             if identity_key in self._sessions:
                 logger.info(f"[Registry] Reusing existing session for '{server_name}' (Identity: {identity_key})")
                 self._sessions[identity_key]['ref_count'] += 1
                 return self._sessions[identity_key]
 
             logger.info(f"[Registry] Creating new session for '{server_name}' (Identity: {identity_key})")
-        import re, os, shutil, asyncio
-        
+        import re, os, shutil
         raw_command = server_config.get("command", "python")
         args = server_config.get("args", [])
         command = shutil.which(raw_command)
-        if not command:
-                raise RuntimeError(f"Could not find '{raw_command}' in system PATH.")
+        if not command: 
+            raise RuntimeError(f"Could not find {raw_command}")
+
         safe_env_keys = ["PATH", "HOME", "USERPROFILE", "SystemRoot", "APPDATA", "LOCALAPPDATA"]
         env = {**{k: os.environ[k] for k in safe_env_keys if k in os.environ}, **(extra_env or {})}
         server_env = server_config.get("env", {})
@@ -113,13 +108,10 @@ class GlobalMCPRegistry:
                 match = re.match(r"\${(.*?)\}", value)
                 if match:
                     env_var = match.group(1)
-                    if env_var in os.environ:
-                        env[key] = os.environ[env_var]
-                    else:
-                            raise ConfigurationError(f"Environment variable '{env_var}' not found")
+                    env[key] = os.environ.get(env_var, value)
                 else:
                     env[key] = value
-        
+
         shutdown_event = asyncio.Event()
         init_event = asyncio.Event()
         session_ref = {"error": None}
@@ -134,103 +126,88 @@ class GlobalMCPRegistry:
                     async with ClientSession(read_stream, write_stream) as session:
                         await session.initialize()
                         init_event.set()
-                        
+
                         logger.info(f"[{server_name}] ACTOR: Background task ready and polling queue.")
-                        
                         while not shutdown_event.is_set():
                             try:
                                 action, payload, fut = await asyncio.wait_for(request_queue.get(), timeout=0.5)
                                 try:
-                                    logger.info(f"[{server_name}] ACTOR: Pulled '{action}' from queue.")
                                     if action == "list_tools":
                                         res = await session.list_tools()
                                         if not fut.done(): fut.set_result(res)
                                     elif action == "call_tool":
-                                        tool_name = payload["name"]
-                                        args_dict = payload.get("arguments", {})
-                                        logger.info(f"[{server_name}] ACTOR: Executing '{tool_name}' via MCP...")
-                                        
-                                        # The actual call to the Node server
-                                        res = await session.call_tool(tool_name, arguments=args_dict)
-                                        
-                                        logger.info(f"[{server_name}] ACTOR: Successfully executed '{tool_name}'!")
+                                        res = await session.call_tool(payload["name"], arguments=payload.get("arguments"))
+                                        logger.info(f"[{server_name}] ACTOR: Successfully executed '{payload["name"]}'")
                                         if not fut.done(): fut.set_result(res)
-                                        
                                 except Exception as e:
-                                    logger.error(f"[{server_name}] ACTOR ERROR: {type(e).__name__} - {e}")
+                                    logger.exception(f"[{server_name}] ACTOR ERROR: {type(e).__name__} - {e}")
                                     if not fut.done(): fut.set_exception(e)
                                 finally:
-                                    logger.info(f"[{server_name}] ACTOR: Marking queue task as done.")
                                     request_queue.task_done()
-                                    
-                            except asyncio.TimeoutError:
-                                pass # Normal heartbeat, loop around
-                            except Exception as queue_err:
-                                logger.error(f"[{server_name}] ACTOR QUEUE ERROR: {queue_err}")
-                                
+                            except asyncio.TimeoutError: 
+                                # Normal heartbeat
+                                pass
             except Exception as e:
                 logger.exception(f"[{server_name}] Server task died unexpectedly: {e}")
-
-                if on_server_death:
+                if on_server_death: 
                     on_server_death(server_name, e)
-                
                 session_ref["error"] = e
                 if not init_event.is_set():
                     init_event.set()
 
         task = asyncio.create_task(server_task(), name=f"mcp_server_{server_name}")
-        
         await asyncio.wait_for(init_event.wait(), timeout=60.0)
-        
-        if session_ref["error"]:
-            raise session_ref["error"]
+        if session_ref["error"]: raise session_ref["error"]
 
-        new_session: _MCPSession = {
-        "name": server_name,
-            "session": session_proxy,
-        "shutdown_event": shutdown_event,
-        "task": task,
-            "ref_count": 1
-        }
-        self._sessions[identity_key] = new_session
+        new_session = {"name": server_name, "session": session_proxy, "shutdown_event": shutdown_event, "task": task, "ref_count": 1}
+        async with lock:
+            self._sessions[identity_key] = new_session
         return new_session
 
     async def release(self, identity_key: Tuple):
         """Decrements ref count and shuts down session if last client releases it."""
-        async with self._lock:
+        lock = await self._get_lock_for_identity(identity_key)
+        async with lock:
             if identity_key in self._sessions:
                 self._sessions[identity_key]['ref_count'] -= 1
-                ref_count = self._sessions[identity_key]['ref_count']
-
-                if ref_count <= 0:
+                if self._sessions[identity_key]['ref_count'] <= 0:
                     logger.info(f"[Registry] Ref count zero. Shutting down session for {identity_key}")
                     session_info = self._sessions.pop(identity_key)
-                    shutdown_event = session_info['shutdown_event']
-                    task = session_info['task']
-                    shutdown_event.set()
-                    try:
-                        await asyncio.wait_for(task, timeout=5.0)
+                    session_info['shutdown_event'].set()
+                    try: 
+                        await asyncio.wait_for(session_info['task'], timeout=5.0)
                     except asyncio.TimeoutError:
-                                logger.warning(f"[Registry] Shutdown timeout for {identity_key}. Force killing task.")
-                                task.cancel()
-                    except Exception:
-                                pass
-                else:
-                    logger.info(f"[Registry] Session for {identity_key} still active. Ref count: {ref_count}")
+                        logger.warning(f"[Registry] Shutdown timeout for {identity_key}. Force killing task.")
+                        session_info['task'].cancel()
+                    except: 
+                        session_info['task'].cancel()
 
+                else:
+                    logger.info(f"[Registry] Session for {identity_key} still active. Ref count: {self._sessions[identity_key]['ref_count']}")
+        
     async def clear(self):
         """Clears all sessions in the registry."""
-        async with self._lock:
-            for identity_key in list(self._sessions.keys()):
-                session_info = self._sessions.pop(identity_key)
-                shutdown_event = session_info['shutdown_event']
-                task = session_info['task']
-                shutdown_event.set()
-                try:
-                    await asyncio.wait_for(task, timeout=1.0)
-                except Exception:
-                    task.cancel()
-            logger.info("[Registry] All sessions cleared.")
+        async with self._global_lock:
+            # Create a list of all identity keys to avoid modifying the dict during iteration
+            identity_keys = list(self._sessions.keys())
+
+        # Process each session with its own lock
+        for identity_key in identity_keys:
+            lock = await self._get_lock_for_identity(identity_key)
+            async with lock:
+                if identity_key in self._sessions:
+                    logger.info(f"[Registry] Clearing session for {identity_key}")
+                    session_info = self._sessions.pop(identity_key)
+                    session_info['shutdown_event'].set()
+                    try:
+                        await asyncio.wait_for(session_info['task'], timeout=5.0)
+                    except asyncio.TimeoutError:
+                        logger.warning(f"[Registry] Shutdown timeout for {identity_key}. Force killing task.")
+                        session_info['task'].cancel()
+                    except:
+                        session_info['task'].cancel()
+
+
 
 class MCPClientManager:
     """
@@ -416,4 +393,3 @@ class MCPClientManager:
                 logger.exception(f"Error releasing MCP session for '{server_name}'")
 
         self.sessions.clear()
-

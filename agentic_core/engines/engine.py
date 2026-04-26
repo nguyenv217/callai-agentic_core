@@ -1,11 +1,13 @@
 from typing import Any
 import json
+import asyncio
 
 from ..llm_providers import ILLMClient 
 from ..tools import ToolManager
 from ..memory.manager import MemoryManager
 from ..observers import AgentEventObserver, DecisionEvent, LastIterationDecision, ToolStartDecision
 from ..config import ConfigurationError, RunnerConfig
+from ..interfaces import AgentResponse
 
 import logging
 logger = logging.getLogger(__name__)
@@ -14,13 +16,6 @@ class AgentRunner:
     """
     A class that manages the execution of an agent, coordinating between an LLM client,
     tools, memory, and configuration to perform tasks.
-
-    Attributes:
-        llm (ILLMClient): The LLM client used for generating responses.
-        tools (ToolManager): Manages the tools available to the agent.
-        memory (MemoryManager): Handles the agent's memory operations.
-        last_usage_meta (Any | None): Stores metadata from the last usage.
-        config (RunnerConfig): Configuration settings for the agent runner.
     """
 
     def __init__(
@@ -48,11 +43,17 @@ class AgentRunner:
         self.config = config or RunnerConfig()
         self.observer = observer
 
-    def _add_error_tool_result(self, tool_name: str, tool_id: str, msg: str, observer: AgentEventObserver): # helper for less verbosity
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.tools.shutdown_mcp()
+
+    def _add_error_tool_result(self, tool_name: str, tool_id: str, msg: str, observer: AgentEventObserver):
         observer.on_tool_complete(tool_name, tool_id, False, msg)
         self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=msg)
 
-    async def run_turn(self, user_input: str | list[dict], observer: AgentEventObserver | None = None, config: RunnerConfig | None = None) -> dict:
+    async def run_turn(self, user_input: str | list[dict], observer: AgentEventObserver | None = None, config: RunnerConfig | None = None) -> AgentResponse:
         if not observer:
             if not self.observer:
                 raise ConfigurationError("`observer`: `AgentEventObserver` must be provided either during initialization or at runtime.")
@@ -64,9 +65,7 @@ class AgentRunner:
         if config.mcp_clear_loaded_tools:
             self.tools.clear_loaded_tools()
 
-        # === Sytem prompt ===
         if config.system_prompt:
-            # If a toolset also defines a prompt, prepend it to the system prompt.
             toolset_prompt = self.tools.get_toolset_prompt(config.toolset) if config.toolset else None
             if toolset_prompt:
                 combined_prompt = f"{toolset_prompt}\n\n{config.system_prompt}"
@@ -74,45 +73,36 @@ class AgentRunner:
             else:
                 self.memory.set_system_prompt(config.system_prompt)
         else:
-            # No explicit system_prompt; fall back to toolset prompt if available.
             toolset_prompt = self.tools.get_toolset_prompt(config.toolset) if config.toolset else None
             if toolset_prompt:
                 self.memory.set_system_prompt(toolset_prompt if not self.memory.system_prompt_exists() else  toolset_prompt + "\n\n" + self.memory.system_prompt['content'])
 
-        # === User input ===
         messages = [{"role": "user", "content": user_input}] if isinstance(user_input, str) else user_input
         for message in messages:
             self.memory.add_message(message)
 
         observer.on_turn_start()
-        
-        # Preparation phase to setup configureed MCP servers and tools. MCP settings go here
         await self.tools.prepare_turn(config)
-        
-        # Tools preprocssing. Verbose but assume no one is modifying `tool_manager.toolsets` directly. 
+
         active_tools = config.tools or self.tools.get_tools_from_toolset(config.toolset)
         active_tools.extend(self.tools.get_mcp_loaded_tools()) 
-        
+
         if config.mcp_enable_discovery:
             active_tools.extend(self.tools.get_discovery_tools()) 
 
         max_iterations = config.max_iterations
         iteration = 1
-
-        final_response = {"text": "", "reasoning": "", "tool_calls": [], "usage": {}}
+        final_response = AgentResponse()
 
         try:
-            # The Agentic Loop
             while iteration <= max_iterations:
                 observer.on_iteration_start(iteration, max_iterations)
-                
                 conversation = self.memory.get_history()
                 logger.info(f"Tools turn {iteration}: {[t['function']['name'] for t in active_tools]}")
-                
                 response_iterator = self.llm.ask(conversation, active_tools) 
-                
+
                 turn_response = {"text": "", "reasoning": "", "tool_calls": []}
-                
+
                 async for response in response_iterator:
                     if response.success:
                         if response.text: turn_response["text"] += response.text
@@ -122,20 +112,17 @@ class AgentRunner:
                             self.last_usage_meta = response.usage
                     else:
                         observer.on_error(response.error or "Unknown LLM error")
-                        return {"error": response.error}
-
+                        return AgentResponse(error=response.error)
+                
                 logger.info(f"Turn response: {turn_response}")
-
-                # If the LLM returned final text (no tools requested), we are done.
                 if not turn_response["tool_calls"]:
                     self.memory.add_message({"role": "assistant", "content": turn_response["text"]})
-                    final_response["text"] = turn_response["text"]
-                    final_response["reasoning"] = turn_response["reasoning"]
-                    final_response['usage'] = self.last_usage_meta
+                    final_response.text = turn_response["text"]
+                    final_response.reasoning = turn_response["reasoning"]
+                    final_response.usage = self.last_usage_meta or {}
                     break
-
+                
                 # ==== If we reach here, means it's a tool calling session ====
-                # Handle Tool Calls
                 self.memory.add_message({
                     "role": "assistant", 
                     "content": turn_response.get("text", ""), 
@@ -165,7 +152,7 @@ class AgentRunner:
                         self._add_error_tool_result(tool_name, tool_id, decision_event.message, observer)
                         continue
                     elif decision_event.action == ToolStartDecision.ABANDON:
-                        return {"success": True, **final_response}
+                        return final_response
                     elif decision_event.action == ToolStartDecision.BREAK_WITH_MSG:
                         self._add_error_tool_result(tool_name, tool_id, decision_event.message, observer)
                         break
@@ -177,8 +164,7 @@ class AgentRunner:
                             observer.on_tool_complete(tool_name, tool_id, False, error_msg)
                             self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=error_msg)
                             continue
-                        
-                        # === Execution ===
+
                         tasks.append(
                             self.tools.execute(
                                 tool_name, parsed_args, controller=observer, 
@@ -189,21 +175,17 @@ class AgentRunner:
                         tc_meta.append((tc["id"], tool_name))
 
                 if len(tasks) > 0:
-                    import asyncio
                     tool_results = await asyncio.gather(*tasks, return_exceptions=True)
 
                     for i, tool_result in enumerate(tool_results):
                         tc_id, tool_name = tc_meta[i]
                         success = not isinstance(tool_result, Exception)
                         observer.on_tool_complete(tool_name, tc_id, success, tool_result)
-                        
                         self.memory.add_tool_result(
                             tool_call_id=tc_id,
                             name=tool_name,
                             content=str(tool_result)
                         )
-
-                    self.memory.enforce_context_limits()
 
                 iteration += 1
                 if iteration == max_iterations:
@@ -220,13 +202,12 @@ class AgentRunner:
 
             if iteration > max_iterations:
                 observer.on_error(f"Agent failed to provide a final answer after {max_iterations} iterations.")
-
         except Exception as e:
-            logger.exception(f"Error executing agent turn")
-            error_msg = f"Engine execution error: {str(e)}"
+            logger.exception("Error during run_turn")
             observer.on_error(error_msg)
-            final_response["error"] = error_msg
+            return AgentResponse(error=f"Engine execution error: {str(e)}")
+        
         finally:
             observer.on_turn_complete(final_response)
 
-        return {"success": True, **final_response} if "error" not in final_response else {"success": False, **final_response}
+        return final_response

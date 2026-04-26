@@ -46,7 +46,7 @@ async def main():
         provider="openai",
         api_key="sk-..."  # Your OpenAI key
     )
-    print(result)
+    print(result.text)
 
 asyncio.run(main())
 ```
@@ -65,7 +65,7 @@ async def main():
         base_url="https://router.huggingface.co/v1",
         model="meta-llama/Llama-3.1-8B-Instruct"
     )
-    print(result)
+    print(result.text)
 
 asyncio.run(main())
 ```
@@ -78,7 +78,7 @@ result = await chat(
     provider="anthropic", 
     api_key="sk-ant-..."  # Your Anthropic key
 )
-print(result)
+print(result.text)
 ```
 
 ### If you have Ollama (local, no key needed):
@@ -88,7 +88,7 @@ result = await chat(
     message="What's the weather in Tokyo?",
     provider="ollama"  # No API key needed!
 )
-print(result)
+print(result.text)
 ```
 
 **That's it!** Want to see what's happening? Add `verbose=True`.
@@ -112,6 +112,17 @@ result = await chat(
     verbose=True
 )
 
+
+# Persistent session usage (preserves memory and MCP connections)
+result = await chat(
+    message="Remember my name is Alice",
+    provider="openai",
+    api_key="sk-...",
+    session_id="user_session_123"
+)
+print(result.text)
+
+
 # Advanced usage with RunnerConfig
 result = await chat(
     message="Analyze this repo",
@@ -126,7 +137,7 @@ result = await chat(
 )
 ```
 
-**Returns:** The agent's text response as a string.
+**Returns:** An `AgentResponse` object containing `text`, `reasoning`, `tool_calls`, `usage`, and `error` fields.
 
 ---
 
@@ -306,7 +317,7 @@ result = await agent.run_turn(
     user_input="Hello!",
     observer=PrintObserver()
 )
-print(result)
+print(result.text)
 ```
 
 ### Memory Management & Context Truncation

@@ -1,0 +1,31 @@
+import asyncio
+from typing import Dict, Any, Optional
+from .engine import AgentRunner
+
+class SessionManager:
+    """
+    Manages cached AgentRunner instances to preserve memory and MCP connections.
+    """
+    def __init__(self):
+        self._sessions: Dict[str, AgentRunner] = {}
+        self._lock = asyncio.Lock()
+
+    async def get_runner(self, session_id: str, creator_func) -> AgentRunner:
+        async with self._lock:
+            if session_id in self._sessions:
+                return self._sessions[session_id]
+
+            runner = creator_func()
+            self._sessions[session_id] = runner
+            return runner
+
+    async def remove_session(self, session_id: str):
+        async with self._lock:
+            if session_id in self._sessions:
+                runner = self._sessions.pop(session_id)
+                # ToolManager is handled by AgentRunner usually, but we should try to close it.
+                if hasattr(runner, "tools") and hasattr(runner.tools, "shutdown_mcp"):
+                    await runner.tools.shutdown_mcp()
+
+# Global singleton for the convenience chat() function
+global_session_manager = SessionManager()
