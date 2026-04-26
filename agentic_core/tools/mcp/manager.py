@@ -137,7 +137,7 @@ class GlobalMCPRegistry:
                                         if not fut.done(): fut.set_result(res)
                                     elif action == "call_tool":
                                         res = await session.call_tool(payload["name"], arguments=payload.get("arguments"))
-                                        logger.info(f"[{server_name}] ACTOR: Successfully executed '{payload["name"]}'")
+                                        logger.info(f"[{server_name}] ACTOR: Successfully executed '{payload['name']}'")
                                         if not fut.done(): fut.set_result(res)
                                 except Exception as e:
                                     logger.exception(f"[{server_name}] ACTOR ERROR: {type(e).__name__} - {e}")
