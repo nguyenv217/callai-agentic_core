@@ -7,6 +7,8 @@ import inspect
 import logging
 import json
 
+from agentic_core.constants import MCP_INITLIAZE_TIMEOUT
+
 from ..config import ConfigurationError
 from ..interfaces import DecisionAction, DecisionEvent
 from .base import ToolSchema
@@ -197,7 +199,7 @@ class ToolManager:
             return
             
         try:
-            await asyncio.wait_for(self.initialize_mcp(), timeout=15.0)
+            await asyncio.wait_for(self.initialize_mcp(), timeout=MCP_INITLIAZE_TIMEOUT)
             # self._mcp_initialized = True
             logger.debug("MCP servers initialized successfully.")
         except asyncio.TimeoutError:

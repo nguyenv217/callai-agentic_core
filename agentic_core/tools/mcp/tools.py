@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Dict, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ...config import ConfigurationError
 from ..base import BaseTool
@@ -163,7 +163,7 @@ class MCPToolAdapter(BaseTool):
     
     def __init__(
         self, 
-        mcp_tool_def: Dict[str, Any], 
+        mcp_tool_def: dict[str, Any], 
         session: Any, 
         server_name: str,
         timeout: float = 30.0,

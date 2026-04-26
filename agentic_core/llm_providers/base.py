@@ -1,7 +1,7 @@
 """
 LLM Provider base interfaces.
 """
-from typing import Iterator, List, Dict, Any, Protocol, AsyncIterator
+from typing import Any, Protocol, AsyncIterator
 from dataclasses import dataclass
 
 @dataclass
@@ -9,8 +9,8 @@ class LLMResponse:
     """Response from an LLM provider."""
     success: bool
     text: str | None = None
-    tool_calls: List[Dict] | None = None
-    usage: Dict | None = None
+    tool_calls: list[dict] | None = None
+    usage: dict | None = None
     error: str | None = None
     reasoning: str | None = None
 
@@ -23,8 +23,8 @@ class ILLMClient(Protocol):
     
     def ask(
         self,
-        messages: List[Dict[str, Any]],
-        tools: List[Dict[str, Any]] | None = None,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
         **kwargs
     ) -> AsyncIterator[LLMResponse]: 
         """

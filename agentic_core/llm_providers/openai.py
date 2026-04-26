@@ -1,7 +1,7 @@
 """
 OpenAI LLM Provider.
 """
-from typing import List, Dict, Any, AsyncIterator
+from typing import Any, AsyncIterator
 
 from ..config import ConfigurationError
 from .base import ILLMClient, LLMResponse
@@ -39,8 +39,8 @@ class OpenAILLM(ILLMClient):
     
     async def ask(
         self, 
-        messages: List[Dict[str, Any]], 
-        tools: List[Dict[str, Any]] | None = None, 
+        messages: list[dict[str, Any]], 
+        tools: list[dict[str, Any]] | None = None, 
         **kwargs
     ) -> AsyncIterator[LLMResponse]:
         """

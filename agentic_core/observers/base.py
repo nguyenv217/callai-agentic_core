@@ -3,8 +3,7 @@ Observer base interface.
 """
 from abc import ABC
 from enum import Enum, auto
-from typing import Union
-from ..interfaces import DecisionEvent, DecisionAction
+from ..interfaces import DecisionEvent
 
 class ToolStartDecision(Enum):
     """

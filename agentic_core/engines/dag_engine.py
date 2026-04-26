@@ -1,19 +1,18 @@
 import asyncio
 import traceback
 from enum import Enum, auto
-from typing import Any, Dict, List, Set, Optional, Tuple
+from typing import Any, Tuple
 from dataclasses import dataclass, field
 import logging
 
 from .engine import AgentRunner, RunnerConfig
-from ..memory.manager import MemoryManager
 from ..observers import AgentEventObserver
 
 logger = logging.getLogger(__name__)
 
 class NodeExecutionError(Exception):
     """Custom exception for errors during node execution."""
-    def __init__(self, node_id: str, message: str, original_exception: Optional[Exception] = None):
+    def __init__(self, node_id: str, message: str, original_exception: Exception | None = None):
         self.node_id = node_id
         self.original_exception = original_exception
         super().__init__(f"Node {node_id} failed: {message}")
@@ -39,8 +38,8 @@ class DAGNode:
     result: Any = None
     max_retries: int = 0
     current_retries: int = 0
-    error_details: Optional[str] = None
-    failed_by: Optional[str] = None
+    error_details: str | None = None
+    failed_by: str | None = None
 
 class DAGEventObserver(AgentEventObserver):
     def on_node_queued(self, node_id: str, priority: int):
@@ -55,25 +54,25 @@ class DAGEventObserver(AgentEventObserver):
     def on_node_retry(self, node_id: str, retry_count: int, max_retries: int):
         logger.info(f"[DAG] Node {node_id} failed. Retrying ({retry_count}/{max_retries})...")
 
-    def on_graph_complete(self, diagnostics: Dict[str, Any]):
+    def on_graph_complete(self, diagnostics: dict[str, Any]):
         logger.info(f"[DAG] Graph execution complete. Diagnostics: {diagnostics}")
 
 class DAGAgentRunner:
     def __init__(
         self, 
-        nodes_def: Dict[str, Tuple[AgentRunner, RunnerConfig, str, Optional[int]]], 
-        edges: List[Tuple[str, str]], 
+        nodes_def: dict[str, Tuple[AgentRunner, RunnerConfig, str, int]] | None, 
+        edges: list[Tuple[str, str]], 
         max_concurrency: int = 4,
-        observer: Optional[DAGEventObserver] = None
+        observer: DAGEventObserver | None = None
     ):
         """
         nodes_def: {node_id: (runner, config, prompt, max_retries)}
         edges: [(parent_id, child_id)]
         """
-        self.nodes: Dict[str, DAGNode] = {}
-        self.out_edges: Dict[str, List[str]] = {node_id: [] for node_id in nodes_def}
-        self.in_edges: Dict[str, List[str]] = {node_id: [] for node_id in nodes_def}
-        self.in_degree: Dict[str, int] = {node_id: 0 for node_id in nodes_def}
+        self.nodes: dict[str, DAGNode] = {}
+        self.out_edges: dict[str, list[str]] = {node_id: [] for node_id in nodes_def}
+        self.in_edges: dict[str, list[str]] = {node_id: [] for node_id in nodes_def}
+        self.in_degree: dict[str, int] = {node_id: 0 for node_id in nodes_def}
 
         for node_id, def_vals in nodes_def.items():
             runner, config, prompt = def_vals[:3]

@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import Any, Callable, Dict, List, Tuple, TypedDict
+from typing import Any, Callable, Tuple, TypedDict
 from pathlib import Path
 
 from ...config import ConfigurationError
@@ -62,7 +62,7 @@ class GlobalMCPRegistry:
     """
     _instance: 'GlobalMCPRegistry' = None
     _lock = asyncio.Lock()
-    _sessions: Dict[Tuple, _MCPSession] = {}
+    _sessions: dict[Tuple, _MCPSession] = {}
     
     def __new__(cls):
         if cls._instance is None:
@@ -70,7 +70,7 @@ class GlobalMCPRegistry:
         return cls._instance
 
     @staticmethod
-    def _get_identity_key(server_config: Dict[str, Any]) -> Tuple:
+    def _get_identity_key(server_config: dict[str, Any]) -> Tuple:
         """Generates a hashable identity key from the server configuration."""
         command = server_config.get("command", "python")
         args = tuple(server_config.get("args", []))
@@ -81,8 +81,8 @@ class GlobalMCPRegistry:
     async def acquire(
         self,
         server_name: str,
-        server_config: Dict[str, Any],
-        extra_env: Dict[str, str] | None,
+        server_config: dict[str, Any],
+        extra_env: dict[str, str] | None,
         on_server_death: Callable[[str, Exception], Any] | None
     ) -> _MCPSession:
         """
@@ -239,7 +239,7 @@ class MCPClientManager:
     when server configurations are identical.
     """
 
-    def __init__(self, config_path: str | Path | None = None, config: Dict[str, Any] | None = None, on_server_death: Callable[[str, Exception], Any] | None = None):
+    def __init__(self, config_path: str | Path | None = None, config: dict[str, Any] | None = None, on_server_death: Callable[[str, Exception], Any] | None = None):
         """
         Initialize the MCP client manager.
 
@@ -251,15 +251,15 @@ class MCPClientManager:
         self.config_path = config_path
         self.config = config
         self.on_server_death = on_server_death
-        self.sessions: List[dict] = []
+        self.sessions: list[dict] = []
         self._registry = GlobalMCPRegistry()
 
-    def load_config(self) -> Dict[str, Any]:
+    def load_config(self) -> dict[str, Any]:
         """
         Load MCP server configuration from JSON file if path is provided.
 
         Returns:
-            Dict containing mcpServers configuration
+            dict containing mcpServers configuration
         """
         if self.config:
             return self.config
@@ -340,7 +340,7 @@ class MCPClientManager:
         except ImportError:
             raise ConfigurationError("MCP SDK not installed. Run: `pip install mcp`")
 
-    async def _connect_to_server(self, server_name: str, server_config: Dict[str, Any], extra_env: dict[str, str] | None):
+    async def _connect_to_server(self, server_name: str, server_config: dict[str, Any], extra_env: dict[str, str] | None):
         identity_key = self._registry._get_identity_key(server_config)
 
         session_info = await self._registry.acquire(
@@ -356,12 +356,12 @@ class MCPClientManager:
         })
         logger.info(f"Session mapped for '{server_name}' (Shared ref: {session_info['ref_count']})")
 
-    async def list_all_tools(self) -> List[Dict[str, Any]]:
+    async def list_all_tools(self) -> list[dict[str, Any]]:
         """
-        List all tools from all connected MCP servers.
+        list all tools from all connected MCP servers.
 
         Returns:
-            List of tool definitions with server info
+            list of tool definitions with server info
         """
 
         all_tools = []

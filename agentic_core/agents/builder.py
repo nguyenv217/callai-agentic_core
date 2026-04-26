@@ -5,7 +5,7 @@ This module provides simple, idiot-proof ways to create agents without
 understanding the underlying protocols.
 """
 from __future__ import annotations
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from openai import OpenAI
@@ -23,9 +23,9 @@ def create_openai_agent(
     api_key: str,
     model: str = "gpt-4o",
     system_prompt: str = "You are a helpful assistant.",
-    mcp_config_path: Optional[str] = None,
-    observer: Optional[AgentEventObserver] = None,
-    base_url: Optional[str] = None,
+    mcp_config_path: str | None = None,
+    observer: AgentEventObserver | None = None,
+    base_url: str | None = None,
     timeout: float = 30,
     client: OpenAI | None = None,
     **kwargs
@@ -66,8 +66,8 @@ def create_anthropic_agent(
     api_key: str,
     model: str = "claude-3-5-sonnet-20241022",
     system_prompt: str = "You are a helpful assistant.",
-    mcp_config_path: Optional[str] = None,
-    observer: Optional[AgentEventObserver] = None,
+    mcp_config_path: str | None = None,
+    observer: AgentEventObserver | None = None,
     **kwargs
 ) -> AgentRunner:
     """Create an Anthropic Claude agent in one line."""
@@ -83,9 +83,9 @@ def create_anthropic_agent(
 def create_ollama_agent(
     model: str = "llama3.1",
     system_prompt: str = "You are a helpful assistant.",
-    base_url: Optional[str] = None,
-    mcp_config_path: Optional[str] = None,
-    observer: Optional[AgentEventObserver] = None,
+    base_url: str | None = None,
+    mcp_config_path: str | None = None,
+    observer: AgentEventObserver | None = None,
     **kwargs
 ) -> AgentRunner:
     """Create an Ollama local agent in one line."""
@@ -101,13 +101,13 @@ def create_ollama_agent(
 
 async def chat(
     message: str,
-    runner: Optional[AgentRunner] = None,
+    runner: AgentRunner | None = None,
     provider: str = "openai",
-    api_key: Optional[str] = None,
-    model: Optional[str] = None,
-    base_url: Optional[str] = None,
+    api_key: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
     system_prompt: str = "You are a helpful assistant.",
-    mcp_config_path: Optional[str] = None,
+    mcp_config_path: str | None = None,
     verbose: bool = False,
     config: RunnerConfig | None = None,
     **kwargs

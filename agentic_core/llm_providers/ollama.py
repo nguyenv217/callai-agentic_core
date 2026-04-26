@@ -1,7 +1,7 @@
 """
 Ollama LLM Provider.
 """
-from typing import AsyncIterator, List, Dict, Any
+from typing import AsyncIterator, Any
 from .base import ILLMClient, LLMResponse
 
 
@@ -26,8 +26,8 @@ class OllamaLLM(ILLMClient):
     
     async def ask(
         self, 
-        messages: List[Dict[str, Any]], 
-        tools: List[Dict[str, Any]] | None = None, 
+        messages: list[dict[str, Any]], 
+        tools: list[dict[str, Any]] | None = None, 
         **kwargs
     ) -> AsyncIterator[LLMResponse]:
         """

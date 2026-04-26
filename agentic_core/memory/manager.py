@@ -1,11 +1,12 @@
 import hashlib
 import json
-from typing import List, Dict
+
+from agentic_core.constants import MEMORY_MANAGER_MAX_CHARS
 
 from .strategies import TruncationStrategy, DefaultTruncationStrategy
 
 class MemoryManager:
-    def __init__(self, max_messages: int | None = None, max_chars: int = 80000, strategy: TruncationStrategy = None):
+    def __init__(self, max_messages: int | None = None, max_chars: int = MEMORY_MANAGER_MAX_CHARS, strategy: TruncationStrategy = None):
         """
         Initialize the MemoryManager instance.
 
@@ -17,8 +18,8 @@ class MemoryManager:
             strategy : TruncationStrategy, optional
                 A strategy for content-level truncation. Defaults to DefaultTruncationStrategy.
         """
-        self.messages: List[Dict] = []
-        self.system_prompt: Dict = None
+        self.messages: list[dict] = []
+        self.system_prompt: dict = None
         self.max_messages = max_messages
         self.max_chars = max_chars
         self.strategy = strategy or DefaultTruncationStrategy()
@@ -39,7 +40,7 @@ class MemoryManager:
         else:
             self.system_prompt = {"role": "system", "content": content}
 
-    def add_message(self, message: Dict):
+    def add_message(self, message: dict):
         """Adds standard messages (user, assistant)."""
         self.messages.append(message)
         self._update_hash()
@@ -52,7 +53,7 @@ class MemoryManager:
         self._update_hash()
         self._enforce_message_limit()
 
-    def get_history(self) -> List[Dict]:
+    def get_history(self) -> list[dict]:
         history = []
         if self.system_prompt:
             history.append(self.system_prompt)
@@ -74,9 +75,12 @@ class MemoryManager:
         
         self._update_hash()
 
+    # THIS IS DEPRECATED BUT KEPT FOR BACKWARD COMPABILITY/or anyone who actually uses it anyway 
     def _enforce_message_limit(self):
-        """Prunes messages in valid structural pairs to maintain LLM API context validity.
-        NOTE: Deprecated `pop()` truncation and will defaults to replacing with placeholder instead to preserve structural integrity."""
+        """
+        Prunes messages in valid structural pairs to maintain LLM API context validity.
+        IMPORTANT: Deprecated `pop()` truncation and will defaults to replacing with placeholder instead to preserve structural integrity.
+        """
         if not self.max_messages:
             return
 

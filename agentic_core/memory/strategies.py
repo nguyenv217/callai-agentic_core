@@ -1,10 +1,10 @@
 import json
 
-from typing import Protocol, List, Dict
+from typing import Protocol
 
 class TruncationStrategy(Protocol):
     """Protocol for pluggable memory truncation logic."""
-    def truncate(self, messages: List[Dict], max_chars: int) -> List[Dict]:
+    def truncate(self, messages: list[dict], max_chars: int) -> list[dict]:
         """
         Processes a list of messages to fit within constraints.
         Returns a modified list of messages.
@@ -14,7 +14,7 @@ class TruncationStrategy(Protocol):
 class NoTruncationStrategy(TruncationStrategy):
     """Strategy that prevents any message truncation. Oftentimes financially better for API providers supporing context caching."""
     
-    def truncate(self, messages: List[Dict], max_chars: int) -> List[Dict]:
+    def truncate(self, messages: list[dict], max_chars: int) -> list[dict]:
         """Returns the entire list of messages, bypassing truncation logic."""
         return messages
 
