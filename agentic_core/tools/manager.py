@@ -335,6 +335,7 @@ class ToolManager:
                         args[key] = json.loads(value)
                         logger.info(f"Fixed double-serialized {expected_type} for '{key}'")
                     except (json.JSONDecodeError, TypeError):
+                        logger.warning(f"{tool_name}: Failed to parse {expected_type} for '{key}'")
                         # If it's not valid JSON, the server will handle the error 
                         # during its own validation phase. (or not, and it will returns an error)
                         pass
