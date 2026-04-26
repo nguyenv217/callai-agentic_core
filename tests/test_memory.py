@@ -1,7 +1,6 @@
-import pytest
 import json
 from agentic_core.memory.manager import MemoryManager
-from agentic_core.memory.strategies import DefaultTruncationStrategy
+from agentic_core.memory.strategies import DefaultTruncationStrategy, NoTruncationStrategy
 
 def test_default_truncation_strategy_text():
     strategy = DefaultTruncationStrategy(text_threshold=10)
@@ -53,4 +52,24 @@ def test_custom_strategy():
     manager.enforce_context_limits()
     
     assert len(manager.messages) == 0
+
+def test_no_truncation_strategy():
+    """Test that NoTruncationStrategy leaves messages intact regardless of constraints."""
+    strategy = NoTruncationStrategy()
+    messages = [{"role": "user", "content": "A" * 1000}]
+    
+    # Constraint is 10 chars, but strategy should ignore it
+    result = strategy.truncate(messages, max_chars=10)
+    assert len(result[0]["content"]) == 1000
+
+def test_memory_manager_is_new_session():
+    """Test state detection for fresh versus ongoing sessions."""
+    manager = MemoryManager()
+    assert manager.is_new_session() is True
+    
+    manager.add_message({"role": "user", "content": "Hello"})
+    assert manager.is_new_session() is False
+    
+    manager.clear()
+    assert manager.is_new_session() is True
 
