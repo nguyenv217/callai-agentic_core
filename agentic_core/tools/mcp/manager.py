@@ -4,13 +4,14 @@ import logging
 from typing import Any, Callable, Dict, List, Tuple, TypedDict
 from pathlib import Path
 
+from ...config import ConfigurationError
+
 try:
     from mcp.client.stdio import stdio_client
     from mcp import ClientSession, StdioServerParameters
 except ImportError:
     raise ConfigurationError("Python `mcp` package is not installed. Please install with: `pip install mcp`")
 
-from ...config import ConfigurationError
 
 logger = logging.getLogger(__name__)
 
