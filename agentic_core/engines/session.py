@@ -7,9 +7,12 @@ class SessionManager:
     """
     def __init__(self):
         self._sessions: dict[str, AgentRunner] = {}
-        self._lock = asyncio.Lock()
+        self._lock = None
 
     async def get_runner(self, session_id: str, creator_func) -> AgentRunner:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+
         async with self._lock:
             if session_id in self._sessions:
                 return self._sessions[session_id]
@@ -19,6 +22,9 @@ class SessionManager:
             return runner
 
     async def remove_session(self, session_id: str):
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+
         async with self._lock:
             if session_id in self._sessions:
                 runner = self._sessions.pop(session_id)

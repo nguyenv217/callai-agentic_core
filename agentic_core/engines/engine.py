@@ -42,6 +42,7 @@ class AgentRunner:
         self.last_usage_meta: None | Any = None
         self.config = config or RunnerConfig()
         self.observer = observer
+        self._toolset_prompt_loaded = False
 
     # ======== Context management ========
     async def __aenter__(self):
@@ -80,7 +81,14 @@ class AgentRunner:
         else:
             toolset_prompt = self.tools.get_toolset_prompt(config.toolset) if config.toolset else None
             if toolset_prompt:
-                self.memory.set_system_prompt(toolset_prompt if not self.memory.system_prompt_exists() else  toolset_prompt + "\n\n" + self.memory.system_prompt['content'])
+                if not self.memory.system_prompt_exists():
+                    self.memory.set_system_prompt(toolset_prompt)
+                else:
+                    # Prevent infinite concatenation across turns
+                    current_prompt = self.memory.system_prompt['content']
+                    if not self._toolset_prompt_loaded:
+                        self.memory.set_system_prompt(toolset_prompt + "\n\n" + current_prompt)
+                        self._toolset_prompt_loaded = True
 
         messages = [{"role": "user", "content": user_input}] if isinstance(user_input, str) else user_input
         for message in messages:
