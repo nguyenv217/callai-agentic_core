@@ -322,13 +322,6 @@ class ToolManager:
         if tool_name not in self._plugins:
             return f"Error: Tool '{tool_name}' not found or not registered."
         
-        # Handle double-serialized JSON arguments cleanly
-        if isinstance(args, str):
-            try:
-                args = json.loads(args)
-            except json.JSONDecodeError:
-                return f"Error: Tool arguments must be valid JSON. Received: {args}"
-
         try:
             param_schemas = self._plugins[tool_name].schema['function']['parameters'].get('properties', {})
     

@@ -20,6 +20,10 @@ _LOOKUP = {
 }
 
 def __getattr__(name):
+    """
+    Lazy-load the module when the attribute is accessed.
+    This is used because some of the modules require optional dependencies.
+    """
     if name in _LOOKUP:
         module_path = _LOOKUP[name]
 
@@ -58,6 +62,7 @@ __all__ = [
     'IEmbeddingProvider',
     'SearchKnowledgeTool',
     'IngestKnowledgeTool',
+    # === Preserve typehinting ===
     'ChromaDBVectorStore',
     'SQLiteVectorStore',
     'OpenAIEmbedder',
