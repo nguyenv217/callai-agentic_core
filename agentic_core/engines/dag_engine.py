@@ -194,9 +194,14 @@ class DAGAgentRunner:
                         node.state = NodeState.RETRYING
                         self.observer.on_node_retry(node_id, node.current_retries, node.max_retries)
 
-                        # Exponential backoff: 2^retry_count seconds
+                        # Exponential backoff: 2^retry_count seconds, scheduled in background so all other nodes can proceed
                         backoff = 2 ** node.current_retries
-                        await asyncio.sleep(backoff)
+
+                        async def delayed_requeue(delay, p, n_id):
+                            await asyncio.sleep(delay)
+                            await self.queue.put((p, n_id))
+                        
+                        asyncio.create_task(delayed_requeue(backoff, -node.priority, node_id))
 
                         # Re-queue the node
                         await self.queue.put((-node.priority, node_id))
