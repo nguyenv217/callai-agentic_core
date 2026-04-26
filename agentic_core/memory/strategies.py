@@ -2,6 +2,8 @@ import json
 
 from typing import Protocol
 
+from agentic_core.constants import TRUNCATE_DEFAULT_TEXT_THRESHOLD, TRUNCATE_DEFAULT_TOOL_THRESHOLD
+
 class TruncationStrategy(Protocol):
     """Protocol for pluggable memory truncation logic."""
     def truncate(self, messages: list[dict], max_chars: int) -> list[dict]:
@@ -23,7 +25,7 @@ class DefaultTruncationStrategy(TruncationStrategy):
     Standard strategy that prioritizes truncating tool outputs and 
     long plaintext messages over deleting history.
     """
-    def __init__(self, tool_threshold: int = 3000, text_threshold: int = 2000):
+    def __init__(self, tool_threshold: int = TRUNCATE_DEFAULT_TOOL_THRESHOLD, text_threshold: int = TRUNCATE_DEFAULT_TEXT_THRESHOLD):
         self.tool_threshold = tool_threshold
         self.text_threshold = text_threshold
 

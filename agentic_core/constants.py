@@ -3,6 +3,8 @@ Default values and constants for this package.
 '''
 # ======= DEFAULTS ========
 MEMORY_MANAGER_MAX_CHARS = 80000 
+TRUNCATE_DEFAULT_TOOL_THRESHOLD = 3000
+TRUNCATE_DEFAULT_TEXT_THRESHOLD = 2000
 
 # ======= CONSTANTS ========
 MCP_INITLIAZE_TIMEOUT = 15.0
