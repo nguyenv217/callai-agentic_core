@@ -8,20 +8,32 @@ import logging
 import json
 
 from ..config import ConfigurationError
+from ..interfaces import DecisionAction, DecisionEvent
 from .base import ToolSchema
 
 if TYPE_CHECKING:
     from .base import BaseTool
-    from ..engine import RunnerConfig
-    from .mcp import MCPToolAdapter
+    from ..engines.engine import RunnerConfig
+    from .mcp.tools import MCPToolAdapter
 
 logger = logging.getLogger(__name__)
+
+from enum import Enum, auto
+
+class ToolOnPromptAction(Enum):
+    CONFIRM = auto()
+    REJECT = auto()
+    REJECT_WITH_MSG = auto()
+
+    @property
+    def required_message(self):
+        return self == ToolOnPromptAction.REJECT_WITH_MSG
 
 class ToolExecutionController(Protocol):
     """Protocol for tool execution control."""
     on_chat_notified: Callable[[str], None] | None = None
-    on_prompt_respond: Callable[[str], str] | None = None
-    on_prompt_confirmation: Callable[[str, Callable, Callable | None], None] | None = None
+    on_prompt_respond: Callable[[Any], str] | None = None
+    on_prompt_confirmation: Callable[[Any], DecisionEvent[ToolOnPromptAction]] | None = None
 
 class ToolManager:
     """
@@ -100,7 +112,7 @@ class ToolManager:
 
 
     def _register_discovery_tools(self):
-        from .mcp import ListMCPTools, LoadMCPTool
+        from .mcp.tools import ListMCPTools, LoadMCPTool
         self.register_tool(ListMCPTools(self))
         self.register_tool(LoadMCPTool(self))
         self._loaded_discovery_tools = True
@@ -131,7 +143,8 @@ class ToolManager:
         """
         # Dynamic import prevents crashing if user doesn't have MCP dependencies installed
         try:
-            from .mcp import MCPClientManager, MCPToolAdapter
+            from .mcp.manager import MCPClientManager
+            from .mcp.tools import MCPToolAdapter
         except ImportError:
             logger.warning("MCP dependencies missing. Skipping MCP initialization.")
             return -1
@@ -224,6 +237,7 @@ class ToolManager:
         Return
         """
         if self._mcp_init_in_progress:
+            logger.warning("MCP is initializing. Please wait or restart the program.")
             return 
 
         if args is None:

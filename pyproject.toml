@@ -49,7 +49,7 @@ all = [
     "agentic_core[anthropic]",
     "agentic_core[ollama]",
     "agentic_core[mcp]",
-    "agentic_core[rag-all]"
+    "agentic_core[rag-sqlite]"
 ]
 
 dev = [

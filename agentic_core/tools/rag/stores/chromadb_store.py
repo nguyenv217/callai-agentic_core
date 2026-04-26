@@ -4,11 +4,10 @@ import uuid
 from agentic_core.config import ConfigurationError
 from ..core import IVectorStore
 
-_NOT_IMPORTED = False
 try:
     import chromadb
 except ImportError:
-    _NOT_IMPORTED = True
+    raise ConfigurationError("ChromaDB is not installed. Please install with `pip install chromadb`")    
     
 
 class ChromaDBVectorStore(IVectorStore):
@@ -18,9 +17,6 @@ class ChromaDBVectorStore(IVectorStore):
         collection_name: str = None,
         distance_metric: str = 'cosine'
     ):
-        if _NOT_IMPORTED:
-            raise ConfigurationError("ChromaDB is not installed. Please install with `pip install chromadb`")
-
         if collection_name is None:
             collection_name = f'rag_collection_{uuid.uuid4().hex[:8]}'
         

@@ -40,7 +40,7 @@ async def main():
         mcp_config_path=os.getenv("MCP_CONFIG_PATH", "memory.jsonl")        # path to your MCP configuration file
     )
 
-    from agentic_core.engine import RunnerConfig
+    from agentic_core.engines.engine import RunnerConfig
     
     system_prompt = f"""You are a helpful assistant. Keep your answer short and concise. 
 You have access to MCP servers to invoke tools when appropriate. 

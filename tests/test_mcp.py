@@ -1,16 +1,25 @@
 import json
 import os
-
+import asyncio
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
 from agentic_core.tools.manager import ToolManager
 from agentic_core.config import RunnerConfig
+from agentic_core.tools.mcp.manager import MCPClientManager, GlobalMCPRegistry
+
+@pytest.fixture(autouse=True)
+def clear_mcp_registry():
+    """Ensure GlobalMCPRegistry is cleared before and after each test."""
+    registry = GlobalMCPRegistry()
+    registry._sessions.clear()
+    yield
+    registry._sessions.clear()
 
 @pytest.fixture
 def mock_mcp_manager():
     """Mocks the MCP initialization to prevent actual subprocess spawning."""
-    with patch("agentic_core.tools.mcp.MCPClientManager") as mock_cls:
+    with patch("agentic_core.tools.mcp.manager.MCPClientManager") as mock_cls:
         instance = mock_cls.return_value
         instance.initialize = AsyncMock(return_value=True)
         # Mock the tools returned by the server
@@ -29,12 +38,12 @@ def mock_mcp_manager():
 @pytest.mark.asyncio
 async def test_tool_manager_lazy_mcp_init(mock_mcp_manager):
     """
-    Verifies that ToolManager defers MCP initialization until prepare_turn is called 
+    Verifies that ToolManager defers MCP initialization until prepare_turn is called
     with a config that explicitly requires MCP tools.
     """
     # 1. Initialize manager with a config path (triggers MCP readiness, but shouldn't boot yet)
     manager = ToolManager(mcp_config_path="dummy_config.json")
-    
+
     assert len(manager._mcp_standby_registry) == 0
 
     # 2. Prepare turn with an explicit MCP preload request
@@ -45,10 +54,10 @@ async def test_tool_manager_lazy_mcp_init(mock_mcp_manager):
 
     mock_mcp_manager.initialize.assert_awaited_once()
     mock_mcp_manager.list_all_tools.assert_awaited_once()
-    
+
     # Verify the tool was moved to standby AND actively loaded
     assert "mock_github_create_issue" in manager._mcp_standby_registry
-    
+
     active_loaded_schemas = manager.get_mcp_loaded_tools()
     active_tool_names = [t['function']['name'] for t in active_loaded_schemas]
     assert "mock_github_create_issue" in active_tool_names
@@ -56,15 +65,15 @@ async def test_tool_manager_lazy_mcp_init(mock_mcp_manager):
 @pytest.mark.asyncio
 async def test_load_mcp_tool_execution(mock_mcp_manager):
     """
-    Verifies the universal 'load_mcp_tool' can dynamically move a tool 
+    Verifies the universal 'load_mcp_tool' can dynamically move a tool
     from the standby registry into the active execution context.
     """
     manager = ToolManager(mcp_config_path="dummy_config.json")
     config = RunnerConfig(mcp_active_servers=["mock_github"], mcp_enable_discovery=True)
-    
+
     # Eagerly initialize to populate the standby registry
     await manager.prepare_turn(config)
-    
+
     # Ensure it is in standby, but NOT in loaded tools yet
     assert "mock_github_create_issue" in manager._mcp_standby_registry
     assert manager._mcp_loaded_tools is not None
@@ -73,7 +82,7 @@ async def test_load_mcp_tool_execution(mock_mcp_manager):
 
     # Mock the controller context
     mock_controller = MagicMock()
-    
+
     # Execute the universal load_mcp_tool meta-tool
     args = {"tool_names": ["mock_github_create_issue"]}
     result = await manager.execute("load_mcp_tool", args, mock_controller)
@@ -83,7 +92,6 @@ async def test_load_mcp_tool_execution(mock_mcp_manager):
     loaded_names = [t.name for t in manager._mcp_loaded_tools]
     assert "mock_github_create_issue" in loaded_names
 
-    
 # We will start the mock server as a subprocess in a fixture
 import subprocess
 
@@ -91,8 +99,8 @@ import subprocess
 def mcp_server_process():
     # Path to the mock server we created
     server_path = os.path.abspath("tests/mock_mcp_server.py")
-    
-    # Start the server using python. 
+
+    # Start the server using python.
     # FastMCP.run() by default uses stdio if no transport is specified.
     process = subprocess.Popen(
         ["python3", server_path],
@@ -109,9 +117,9 @@ def mcp_config_file(tmp_path):
     config_dir = tmp_path / "mcp"
     config_dir.mkdir()
     config_file = config_dir / "config.json"
-    
+
     # We need to tell the MCPClientManager how to start the server.
-    # Since we are testing the logic of MCPClientManager, we point it 
+    # Since we are testing the logic of MCPClientManager, we point it
     # to the script we just wrote.
     config = {
         "mcpServers": {
@@ -128,32 +136,32 @@ def mcp_config_file(tmp_path):
 async def test_mcp_integration_flow(mcp_config_file):
     # 1. Setup ToolManager with the temp config
     manager = ToolManager(mcp_config_path=str(mcp_config_file))
-    
+
     # 2. Prepare turn to initialize MCP servers
     # We want to active 'test_server'
     config = RunnerConfig(mcp_active_servers=["test_server"], mcp_enable_discovery=True)
     await manager.prepare_turn(config)
-    
+
     # 3. Verify tools were discovered and put in standby registry
     # Expected tools from mock_mcp_server.py: echo, add
     # Prefixed names: test_server_echo, test_server_add
     standby = manager._mcp_standby_registry
     assert "test_server_echo" in standby
     assert "test_server_add" in standby
-    
+
     # 4. Test the 'list_mcp_catalog' meta-tool
     result = await manager.execute("list_mcp_catalog", {"server_name": "test_server"}, {})
     assert "test_server_echo" in result
     assert "test_server_add" in result
-    
+
     # 5. Test 'load_mcp_tool' meta-tool
     load_result = await manager.execute("load_mcp_tool", {"tool_names": ["test_server_echo"]})
     assert "Success: Loaded 1 tool(s)" in load_result
-    
+
     # 6. Verify tool is now in loaded tools
     loaded_names = [t.name for t in manager._mcp_loaded_tools]
     assert "test_server_echo" in loaded_names
-    
+
     # 7. Actually EXECUTE the loaded MCP tool
     execution_result = await manager.execute("test_server_echo", {"text": "Hello MCP!"}, {})
     assert "Echo: Hello MCP!" in execution_result
@@ -170,12 +178,165 @@ async def test_mcp_invalid_server(tmp_path):
         }
     }
     config_file.write_text(json.dumps(config))
-    
+
     manager = ToolManager(mcp_config_path=str(config_file))
     config = RunnerConfig(mcp_active_servers=["bad_server"], mcp_enable_discovery=True)
-    
+
     # This should not crash the whole system but log error and return False
     success = await manager.prepare_turn(config)
     # Since prepare_turn is just a wrapper, we check the manager state
     assert len(manager._mcp_standby_registry) == 0
+
+@pytest.mark.asyncio
+async def test_mcp_session_sharing():
+    """Tests that two managers with identical config share the same session."""
+
+    config = {
+        "mcpServers": {
+            "test_server": {
+                "command": "python",
+                "args": ["-c", "print('hello')"],
+                "env": {"TEST_VAR": "value"}
+            }
+        }
+    }
+
+    with patch("agentic_core.tools.mcp.manager.stdio_client") as mock_stdio, \
+         patch("agentic_core.tools.mcp.manager.ClientSession") as mock_session, \
+         patch("shutil.which", return_value="/usr/bin/python"):
+        
+        mock_stdio.return_value.__aenter__.return_value = (MagicMock(), MagicMock())
+        mock_session_instance = mock_session.return_value.__aenter__.return_value
+        
+        async def mock_init(): await asyncio.sleep(0)
+        mock_session_instance.initialize = mock_init
+        
+        async def mock_list(): return MagicMock(tools=[])
+        mock_session_instance.list_tools = mock_list
+        
+        async def mock_call(n, arguments): return MagicMock(content=[])
+        mock_session_instance.call_tool = mock_call
+
+        manager1 = MCPClientManager(config=config)
+        manager2 = MCPClientManager(config=config)
+
+        await manager1.initialize()
+        await manager2.initialize()
+
+        assert manager1.sessions[0]['session'] == manager2.sessions[0]['session']
+        
+        registry = GlobalMCPRegistry()
+        identity_key = registry._get_identity_key(config["mcpServers"]["test_server"])
+        assert identity_key in registry._sessions
+        assert registry._sessions[identity_key]['ref_count'] == 2
+
+        await manager1.close()
+        assert registry._sessions[identity_key]['ref_count'] == 1
+
+        await manager2.close()
+        assert identity_key not in registry._sessions
+
+@pytest.mark.asyncio
+async def test_mcp_session_isolation():
+    """Tests that different configurations result in different sessions."""
+
+    config1 = {
+        "mcpServers": {
+            "server1": {
+                "command": "python",
+                "args": ["--arg1"],
+            }
+        }
+    }
+    config2 = {
+        "mcpServers": {
+            "server2": {
+                "command": "python",
+                "args": ["--arg2"],
+            }
+        }
+    }
+
+    with patch("agentic_core.tools.mcp.manager.stdio_client") as mock_stdio, \
+        patch("agentic_core.tools.mcp.manager.ClientSession") as mock_session, \
+        patch("shutil.which", return_value="/usr/bin/python"):
+
+        mock_stdio.return_value.__aenter__.return_value = (MagicMock(), MagicMock())
+        mock_session_instance = mock_session.return_value.__aenter__.return_value
+
+        async def mock_init(): await asyncio.sleep(0)
+        mock_session_instance.initialize = mock_init
+
+        async def mock_list(): return MagicMock(tools=[])
+        mock_session_instance.list_tools = mock_list
+
+        async def mock_call(n, arguments): return MagicMock(content=[])
+        mock_session_instance.call_tool = mock_call
+
+        manager1 = MCPClientManager(config=config1)
+        manager2 = MCPClientManager(config=config2)
+
+        await manager1.initialize()
+        await manager2.initialize()
+
+        assert manager1.sessions[0]['session'] != manager2.sessions[0]['session']
+
+        registry = GlobalMCPRegistry()
+        assert len(registry._sessions) == 2
+
+        await manager1.close()
+        await manager2.close()
+        assert len(registry._sessions) == 0
+
+@pytest.mark.asyncio
+async def test_mcp_different_env_isolation():
+    """Tests that same command but different env results in different sessions."""
+
+    config1 = {
+        "mcpServers": {
+            "server1": {
+                "command": "python",
+                "env": {"VAR": "A"}
+            }
+        }
+    }
+    config2 = {
+        "mcpServers": {
+            "server2": {
+                "command": "python",
+                "env": {"VAR": "B"}
+            }
+        }
+    }
+
+    with patch("agentic_core.tools.mcp.manager.stdio_client") as mock_stdio, \
+         patch("agentic_core.tools.mcp.manager.ClientSession") as mock_session, \
+         patch("shutil.which", return_value="/usr/bin/python"):
+
+        mock_stdio.return_value.__aenter__.return_value = (MagicMock(), MagicMock())
+        mock_session_instance = mock_session.return_value.__aenter__.return_value
+
+        async def mock_init(): await asyncio.sleep(0)
+        mock_session_instance.initialize = mock_init
+
+        async def mock_list(): return MagicMock(tools=[])
+        mock_session_instance.list_tools = mock_list
+
+        async def mock_call(n, arguments): return MagicMock(content=[])
+        mock_session_instance.call_tool = mock_call
+
+        manager1 = MCPClientManager(config=config1)
+        manager2 = MCPClientManager(config=config2)
+
+        await manager1.initialize()
+        await manager2.initialize()
+
+        assert manager1.sessions[0]['session'] != manager2.sessions[0]['session']
+
+        registry = GlobalMCPRegistry()
+        assert len(registry._sessions) == 2
+
+        await manager1.close()
+        await manager2.close()
+        assert len(registry._sessions) == 0
 

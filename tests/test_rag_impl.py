@@ -1,9 +1,7 @@
-import asyncio
 import uuid
 import os
 import tempfile
 import pytest
-import pytest_asyncio
 import shutil
 
 from agentic_core.tools.manager import ToolManager

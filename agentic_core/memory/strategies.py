@@ -11,6 +11,13 @@ class TruncationStrategy(Protocol):
         """
         ...
 
+class NoTruncationStrategy(TruncationStrategy):
+    """Strategy that prevents any message truncation. Oftentimes financially better for API providers supporing context caching."""
+    
+    def truncate(self, messages: List[Dict], max_chars: int) -> List[Dict]:
+        """Returns the entire list of messages, bypassing truncation logic."""
+        return messages
+
 class DefaultTruncationStrategy(TruncationStrategy):
     """
     Standard strategy that prioritizes truncating tool outputs and 

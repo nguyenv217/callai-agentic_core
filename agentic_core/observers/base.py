@@ -2,9 +2,9 @@
 Observer base interface.
 """
 from abc import ABC
-from typing import Generic, TypeVar
 from enum import Enum, auto
-from dataclasses import dataclass
+from typing import Union
+from ..interfaces import DecisionEvent, DecisionAction
 
 class ToolStartDecision(Enum):
     """
@@ -17,11 +17,15 @@ class ToolStartDecision(Enum):
         SKIP_WITH_MSG: skip this tool, BUT leave a message for the agent as the tool result
         BREAK_WITH_MSG: skip every tool in this turn, BUT leave a message for the agent as the tool result
     """
-    CONTINUE = auto()  
+    CONTINUE = auto(),   
     SKIP = auto()      
     ABANDON = auto()   
     SKIP_WITH_MSG = auto()  
     BREAK_WITH_MSG = auto() 
+
+    @property
+    def required_message(self):
+        return self in [ToolStartDecision.SKIP_WITH_MSG, ToolStartDecision.BREAK_WITH_MSG]
 
 class LastIterationDecision(Enum):
     """
@@ -36,19 +40,9 @@ class LastIterationDecision(Enum):
     LEAVE_MESSAGE = auto()
     ABANDON = auto()
 
-Action = TypeVar("Action", ToolStartDecision, LastIterationDecision)
-
-@dataclass
-class DecisionEvent(Generic[Action]):
-    """Event for observing the decision made by an agent."""    
-    action: Action
-    message: str | None = None
-
-    def __post_init__(self):
-        if isinstance(self.action, ToolStartDecision) and (self.action in [ToolStartDecision.SKIP_WITH_MSG, ToolStartDecision.BREAK_WITH_MSG] and self.message is None):
-            raise ValueError("ToolStartDecision.SKIP_WITH_MSG and ToolStartDecision.BREAK_WITH_MSG cannot be used without a message")
-        if isinstance(self.action, LastIterationDecision) and (self.action in [LastIterationDecision.LEAVE_MESSAGE] and self.message is None):
-            raise ValueError("LastIterationDecision.LEAVE_MESSAGE cannot be used without a message")
+    @property
+    def required_message(self):
+        return self == LastIterationDecision.LEAVE_MESSAGE
 
 class AgentEventObserver(ABC):
     """Base class for observing agent events."""

@@ -7,6 +7,8 @@ ehthumbs.db
 Desktop.ini
 
 # Ignore cache and secrets
+Dockerfile
+.dockerignore
 __pycache__/
 .pytest_cache/
 .pycache
@@ -158,5 +160,5 @@ obj/
 # Specific config files
 memory.jsonl
 memory.json
-.continue/agents/new-config.yaml
+.continue/
 run_docker.bat
