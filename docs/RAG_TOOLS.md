@@ -6,7 +6,10 @@ The RAG Suite allows you to give your agent a long-term memory or a domain-speci
 ```bash
 git clone https://github.com/nguyenv217/callai-agentic_core 
 cd callai-agentic_core
-pip install ".[rag-sqllite]" # or other built-in backend below
+pip install ".[rag-sqlite]" 
+# or simply
+pip install "callai-agentic_core[rag-sqlite]"
+# or other built-in backend extras below
 ```
 
 | Option | Description |
@@ -31,6 +34,11 @@ Or import your own backends by implementing `IEmbeddingProvider` and `IVectorSto
 
 ## Quick Start Example
 
+### 1. Setup your database
+Prepare your specific backend-compatible vector database, e.g. a single '.db' file for SQLite.
+See [examples/example_RAG_index_script.py](../examples/example_RAG_index_script.py) for a ready-to-use indexing CLI script you can point to any local codebase to start indexing right away and get a ChromaDB database.
+
+### 2. Initialize the RAG Tools
 ```python
 import asyncio
 from agentic_core.agents import chat

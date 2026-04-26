@@ -163,3 +163,5 @@ memory.jsonl
 memory.json
 .continue/
 run_docker.bat
+chromadb_data/
+index.py
