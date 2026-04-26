@@ -4,6 +4,10 @@ Slightly more complicated example using `textual` for TUI coding agents.
 Requirements: 
     `agentic_core`: this package
     `textual`: for the layouts. Install via `pip install textual`
+    environment variables: 
+        `AGENT_API_KEY`: API key of your favorite OpenAI compatible LLM provider
+        `AGENT_BASE_URL': OpenAI-compatible inference endpoint of this provider
+        `AGENT_MODEL`: Model slug 
 """
 import asyncio
 import os
@@ -136,10 +140,10 @@ class CodexAgentTUI(App):
         yield Header(show_clock=True)
         with Container(id="main-container"):
             with Vertical(id="left-column"):
-                yield Static("[bold cyan]CODEX AGENT[/bold cyan] Session: main-proj-X | Active | Cloud Sync | git: 'feature/api-v2'", id="session-header")
+                yield Static("[bold cyan]MY CODING AGENT[/bold cyan] Session: main-proj-X | Active | Cloud Sync | git: 'feature/api-v2'", id="session-header")
                 with Vertical(id="console-area"):
                     yield VerticalScroll(id="chat-log")
-                    yield Input(placeholder="Enter command (e.g., codex explain calculate_risk)...", id="input-area")
+                    yield Input(placeholder="Enter command (e.g., agent explain calculate_risk)...", id="input-area")
             
             with Vertical(id="sidebar"):
                 with Vertical(classes="section-box"):
