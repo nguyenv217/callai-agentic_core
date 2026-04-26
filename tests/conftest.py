@@ -1,6 +1,6 @@
 import pytest
 import json
-from typing import Iterator
+from typing import AsyncIterator, Iterator
 from agentic_core.llm_providers.base import ILLMClient, LLMResponse
 from agentic_core.tools.base import BaseTool
 from agentic_core.observers.standard import SilentObserver
@@ -15,7 +15,7 @@ class MockLLM(ILLMClient):
         self.call_count = 0
         self.model = "mock-gpt"
 
-    def ask(self, messages: list[dict], tools: list[dict] | None = None, **kwargs) -> Iterator[LLMResponse]:
+    async def ask(self, messages: list[dict], tools: list[dict] | None = None, **kwargs) -> AsyncIterator[LLMResponse]:
         if self.call_count < len(self.sequence):
             response = self.sequence[self.call_count]
             self.call_count += 1

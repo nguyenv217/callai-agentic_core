@@ -39,6 +39,10 @@ class ToolManager:
     """
     Manages tool execution via a plugin architecture.
     Includes native, zero-config lazy loading for Model Context Protocol (MCP) servers.
+
+    This class supports the async context manager protocol (`async with ToolManager(...) as tools:`),
+    which is the recommended way to ensure that all connected MCP servers are gracefully
+    shut down upon exit.
     """
     def __init__(
         self, 
@@ -182,7 +186,6 @@ class ToolManager:
         logger.info(f"Initialized {len(self._mcp_standby_registry)} MCP tools in standby mode.")
         return len(self._mcp_standby_registry)
 
-
     async def shutdown_mcp(self):
         if self._mcp_manager:
             await self._mcp_manager.close() # this triggers shutdown event for all active serveers
@@ -202,26 +205,41 @@ class ToolManager:
         except Exception as e:
             logger.error(f"MCP initialization failed: {e}")
 
+    # ===== Cleanup =====
+    async def __aenter__(self):
+        """Allows ToolManager to be used as a safe async context manager."""
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Gracefully shuts down MCP servers when exiting the context block."""
+        await self.shutdown_mcp()
+        
+        # Unregister the atexit hook since we handled cleanup gracefully
+        import atexit
+        atexit.unregister(self.cleanup)
+
+    # In agentic_core/tools/manager.py
+
     def cleanup(self):
         """
-        Ensures background MCP tasks are signaled to stop.
-        Because atexit is synchronous, we can only trigger the shutdown 
-        events or attempt to run the close coroutine in a temporary loop.
+        Synchronous atexit fallback to ensure background MCP tasks are stopped.
+        Highly recommended to use `async with ToolManager(...) as tools:` instead.
         """
         if self._mcp_manager:
-            logger.info("Cleaning up MCP Manager...")
+            logger.info("Cleaning up MCP Manager (atexit fallback)...")
             try:
-                # Check if we are already in a running loop
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # Just schedule it; the loop is about to close anyway
+                # Check if we are in an actively running event loop
+                loop = asyncio.get_running_loop()
+                if not loop.is_closed():
+                    # Fire and forget if the loop is still alive
                     loop.create_task(self.shutdown_mcp())
-                else:
-                    # Loop is stopped, run the cleanup to completion
-                    loop.run_until_complete(self.shutdown_mcp())
-            except Exception as e:
-                # Everything is already dead
-                logger.debug(f"Cleanup encountered an issue: {e}")
+            except RuntimeError:
+                # No loop is running (standard atexit behavior).
+                # Spin up a fresh, isolated loop strictly for the shutdown coroutine.
+                try:
+                    asyncio.run(self.shutdown_mcp())
+                except Exception as e:
+                    logger.debug(f"atexit asyncio.run cleanup encountered an issue: {e}")
 
 
     def add_mcp_server(self, server_name: str, command: str, args: list[str] = None, env: dict[str, str] = None):

@@ -48,17 +48,6 @@ class AgentRunner:
         self.config = config or RunnerConfig()
         self.observer = observer
 
-    @staticmethod
-    def _to_async_gen(sync_gen: Iterator[LLMResponse]) -> AsyncIterator[LLMResponse]: # QUICK FIX BEFORE STANDARDIZATION
-        """Wrap a synchronous iterator as an async iterator."""                                                    
-        async def _wrapper():               
-            import asyncio                                                   
-            for item in sync_gen:                                                                                  
-                # give the event loop a chance to run
-                await asyncio.sleep(0)                                                                             
-                yield item                                                                                         
-        return _wrapper()
-    
     def _add_error_tool_result(self, tool_name: str, tool_id: str, msg: str, observer: AgentEventObserver): # helper for less verbosity
         observer.on_tool_complete(tool_name, tool_id, False, msg)
         self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=msg)
@@ -122,9 +111,6 @@ class AgentRunner:
                 
                 response_iterator = self.llm.ask(conversation, active_tools) 
                 
-                if not isinstance(response_iterator, AsyncIterator): # hotfix before standardization
-                    response_iterator = AgentRunner._to_async_gen(response_iterator)
-
                 turn_response = {"text": "", "reasoning": "", "tool_calls": []}
                 
                 async for response in response_iterator:
@@ -243,4 +229,4 @@ class AgentRunner:
         finally:
             observer.on_turn_complete(final_response)
 
-        return {"success": True, **final_response} if "error" not in final_response else final_response
+        return {"success": True, **final_response} if "error" not in final_response else {"success": False, **final_response}

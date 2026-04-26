@@ -76,13 +76,12 @@ class EchoTool(BaseTool):
 ### 3.1 Direct Registration (Static Tools)
 ```python
 from agentic_core.tools.manager import ToolManager
+
 from my_tools import EchoTool
 
 manager = ToolManager()
 manager.register_tool(EchoTool(prefix="[Echo] "))
 ```
-* The tool becomes immediately available to the LLM.
-* Its schema is added to `manager.tools_schema` – the list sent to the LLM on each turn.
 
 ### 3.2 Registering MCP Tools (Dynamic)
 MCP tools are discovered lazily. The manager automatically registers the two discovery tools (`list_mcp_catalog` and `load_mcp_tool`). To load a specific MCP tool:
@@ -97,7 +96,66 @@ load_result = manager._plugins["load_mcp_tool"].execute({"tool_names": ["github_
 
 ---
 
-## 4. Execution Flow
+## 4. Lifecycle Management
+
+Because `ToolManager` often manages connections to external Model Context Protocol (MCP) servers (which run as separate subprocesses), proper lifecycle management is critical. Failing to shut down these servers can lead to "zombie processes" that continue to consume CPU and memory, or cause port conflicts when you restart your application.
+
+### 4.1 The Recommended Approach: Async Context Manager
+
+The most robust way to use `ToolManager` is as an async context manager. This ensures that `shutdown_mcp()` is called automatically when the block is exited, regardless of whether the code finished successfully or raised an exception.
+
+```python
+from agentic_core.tools.manager import ToolManager
+
+async def main():
+    # The 'async with' statement handles both setup and teardown
+    async with ToolManager(mcp_config_path="mcp.json") as manager:
+        try:
+            # Your agent logic here (or could just pass this `manager` instance to a `AgentRunner`)
+            result = await manager.execute("some_tool", { "arg": "val"})
+            print(result)
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            # The context manager will still ensure cleanup happens here
+
+    # At this point, all MCP subprocesses are gracefully terminated
+```
+
+**What happens under the hood?**
+
+*   `__aenter__`: Simply returns the manager instance for use.
+*   `__aexit__`: Triggers `shutdown_mcp()`, which iterates through all active MCP sessions, closes the JSON-RPC connections, and terminates the associated subprocesses. It also unregisters the `atexit` fallback to avoid redundant cleanup calls.
+
+### 4.2 Manual Lifecycle Management
+
+In some architectures (e.g., if the `ToolManager` is a long-lived singleton in a web server or a GUI application), you might not be able to wrap your entire app in a local `async with` block. In these cases, you must manually trigger the shutdown during your application's teardown phase.
+
+```python
+manager = ToolManager(mcp_config_path="mcp.json")
+
+# ... application runs ...
+
+# During app shutdown (e.g., FastAPI on_event("shutdown") or a SIGTERM handler)
+await manager.shutdown_mcp()
+```
+
+### 4.3 The `atexit` Fallback (Last Resort)
+
+As a safety net, `ToolManager` registers a synchronous `cleanup()` method with Python's `atexit` module during initialization. If the program terminates unexpectedly without `shutdown_mcp()` being called, `cleanup()` attempts to stop the servers.
+
+> **Warning:** `atexit` is less deterministic. Because it runs during the final stages of process exit, the asyncio event loop may already be closed or in a state where it cannot spawn new tasks. This can lead to "loop closed" warnings in your logs or slightly delayed process termination. This is why the context manager is strongly preferred.
+
+### 4.4 Lifecycle Strategy Comparison
+
+| Strategy | Deterministic? | Exception Safe? | Effort | Recommendation |
+| :--- | :---: | :---: | :---: | :--- |
+| Async Context Manager | ✅ Yes | ✅ Yes | Low | Gold Standard |
+| Manual `shutdown_mcp()` | ✅ Yes | ⚠️ Manual | Medium | Use for singletons / long-lived apps |
+| `atexit` Fallback | ❌ No | ⚠️ Partial | Zero | Emergency safety net only (enough for most simple apps) |
+
+---
+
+## 5. Execution Flow
 
 1. **Runner creates a `ToolManager`** (optionally with `toolsets`, `mcp_config_path`, etc.).
 2. **Discovery tools are injected** if `enable_mcp_discovery` is `True`.
@@ -107,21 +165,21 @@ load_result = manager._plugins["load_mcp_tool"].execute({"tool_names": ["github_
 
 ---
 
-## 5. Advanced Features
+## 6. Advanced Features
 
-### 5.1 Toolsets & Prompts
+### 6.1 Toolsets & Prompts
 * `ToolManager` accepts a `toolsets` mapping where each key is a logical group (e.g., `"file_ops"`) and the value is a list of tool names.
 * Optional `prompt` strings can be attached to a toolset; the runner can prepend them to the LLM prompt to give context about the available capabilities.
 
-### 5.2 Extra Context
+### 6.2 Extra Context
 * `extra_context` passed to the manager is merged into the `context` argument of every tool's `execute` call. Use it to share session state, authentication tokens, or temporary variables.
 
-### 5.3 Security – Path Validation
+### 6.3 Security – Path Validation
 * `BaseTool._is_allowed_path` provides a safe‑check for file‑system tools. It ensures the supplied path resolves inside a given base directory and rejects absolute paths or null bytes.
 
 ---
 
-## 6. Real usage Example: static, stateful tool, and registration with custom toolsets
+## 7. Real usage Example: static, stateful tool, and registration with custom toolsets
 ```python
 from agentic_core.tools.manager import ToolManager
 from agentic_core.tools.base import BaseTool
@@ -217,7 +275,7 @@ manager = ToolManager(
 
 # Register static tool
 manager.register_tool(UpperCaseTool())
-# For stateful tool, it is better to initalize the tool instance first then inject to necessary places to maintain internal state attributes
+# For stateful tool, it is better to initalize the tool instance first then inject into necessary places to maintain internal states
 doc_edit_tool = DocumentEditorTool()
 manager.register_tool(doc_edit_tool)
 
