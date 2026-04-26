@@ -161,3 +161,4 @@ obj/
 memory.jsonl
 memory.json
 .continue/
+run_docker.bat
