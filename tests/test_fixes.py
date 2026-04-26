@@ -1,8 +1,5 @@
 
-import asyncio
 import pytest
-from agentic_core.agents.builder import chat
-from agentic_core.interfaces import AgentResponse
 from agentic_core.engines.session import global_session_manager
 
 @pytest.mark.asyncio
@@ -24,22 +21,6 @@ async def test_session_persistence():
 
     assert runner1 is runner2
     assert runner1 == mock_runner
-
-@pytest.mark.skip # tautology
-async def test_chat_response_type():
-    # This test verifies that the chat function returns an AgentResponse
-    # by mocking the runner and checking the return type and content.
-    from unittest.mock import AsyncMock, MagicMock
-    from agentic_core.engines.engine import AgentRunner
-    from agentic_core.interfaces import AgentResponse
-
-    mock_runner = MagicMock(spec=AgentRunner)
-    mock_runner.run_turn = AsyncMock(return_value=AgentResponse(text="Hello world"))
-
-    result = await chat("Hi", runner=mock_runner)
-
-    assert isinstance(result, AgentResponse)
-    assert result.text == "Hello world"
 
 @pytest.mark.asyncio
 async def test_mcp_registry_granular_locks():

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Generic, TypeVar, Protocol, Any, List, Dict, Optional
+from typing import Generic, TypeVar, Protocol, Any
 
 class DecisionAction(Protocol):
     @property
@@ -20,7 +20,7 @@ class DecisionEvent(Generic[ActionT]):
             error_prefix = f"{type(self.action).__name__}.{self.action.name}"
             raise ValueError(f"{error_prefix} cannot be used without a message")
 
-# --- New Structured Responses and Exceptions ---
+# --- Structured Responses and Exceptions ---
 
 class AgenticError(Exception):
     """Base exception for agentic_core"""
@@ -39,11 +39,11 @@ class AgentResponse:
     """Structured response from an agent turn."""
     text: str = ""
     reasoning: str = ""
-    tool_calls: List[Dict[str, Any]] = field(default_factory=list)
-    usage: Dict[str, Any] = field(default_factory=dict)
-    error: Optional[str] = None
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    usage: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "text": self.text,
             "reasoning": self.reasoning,
