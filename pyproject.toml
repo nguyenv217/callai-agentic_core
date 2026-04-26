@@ -42,18 +42,18 @@ rag-transformers = ["sentence-transformers"]
 rag-openai = ["openai>=2.24.0"]
 
 rag-all = [
-    "agentic_core[rag-sqlite]",
-    "agentic_core[rag-chroma]",
-    "agentic_core[rag-transformers]",
-    "agentic_core[rag-openai]"
+    "callai-agentic_core[rag-sqlite]",
+    "callai-agentic_core[rag-chroma]",
+    "callai-agentic_core[rag-transformers]",
+    "callai-agentic_core[rag-openai]"
 ]
 
 all = [
-    "agentic_core[openai]",
-    "agentic_core[anthropic]",
-    "agentic_core[ollama]",
-    "agentic_core[mcp]",
-    "agentic_core[rag-sqlite]"
+    "callai-agentic_core[openai]",
+    "callai-agentic_core[anthropic]",
+    "callai-agentic_core[ollama]",
+    "callai-agentic_core[mcp]",
+    "callai-agentic_core[rag-sqlite]"
 ]
 
 dev = [

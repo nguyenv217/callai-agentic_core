@@ -27,8 +27,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        # Install the package itself along with all optional and dev dependencies
-        pip install -e ".[all,dev,rag-chroma]"
+        pip install -e ".[all,dev,rag-chroma,rag-sqlite]"
         
     - name: Run pytest
       run: |
