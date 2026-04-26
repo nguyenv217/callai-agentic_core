@@ -231,7 +231,11 @@ class DAGAgentRunner:
                 stack.extend(self.out_edges[node_id])
 
     async def execute(self) -> DAGResponse:
-        self.compile()
+        try:
+            self.compile()
+        except RuntimeError as e:
+            return DAGResponse(error="RuntimeError: " + str(e))
+        
         for node_id, node in self.nodes.items():
             if node.in_degree == 0:
                 node.state = NodeState.READY

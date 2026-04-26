@@ -75,9 +75,11 @@ class DAGNodeResponse:
 class DAGResponse:
     """Structured response from a DAG execution."""
     nodes: dict[str, DAGNodeResponse] = field(default_factory=dict)
+    error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "nodes": {node_id: node_resp.to_dict() for node_id, node_resp in self.nodes.items()}
+            "nodes": {node_id: node_resp.to_dict() for node_id, node_resp in self.nodes.items()},
+            "error": self.error
         }
 

@@ -155,6 +155,7 @@ class LoadMCPTool(BaseTool):
             
         return "\n".join(results)
 
+
 class MCPToolAdapter(BaseTool):
     """
     A dynamic subclass of BaseTool that acts as a proxy to MCP server tools.
@@ -185,7 +186,8 @@ class MCPToolAdapter(BaseTool):
         
         # Prefix the tool name to prevent collisions across servers
         # e.g., "sqlite_query" instead of just "query"
-        self._name = f"{server_name}_{mcp_tool_def.get('name', 'unnamed')}"
+        self._actual_name = mcp_tool_def.get('name', 'unnamed')
+        self._name = f"{server_name}_{self._actual_name}"
         
         if clean_schema:
             cleansed_schema = {k: v for k, v in mcp_tool_def.get('inputSchema', {}).items() if k in ['type', 'required', 'properties']}
@@ -224,8 +226,7 @@ class MCPToolAdapter(BaseTool):
             str: The result from the MCP server formatted as a string
         """
         import anyio
-        # Extract the actual tool name (without server prefix) for the MCP call
-        actual_tool_name = self._name.replace(f"{self._server_name}_", "", 1)
+        actual_tool_name = self._actual_name
 
         try:
             # Apply timeout to prevent indefinite hangs

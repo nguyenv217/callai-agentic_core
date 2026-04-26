@@ -171,5 +171,3 @@ async def chat(
     result = await agent.run_turn(message, observer=observer, config=config)
     
     return result
-
-    return result

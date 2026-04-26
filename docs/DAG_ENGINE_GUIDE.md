@@ -74,9 +74,24 @@ edges = [
 async def main():
     engine = DAGAgentRunner(nodes_def, edges, max_concurrency=2)
     results = await engine.execute()
-    print(results)
+    print(results.to_dict())
 
 asyncio.run(main())
+```
+
+### Return Type
+
+`DAGAgentRunner.execute()` returns a `DAGResponse` objects containing nodes results and error (if any).
+```python
+class DAGNodeResponse:
+    state: str
+    result: Any
+    error_details: str | None = None
+    failed_by: str | None = None
+
+class DAGResponse:
+    nodes: dict[str, DAGNodeResponse] = field(default_factory=dict)
+    error: str | None = None
 ```
 
 ### Advanced Configuration
@@ -87,10 +102,10 @@ The nodes_def dictionary is the heart of your graph. Each entry follows this tup
 
 | Parameter | Type       | Description                                                                           |
 | :-------- | :--------- | :------------------------------------------------------------------------------------ |
-| AgentRunner | AgentRunner   | The logic engine for this specific node.                                                |
-| RunnerConfig  | RunnerConfig  | Runtime settings (max iterations, system prompt, etc.).                                 |
-| prompt        | str           | The specific instruction for this node.                                                |
-| max_retries   | int           | How many times to retry on transient API errors (optional).                             |
+| `AgentRunne`r | `AgentRunner`   | The logic engine for this specific node.                                                |
+| `RunnerConfig`  | `RunnerConfig`  | Runtime settings (max iterations, system prompt, etc.).                                 |
+| `prompt      `  | `str`           | The specific instruction for this node.                                                |
+| `max_retries `  | `int`           | How many times to retry on transient API errors (optional).                             |
 
 ### Monitoring with `DAGEventObserver`
 

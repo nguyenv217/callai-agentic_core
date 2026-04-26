@@ -493,7 +493,6 @@ Agents interacting with APIs that return massive, deeply nested JSON payloads ma
 
 **MITIGATIONS:**  
 * The tool strictly requires MCP configuration via `RunnerConfig` to be valid and well-formed to avoid malicious runtime tool injection.  
-* Each `BaseTool` class inherits an `is_allowed_path()` method that reliably prevents path traversal. Implementation of tools dealing with local filesystem may use this to improve security. 
 * Utilize `ToolExecutionController.on_prompt_respond()` (blocks, prompt the user for feedback) and `ToolExecutionController.on_prompt_confirmation()` (blocks, prompt the user to confirm (y/n) with event hooks) for control **during tool execution**.
 * `AgentEventObserver` implementing `on_tool_start()` provides means to enforce human validation before assembling tool coroutine pool and executing, with different levels of control (use `ToolStartDecision`).
 * Write your system prompt carefully and choose your MCP servers wisely.

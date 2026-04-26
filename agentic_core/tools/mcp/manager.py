@@ -335,10 +335,10 @@ class MCPClientManager:
 
     async def list_all_tools(self) -> list[dict[str, Any]]:
         """
-        list all tools from all connected MCP servers.
+        List all tools from all connected MCP servers.
 
         Returns:
-            list of tool definitions with server info
+            List of tool definitions with server info
         """
 
         all_tools = []
@@ -380,8 +380,6 @@ class MCPClientManager:
     
     async def close(self):
         """Close all MCP server connections gracefully, releasing shared sessions."""
-        import asyncio
-        
         for session_info in self.sessions:
             server_name = session_info.get("name", "unknown")
             identity_key = session_info.get("identity_key")
