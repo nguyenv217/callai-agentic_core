@@ -325,23 +325,6 @@ class ToolManager:
             return f"Error: Tool '{tool_name}' not found or not registered."
         
         try:
-            param_schemas = self._plugins[tool_name].schema['function']['parameters'].get('properties', {})
-    
-            for key, value in args.items():
-                # Check if the tool actually expects a complex type (array/object)
-                expected_type = param_schemas.get(key, {}).get('type')
-                
-                if expected_type in ['array', 'object'] and isinstance(value, str):
-                    try:
-                        # Only "fix" it if the tool expects a non-string type
-                        args[key] = json.loads(value)
-                        logger.info(f"Fixed double-serialized {expected_type} for '{key}'")
-                    except (json.JSONDecodeError, TypeError):
-                        logger.warning(f"{tool_name}: Failed to parse {expected_type} for '{key}'")
-                        # If it's not valid JSON, the server will handle the error 
-                        # during its own validation phase. (or not, and it will returns an error)
-                        pass
-            
             # Load all servers if agent call discovery tools
             if tool_name in self._discovery_tools:
                 await self.ensure_mcp_initialized()
