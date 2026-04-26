@@ -158,3 +158,5 @@ obj/
 # Specific config files
 memory.jsonl
 memory.json
+.continue/agents/new-config.yaml
+run_docker.bat
