@@ -201,8 +201,8 @@ async def test_mcp_session_sharing():
         }
     }
 
-    with patch("mcp.client.stdio.stdio_client") as mock_stdio, \
-         patch("mcp.ClientSession") as mock_session, \
+    with patch("agentic_core.tools.mcp.manager.stdio_client") as mock_stdio, \
+         patch("agentic_core.tools.mcp.manager.ClientSession") as mock_session, \
          patch("shutil.which", return_value="/usr/bin/python"):
         
         mock_stdio.return_value.__aenter__.return_value = (MagicMock(), MagicMock())
@@ -257,8 +257,8 @@ async def test_mcp_session_isolation():
         }
     }
 
-    with patch("mcp.client.stdio.stdio_client") as mock_stdio, \
-        patch("mcp.ClientSession") as mock_session, \
+    with patch("agentic_core.tools.mcp.manager.stdio_client") as mock_stdio, \
+        patch("agentic_core.tools.mcp.manager.ClientSession") as mock_session, \
         patch("shutil.which", return_value="/usr/bin/python"):
 
         mock_stdio.return_value.__aenter__.return_value = (MagicMock(), MagicMock())
@@ -309,8 +309,8 @@ async def test_mcp_different_env_isolation():
         }
     }
 
-    with patch("mcp.client.stdio.stdio_client") as mock_stdio, \
-         patch("mcp.ClientSession") as mock_session, \
+    with patch("agentic_core.tools.mcp.manager.stdio_client") as mock_stdio, \
+         patch("agentic_core.tools.mcp.manager.ClientSession") as mock_session, \
          patch("shutil.which", return_value="/usr/bin/python"):
 
         mock_stdio.return_value.__aenter__.return_value = (MagicMock(), MagicMock())
