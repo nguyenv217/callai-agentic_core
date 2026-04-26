@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import logging
 
 from agentic_core.config import ConfigurationError
-from agentic_core.interfaces import AgentResponse
+from agentic_core.interfaces import AgentResponse, DAGNodeResponse, DAGResponse
 
 from .engine import AgentRunner, RunnerConfig
 from ..observers import AgentEventObserver
@@ -230,7 +230,7 @@ class DAGAgentRunner:
                 self.observer.on_node_complete(node_id, NodeState.FAILED_UPSTREAM, fail_msg)
                 stack.extend(self.out_edges[node_id])
 
-    async def execute(self):
+    async def execute(self) -> DAGResponse:
         self.compile()
         for node_id, node in self.nodes.items():
             if node.in_degree == 0:
@@ -246,13 +246,14 @@ class DAGAgentRunner:
                 w.cancel()
             await asyncio.gather(*workers, return_exceptions=True)
 
-        diagnostics = {}
+        nodes_resp = {}
         for node_id, node in self.nodes.items():
-            diagnostics[node_id] = {
-                "state": node.state.name,
-                "result": node.result,
-                "error_details": node.error_details,
-                "failed_by": node.failed_by
-            }
-        self.observer.on_graph_complete(diagnostics)
-        return diagnostics
+            nodes_resp[node_id] = DAGNodeResponse(
+                state=node.state.name,
+                result=node.result,
+                error_details=node.error_details,
+                failed_by=node.failed_by
+            )
+        response = DAGResponse(nodes=nodes_resp)
+        self.observer.on_graph_complete(response.to_dict())
+        return response

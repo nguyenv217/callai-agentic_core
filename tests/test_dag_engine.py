@@ -74,7 +74,7 @@ async def test_retry_success():
     dag = DAGAgentRunner(nodes_def, edges)
     results = await dag.execute()
 
-    assert results["A"]["state"] == "SUCCESS"
+    assert results.nodes["A"].state == "SUCCESS"
     assert llm.call_counts["Node_A"] == 3
 
 @pytest.mark.asyncio
@@ -93,7 +93,7 @@ async def test_retry_exhaustion():
     dag = DAGAgentRunner(nodes_def, edges)
     results = await dag.execute()
 
-    assert results["A"]["state"] == "FAILED"
+    assert results.nodes["A"].state == "FAILED"
     assert llm.call_counts["Node_A"] == 2
 
 @pytest.mark.asyncio
@@ -112,10 +112,10 @@ async def test_permanent_failure_no_retry():
     dag = DAGAgentRunner(nodes_def, edges)
     results = await dag.execute()
 
-    assert results["A"]["state"] == "FAILED"
+    assert results.nodes["A"].state == "FAILED"
     assert llm.call_counts["Node_A"] == 1
-    assert "Fatal error" in results["A"]["result"]
-    assert results["A"]["error_details"] is not None
+    assert "Fatal error" in results.nodes["A"].result
+    assert results.nodes["A"].error_details is not None
 
 @pytest.mark.asyncio
 async def test_multi_parent_cascade_bug():
@@ -137,10 +137,10 @@ async def test_multi_parent_cascade_bug():
     dag = DAGAgentRunner(nodes_def, edges)
     results = await dag.execute()
 
-    assert results["A"]["state"] == "FAILED"
-    assert results["B"]["state"] == "SUCCESS"
-    assert results["C"]["state"] == "FAILED_UPSTREAM"
-    assert results["C"]["failed_by"] == "A"
+    assert results.nodes["A"].state == "FAILED"
+    assert results.nodes["B"].state == "SUCCESS"
+    assert results.nodes["C"].state == "FAILED_UPSTREAM"
+    assert results.nodes["C"].failed_by == "A"
 
 @pytest.mark.asyncio
 async def test_dag_success():
@@ -162,6 +162,6 @@ async def test_dag_success():
     dag = DAGAgentRunner(nodes_def, edges)
     results = await dag.execute()
 
-    assert results["A"]["state"] == "SUCCESS"
-    assert results["B"]["state"] == "SUCCESS"
-    assert results["C"]["state"] == "SUCCESS"
+    assert results.nodes["A"].state == "SUCCESS"
+    assert results.nodes["B"].state == "SUCCESS"
+    assert results.nodes["C"].state == "SUCCESS"

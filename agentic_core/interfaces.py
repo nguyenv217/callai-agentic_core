@@ -51,3 +51,33 @@ class AgentResponse:
             "usage": self.usage,
             "error": self.error
         }
+
+@dataclass
+class DAGNodeResponse:
+    """Response for a single node in a DAG."""
+    state: str
+    result: Any
+    error_details: str | None = None
+    failed_by: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        res = self.result
+        if hasattr(res, 'to_dict'):
+            res = res.to_dict()
+        return {
+            "state": self.state,
+            "result": res,
+            "error_details": self.error_details,
+            "failed_by": self.failed_by
+        }
+
+@dataclass
+class DAGResponse:
+    """Structured response from a DAG execution."""
+    nodes: dict[str, DAGNodeResponse] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "nodes": {node_id: node_resp.to_dict() for node_id, node_resp in self.nodes.items()}
+        }
+
