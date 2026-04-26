@@ -126,8 +126,10 @@ class ToolManager:
 
     def register_tool(self, tool_instance: BaseTool, load_mcp=False):
         """Registers a standard tool plugin or a dynamically loaded MCP tool."""
-        self._plugins[tool_instance.name] = tool_instance
-        self.tools_schema.append(tool_instance.schema)
+
+        if tool_instance.name not in self._plugins:  # prevents hallucinates and registers the same tool multiple times
+            self._plugins[tool_instance.name] = tool_instance
+            self.tools_schema.append(tool_instance.schema)
         
         if load_mcp:
             self._mcp_loaded_tools.add(tool_instance)
