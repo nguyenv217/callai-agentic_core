@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional
+from typing import Any
 import asyncio
 import math
 
@@ -58,33 +58,20 @@ class SQLiteVectorStore(IVectorStore):
                     self._initialized = True
     
     @staticmethod
-    def _serialize_vector(embedding: List[float]) -> str:
+    def _serialize_vector(embedding: list[float]) -> str:
         import json
         return json.dumps(embedding)
     
     @staticmethod
-    def _deserialize_vector(serialized: str) -> List[float]:
+    def _deserialize_vector(serialized: str) -> list[float]:
         import json
         return json.loads(serialized)
     
-    @staticmethod
-    def _cosine_similarity(a: List[float], b: List[float]) -> float:
-        dot = sum(x * y for x, y in zip(a, b))
-        norm_a = math.sqrt(sum(x * x for x in a))
-        norm_b = math.sqrt(sum(x * x for x in b))
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        return dot / (norm_a * norm_b)
-    
-    @staticmethod
-    def _euclidean_distance(a: List[float], b: List[float]) -> float:
-        return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
-    
     async def add(
         self,
-        texts: List[str],
-        embeddings: List[List[float]],
-        metadata: List[Dict[str, Any]]
+        texts: list[str],
+        embeddings: list[list[float]],
+        metadata: list[dict[str, Any]]
     ) -> None:
         await self._ensure_initialized()
         
@@ -102,34 +89,71 @@ class SQLiteVectorStore(IVectorStore):
     
     async def search(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         top_k: int = 3
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         await self._ensure_initialized()
+        import numpy as np
         
+        # Fetch only `chunk_ids` and embeddings to prevent RAM spikes
         async with self._session_factory() as session:
             result = await session.execute(
-                text(f'SELECT chunk_id, text, meta_data, embedding_bytes FROM {self.table_name}')
+                text(f'SELECT chunk_id, embedding_bytes FROM {self.table_name}')
             )
             rows = result.fetchall()
-        
-        scored = []
-        for row in rows:
-            stored_embedding = self._deserialize_vector(row.embedding_bytes)
             
-            if self.distance_metric == 'euclidean':
-                score = -self._euclidean_distance(query_embedding, stored_embedding)
-            else:
-                score = self._cosine_similarity(query_embedding, stored_embedding)
-            
-            scored.append({
-                'text': row.text,
-                'metadata': row.meta_data or {},
-                'score': score
-            })
+        if not rows:
+            return []
+
+        # To NumPy arrays for faster matrix operations
+        embeddings = np.array([self._deserialize_vector(r.embedding_bytes) for r in rows])
+        query_vec = np.array(query_embedding)
         
-        scored.sort(key=lambda x: x['score'], reverse=True)
-        return scored[:top_k]
+        if self.distance_metric == 'euclidean':
+            diff = embeddings - query_vec
+            scores = -np.linalg.norm(diff, axis=1)
+        else:
+            dot_products = np.dot(embeddings, query_vec)
+            norms = np.linalg.norm(embeddings, axis=1) * np.linalg.norm(query_vec)
+            # Compute cosine similarity, avoiding division by zero
+            scores = np.divide(dot_products, norms, out=np.zeros_like(dot_products), where=norms!=0)
+            
+        # Extract the top_k indices efficiently
+        # Can use `np.argpartition` for even faster sorting if database is larger
+        top_k_indices = np.argsort(scores)[::-1][:top_k]
+        
+        scored_ids = [
+            (rows[idx].chunk_id, float(scores[idx])) 
+            for idx in top_k_indices
+        ]
+
+        if not scored_ids:
+            return []
+
+        # Fetch heavy text and metadata ONLY for the top_k
+        top_chunk_ids = [s[0] for s in scored_ids]
+        scores_map = {s[0]: s[1] for s in scored_ids}
+        
+        async with self._session_factory() as session:
+            placeholders = ', '.join([f":id_{i}" for i in range(len(top_chunk_ids))]) # this prevent SQL injection
+            params = {f"id_{i}": chunk_id for i, chunk_id in enumerate(top_chunk_ids)}
+            
+            query = text(f'SELECT chunk_id, text, meta_data FROM {self.table_name} WHERE chunk_id IN ({placeholders})')
+            result = await session.execute(query, params)
+            final_rows = result.fetchall()
+
+        output = []
+        row_lookup = {row.chunk_id: row for row in final_rows}
+        for chunk_id in top_chunk_ids:
+            row = row_lookup.get(chunk_id)
+            if row:
+                output.append({
+                    'text': row.text,
+                    'metadata': row.meta_data or {},
+                    'score': scores_map[chunk_id]
+                })
+                
+        return output
     
     async def count(self) -> int:
         await self._ensure_initialized()
@@ -137,7 +161,7 @@ class SQLiteVectorStore(IVectorStore):
             result = await session.execute(text(f'SELECT COUNT(*) FROM {self.table_name}'))
             return result.scalar()
     
-    async def delete_all(self) -> None:
+    async def delete_all(self):
         await self._ensure_initialized()
         async with self._session_factory() as session:
             await session.execute(text(f'DELETE FROM {self.table_name}'))

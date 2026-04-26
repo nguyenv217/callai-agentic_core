@@ -1,7 +1,7 @@
-from typing import List, Dict, Any, Optional
+from typing import Any
 import uuid
 
-from agentic_core.config import ConfigurationError
+from ....config import ConfigurationError
 from ..core import IVectorStore
 
 try:
@@ -44,9 +44,9 @@ class ChromaDBVectorStore(IVectorStore):
     
     async def add(
         self,
-        texts: List[str],
-        embeddings: List[List[float]],
-        metadata: List[Dict[str, Any]]
+        texts: list[str],
+        embeddings: list[list[float]],
+        metadata: list[dict[str, Any]]
     ) -> None:
         ids = [str(uuid.uuid4()) for _ in texts]
         
@@ -59,9 +59,9 @@ class ChromaDBVectorStore(IVectorStore):
     
     async def search(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         top_k: int = 3
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         results = self._collection.query(
             query_embeddings=[query_embedding],
             n_results=top_k
