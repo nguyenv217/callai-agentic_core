@@ -1,7 +1,4 @@
 import pytest
-import json
-import asyncio
-from typing import Iterator
 from agentic_core.agents.builder import create_openai_agent
 from agentic_core.config import RunnerConfig
 from agentic_core.llm_providers.base import ILLMClient, LLMResponse
@@ -27,8 +24,8 @@ async def test_tool_json_decode_error(mock_llm_class):
 
     result = await agent.run_turn("Test JSON error", SilentObserver())
 
-    assert result["success"] is True
-    assert "I fixed the JSON" in result["text"]
+    assert result.error is None
+    assert "I fixed the JSON" in result.text
     history = agent.memory.get_history()
     assert any("Invalid JSON arguments" in msg["content"] for msg in history if msg["role"] == "tool")
 
@@ -56,7 +53,7 @@ async def test_max_iterations_reached(mock_llm_class):
     config = RunnerConfig(max_iterations=3)
     result = await agent.run_turn("Loop me", SilentObserver(), config=config)
 
-    assert result["success"] is True or "error" not in result
+    assert result.error is None or "error" not in result
     assert mock_llm.call_count == 3
 
 @pytest.mark.asyncio
@@ -75,8 +72,8 @@ async def test_tool_exception_handling(mock_llm_class, error_tool_factory):
 
     result = await agent.run_turn("Fail me", SilentObserver())
 
-    assert result["success"] is True
-    assert "The tool failed" in result["text"]
+    assert result.error is None
+    assert "The tool failed" in result.text
     history = agent.memory.get_history()
     assert any("Tool execution failed!" in msg["content"] for msg in history if msg["role"] == "tool")
 
@@ -115,8 +112,8 @@ async def test_observer_skip_tool(mock_llm_class, error_tool_factory):
 
     result = await agent.run_turn("Skip me", observer)
 
-    assert result["success"] is True
-    assert "Tool was skipped" in result["text"]
+    assert result.error is None
+    assert "Tool was skipped" in result.text
     history = agent.memory.get_history()
     assert not any(msg["role"] == "tool" for msg in history)
 
@@ -137,5 +134,5 @@ async def test_observer_abandon_turn(mock_llm_class, error_tool_factory):
 
     result = await agent.run_turn("Abandon me", observer)
 
-    assert result["success"] is True
-    assert result["text"] == ""
+    assert result.error is None
+    assert result.text == ""

@@ -204,10 +204,11 @@ class AgentRunner:
                 observer.on_error(f"Agent failed to provide a final answer after {max_iterations} iterations.")
         except Exception as e:
             logger.exception("Error during run_turn")
-            observer.on_error(error_msg)
+            observer.on_error(str(e))
             return AgentResponse(error=f"Engine execution error: {str(e)}")
         
         finally:
             observer.on_turn_complete(final_response)
 
         return final_response
+

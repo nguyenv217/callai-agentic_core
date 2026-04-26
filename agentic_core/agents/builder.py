@@ -14,6 +14,7 @@ from ..engines.engine import AgentRunner
 from ..memory.manager import MemoryManager
 from ..tools import ToolManager
 from ..observers.standard import SilentObserver, PrintObserver, AgentEventObserver
+from ..interfaces import AgentResponse
 
 # Import our new isolated providers
 from ..llm_providers import OpenAILLM, AnthropicLLM, OllamaLLM
@@ -61,7 +62,6 @@ def create_openai_agent(
     
     return AgentRunner(llm_client=llm, tools=tools, memory=memory)
 
-
 def create_anthropic_agent(
     api_key: str,
     model: str = "claude-3-5-sonnet-20241022",
@@ -78,7 +78,6 @@ def create_anthropic_agent(
     observer = observer or SilentObserver()
     
     return AgentRunner(llm_client=llm, tools=tools, memory=memory)
-
 
 def create_ollama_agent(
     model: str = "llama3.1",
@@ -98,7 +97,6 @@ def create_ollama_agent(
     
     return AgentRunner(llm_client=llm, tools=tools, memory=memory)
 
-
 async def chat(
     message: str,
     runner: AgentRunner | None = None,
@@ -111,7 +109,7 @@ async def chat(
     verbose: bool = False,
     config: RunnerConfig | None = None,
     **kwargs
-) -> str:
+) -> AgentResponse:
     """
     The absolute simplest way to start an agentic flow.
     
@@ -172,4 +170,6 @@ async def chat(
     
     result = await agent.run_turn(message, observer=observer, config=config)
     
-    return result.get("text", result.get("error", "No response"))
+    return result
+
+    return result

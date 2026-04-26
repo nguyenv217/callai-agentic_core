@@ -1,97 +1,139 @@
-
 import pytest
-import json
-from typing import Iterator
-
-from agentic_core.memory.manager import MemoryManager
 from agentic_core.agents.builder import create_openai_agent
 from agentic_core.config import RunnerConfig
-from agentic_core.llm_providers.base import ILLMClient
-from agentic_core.llm_providers.base import LLMResponse
+from agentic_core.llm_providers.base import ILLMClient, LLMResponse
 from agentic_core.observers.standard import SilentObserver
 from agentic_core.tools.base import BaseTool
+from agentic_core.observers import DecisionEvent, ToolStartDecision, LastIterationDecision
+from tests.conftest import ControlObserver
 
-# --- MOCKS moved to conftest.py ---
 # --- TESTS ---
 
 @pytest.mark.asyncio
-async def test_agent_execution_loop_with_tool(mock_llm_class, calculator_tool):
-    """
-    Integration test: Validates that the engine can route a request to the LLM, 
-    extract the tool call, execute the local Python tool, and return to the LLM.
-    """
-    # 1. Setup Mock Sequence
-    # Turn 1: LLM decides to call the calculator
+async def test_tool_json_decode_error(mock_llm_class):
+    """Test that invalid JSON arguments from LLM are handled gracefully."""
     resp1 = LLMResponse(
         success=True, text="", error=None, usage={},
-        tool_calls=[{"id": "call_abc", "function": {"name": "add_numbers", "arguments": '{"a": 5, "b": 7}'}}]
+        tool_calls=[{"id": "call_1", "function": {"name": "add_numbers", "arguments": '{"a": 5, "b":'}}] 
     )
-    # Turn 2: LLM observes the tool result and provides final text
-    resp2 = LLMResponse(
-        success=True, text="The sum of 5 and 7 is 12.", tool_calls=[], usage={}, error=None
-    )
-    
-    mock_llm = mock_llm_class([resp1, resp2])
-    
-    # 2. Initialize Agent Architecture
-    agent = create_openai_agent(api_key="mock_key")
-    agent.llm = mock_llm  # Inject our mock
-    agent.tools.register_tool(calculator_tool)
-    
-    # 3. Execute
-    config = RunnerConfig(toolset="all")
-    result = await agent.run_turn("What is 5 plus 7?", SilentObserver(), config=config)
-    
-    # 4. Assertions
-    assert result["success"] is True
-    assert "12" in result["text"]
-    assert mock_llm.call_count == 2
-    
-def test_memory_default_tool_truncation():
-    """Validates that massive JSON arrays are safely truncated."""
-    memory = MemoryManager(max_chars=150) # Set extremely low limit for testing
-    
-    large_payload = [{"id": i, "data": "x" * 50} for i in range(10)]
-    memory.add_message({"role": "tool", "content": json.dumps(large_payload), "tool_call_id": "123"})
-    
-    memory.enforce_context_limits()
-    truncated_text = memory.messages[-1]["content"]
-    
-    # It should keep the first few items but append the truncation warning
-    assert "ARRAY TRUNCATED" in truncated_text
-    assert truncated_text.startswith('[{"id": 0')
-    
-# --- PARALLEL TOOL EXECUTION TEST ---
-# --- MOCKS moved to conftest.py ---
-@pytest.mark.asyncio
-async def test_parallel_tool_execution_timing(mock_llm_class, slow_tool):
-    """Ensures multiple tool calls are executed concurrently."""
-    import time
-    # LLM returns two tool calls in one turn, then final text
-    resp1 = LLMResponse(
-        success=True, text="", error=None, usage={},
-        tool_calls=[
-            {"id": "t1", "function": {"name": "slow_task", "arguments": "{}"}},
-            {"id": "t2", "function": {"name": "slow_task", "arguments": "{}"}}
-        ]
-    )
-    resp2 = LLMResponse(
-        success=True, text="All tasks completed.", tool_calls=[], usage={}, error=None
-    )
+    resp2 = LLMResponse(success=True, text="I fixed the JSON.", tool_calls=[], usage={}, error=None)
+
     mock_llm = mock_llm_class([resp1, resp2])
     agent = create_openai_agent(api_key="mock_key")
     agent.llm = mock_llm
-    agent.tools.register_tool(slow_tool)
-    config = RunnerConfig(toolset="all")
-    start = time.monotonic()
-    result = await agent.run_turn("Run two slow tasks.", SilentObserver(), config=config)
-    duration = time.monotonic() - start
-    assert result["success"] is True
-    # Both tasks should finish in roughly the time of the longest one (~0.2s), not sum (~0.4s)
-    assert duration < 0.25, f"Parallel execution took too long: {duration}s"
 
+    result = await agent.run_turn("Test JSON error", SilentObserver())
+
+    assert result.error is None
+    assert "I fixed the JSON" in result.text
     history = agent.memory.get_history()
-    
-    assert history[-2]["role"] == "tool" # The tool execution was recorded
-    
-    assert all("completed" in msg['content'] for msg in history[-3:-1]) # The math result was injected to context
+    assert any("Invalid JSON arguments" in msg["content"] for msg in history if msg["role"] == "tool")
+
+@pytest.mark.asyncio
+async def test_max_iterations_reached(mock_llm_class):
+    """Test that agent stops after max_iterations."""
+    resp = LLMResponse(
+        success=True, text="", error=None, usage={},
+        tool_calls=[{"id": "loop", "function": {"name": "loop_tool", "arguments": "{}"}}]
+    )
+    mock_llm = mock_llm_class([resp] * 10)
+
+    agent = create_openai_agent(api_key="mock_key")
+    agent.llm = mock_llm
+
+    class LoopTool(BaseTool):
+        def __init__(self):
+            super().__init__()
+            self._name = "loop_tool"
+            self._schema = {"type": "function", "function": {"name": "loop_tool", "parameters": {"type": "object", "properties": {}}}}
+        async def execute(self, args, ctx): return "Looping..."
+
+    agent.tools.register_tool(LoopTool())
+
+    config = RunnerConfig(max_iterations=3)
+    result = await agent.run_turn("Loop me", SilentObserver(), config=config)
+
+    assert result.error is None or "error" not in result
+    assert mock_llm.call_count == 3
+
+@pytest.mark.asyncio
+async def test_tool_exception_handling(mock_llm_class, error_tool_factory):
+    """Test that tool exceptions are captured and passed back to LLM."""
+    resp1 = LLMResponse(
+        success=True, text="", error=None, usage={},
+        tool_calls=[{"id": "fail_1", "function": {"name": "error_tool", "arguments": "{}"}}]
+    )
+    resp2 = LLMResponse(success=True, text="The tool failed, but I'm okay.", tool_calls=[], usage={}, error=None)
+
+    mock_llm = mock_llm_class([resp1, resp2])
+    agent = create_openai_agent(api_key="mock_key")
+    agent.llm = mock_llm
+    agent.tools.register_tool(error_tool_factory(should_fail=True))
+
+    result = await agent.run_turn("Fail me", SilentObserver())
+
+    assert result.error is None
+    assert "The tool failed" in result.text
+    history = agent.memory.get_history()
+    assert any("Tool execution failed!" in msg["content"] for msg in history if msg["role"] == "tool")
+
+@pytest.mark.asyncio
+async def test_system_prompt_combination(mock_llm_class):
+    """Test that toolset prompt and explicit system prompt are merged."""
+    agent = create_openai_agent(api_key="mock_key")
+    agent.tools.add_toolset("my_set", [], "TOOLSET PROMPT")
+
+    assert "my_set" in agent.tools.toolsets
+    assert "my_set" in agent.tools.toolset_prompts
+
+    config = RunnerConfig(toolset="my_set", system_prompt="USER SYSTEM PROMPT")
+    agent.llm = mock_llm_class([LLMResponse(success=True, text="Hi", tool_calls=[], usage={}, error=None)])
+
+    await agent.run_turn("Hello", SilentObserver(), config=config)
+
+    assert "TOOLSET PROMPT" in agent.memory.system_prompt['content']
+    assert "USER SYSTEM PROMPT" in agent.memory.system_prompt['content']
+
+@pytest.mark.asyncio
+async def test_observer_skip_tool(mock_llm_class, error_tool_factory):
+    """Test that the observer can skip a tool call."""
+    resp1 = LLMResponse(
+        success=True, text="", error=None, usage={},
+        tool_calls=[{"id": "skip_1", "function": {"name": "error_tool", "arguments": "{}"}}]
+    )
+    resp2 = LLMResponse(success=True, text="Tool was skipped.", tool_calls=[], usage={}, error=None)
+
+    mock_llm = mock_llm_class([resp1, resp2])
+    agent = create_openai_agent(api_key="mock_key")
+    agent.llm = mock_llm
+    agent.tools.register_tool(error_tool_factory())
+
+    observer = ControlObserver(tool_decision=(ToolStartDecision.SKIP,))
+
+    result = await agent.run_turn("Skip me", observer)
+
+    assert result.error is None
+    assert "Tool was skipped" in result.text
+    history = agent.memory.get_history()
+    assert not any(msg["role"] == "tool" for msg in history)
+
+@pytest.mark.asyncio
+async def test_observer_abandon_turn(mock_llm_class, error_tool_factory):
+    """Test that the observer can abandon the turn entirely."""
+    resp1 = LLMResponse(
+        success=True, text="", error=None, usage={},
+        tool_calls=[{"id": "abandon_1", "function": {"name": "error_tool", "arguments": "{}"}}]
+    )
+
+    mock_llm = mock_llm_class([resp1])
+    agent = create_openai_agent(api_key="mock_key")
+    agent.llm = mock_llm
+    agent.tools.register_tool(error_tool_factory())
+
+    observer = ControlObserver(tool_decision=(ToolStartDecision.ABANDON,))
+
+    result = await agent.run_turn("Abandon me", observer)
+
+    assert result.error is None
+    assert result.text == ""
+

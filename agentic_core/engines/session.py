@@ -1,5 +1,4 @@
 import asyncio
-from typing import Dict, Any, Optional
 from .engine import AgentRunner
 
 class SessionManager:
@@ -7,7 +6,7 @@ class SessionManager:
     Manages cached AgentRunner instances to preserve memory and MCP connections.
     """
     def __init__(self):
-        self._sessions: Dict[str, AgentRunner] = {}
+        self._sessions: dict[str, AgentRunner] = {}
         self._lock = asyncio.Lock()
 
     async def get_runner(self, session_id: str, creator_func) -> AgentRunner:
@@ -15,7 +14,7 @@ class SessionManager:
             if session_id in self._sessions:
                 return self._sessions[session_id]
 
-            runner = creator_func()
+            runner = await creator_func()
             self._sessions[session_id] = runner
             return runner
 
@@ -29,3 +28,4 @@ class SessionManager:
 
 # Global singleton for the convenience chat() function
 global_session_manager = SessionManager()
+
