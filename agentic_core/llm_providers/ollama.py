@@ -1,7 +1,7 @@
 """
 Ollama LLM Provider.
 """
-from typing import List, Dict, Any, Iterator
+from typing import AsyncIterator, List, Dict, Any
 from .base import ILLMClient, LLMResponse
 
 
@@ -15,20 +15,21 @@ class OllamaLLM(ILLMClient):
         **kwargs
     ):
         try:
-            import ollama
+            from ollama import AsyncClient
         except ImportError:
             raise ImportError("Please install ollama: pip install ollama")
         
         self.model = model
         self.base_url = base_url
+        self.client = AsyncClient(host=base_url)
         self.extra_kwargs = kwargs
     
-    def ask(
+    async def ask(
         self, 
         messages: List[Dict[str, Any]], 
         tools: List[Dict[str, Any]] | None = None, 
         **kwargs
-    ) -> Iterator[LLMResponse]:
+    ) -> AsyncIterator[LLMResponse]:
         """
         Send a chat request to Ollama.
         
@@ -37,9 +38,6 @@ class OllamaLLM(ILLMClient):
             tools: A list of JSON schemas for tools (NOT the ToolManager object).
         """
         try:
-            import ollama
-            
-            # Build request kwargs dynamically
             req_kwargs = {
                 "model": self.model,
                 "messages": messages,
@@ -47,13 +45,11 @@ class OllamaLLM(ILLMClient):
                 **kwargs
             }
             
-            # Only attach tools if they exist
+            # To ollama format
             if tools:
-                # Convert to Ollama format
-                ollama_tools = [{"type": "function", "function": t["function"]} for t in tools]
-                req_kwargs["tools"] = ollama_tools
+                req_kwargs["tools"] = [{"type": "function", "function": t["function"]} for t in tools]
 
-            response = ollama.chat(**req_kwargs)
+            response = await self.client.chat(**req_kwargs)
             
             msg = response["message"]
             yield LLMResponse(

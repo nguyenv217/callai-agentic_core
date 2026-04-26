@@ -1,7 +1,7 @@
 """
 Anthropic LLM Provider.
 """
-from typing import List, Dict, Any, Iterator
+from typing import AsyncIterator, List, Dict, Any, Iterator
 from .base import ILLMClient, LLMResponse
 
 
@@ -15,20 +15,20 @@ class AnthropicLLM(ILLMClient):
         **kwargs
     ):
         try:
-            import anthropic  # type: ignore
+            from anthropic import AsyncAnthropic
         except ImportError:
             raise ImportError("Please install anthropic: pip install anthropic")
         
-        self.client = anthropic.Anthropic(api_key=api_key)
+        self.client = AsyncAnthropic(api_key=api_key)
         self.model = model
         self.extra_kwargs = kwargs
     
-    def ask(
+    async def ask(
         self, 
         messages: List[Dict[str, Any]], 
         tools: List[Dict[str, Any]] | None = None, 
         **kwargs
-    ) -> Iterator[LLMResponse]:
+    ) -> AsyncIterator[LLMResponse]:
         """
         Send a message request to Anthropic.
         
@@ -70,7 +70,7 @@ class AnthropicLLM(ILLMClient):
                 ]
                 req_kwargs["tools"] = anthropic_tools
 
-            response = self.client.messages.create(**req_kwargs)
+            response = await self.client.messages.create(**req_kwargs)
             
             text_content = ""
             tool_calls = []

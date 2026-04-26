@@ -26,7 +26,7 @@ class ILLMClient(Protocol):
         messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]] | None = None,
         **kwargs
-    ) -> Iterator[LLMResponse] | AsyncIterator[LLMResponse]: # THIS WILL BE STANDARDIZED LATER TO ASYNC, please migrate
+    ) -> AsyncIterator[LLMResponse]: 
         """
         Send a request to the LLM.
         
