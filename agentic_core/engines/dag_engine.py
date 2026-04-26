@@ -2,8 +2,11 @@ import asyncio
 import traceback
 from enum import Enum, auto
 from typing import Any, Tuple
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import logging
+
+from agentic_core.config import ConfigurationError
+from agentic_core.interfaces import AgentResponse
 
 from .engine import AgentRunner, RunnerConfig
 from ..observers import AgentEventObserver
@@ -48,7 +51,7 @@ class DAGEventObserver(AgentEventObserver):
     def on_node_start(self, node_id: str, worker_id: int):
         logger.info(f"[DAG] Worker {worker_id} starting node {node_id}")
 
-    def on_node_complete(self, node_id: str, status: NodeState, result: Any):
+    def on_node_complete(self, node_id: str, status: NodeState, result: AgentResponse):
         logger.info(f"[DAG] Node {node_id} completed with status {status}")
 
     def on_node_retry(self, node_id: str, retry_count: int, max_retries: int):
@@ -66,8 +69,13 @@ class DAGAgentRunner:
         observer: DAGEventObserver | None = None
     ):
         """
-        nodes_def: {node_id: (runner, config, prompt, max_retries)}
-        edges: [(parent_id, child_id)]
+        Engine for concurrent dispatch of agent swarms with dependencies modeled as a Directed Acyclic Graph (DAG) .
+
+        Args:
+            nodes_def: {node_id: (runner, config, prompt, max_retries)}
+            edges: [(parent_id, child_id)]
+            max_concurrency: Maximum number of concurrent nodes to run at once.
+            observer: Optional observer for tracking execution events.
         """
         self.nodes: dict[str, DAGNode] = {}
         self.out_edges: dict[str, list[str]] = {node_id: [] for node_id in nodes_def}
@@ -81,7 +89,7 @@ class DAGAgentRunner:
 
         for parent, child in edges:
             if parent not in self.nodes or child not in self.nodes:
-                raise ValueError(f"Edge {parent} -> {child} contains undefined nodes")
+                raise ConfigurationError(f"Edge {parent} -> {child} contains undefined nodes")
             self.out_edges[parent].append(child)
             self.in_edges[child].append(parent)
             self.in_degree[child] += 1
@@ -93,38 +101,41 @@ class DAGAgentRunner:
 
     def compile(self):
         """Cycle detection and Critical Path priority scoring."""
+        from collections import deque
+
         temp_in_degree = self.in_degree.copy()
-        queue = [n for n in self.nodes if temp_in_degree[n] == 0]
-        visited_count = 0
+        queue = deque([n for n in self.nodes if temp_in_degree[n] == 0])
+        visited_nodes = set()
 
-        while queue:
-            u = queue.pop(0)
-            visited_count += 1
-            for v in self.out_edges[u]:
-                temp_in_degree[v] -= 1
-                if temp_in_degree[v] == 0:
-                    queue.append(v)
-
-        if visited_count != len(self.nodes):
-            raise RuntimeError("ConfigurationError: Cycle detected in DAG")
-
-        priorities = {node_id: 0 for node_id in self.nodes}
         topo_order = []
-        temp_in_degree = self.in_degree.copy()
-        queue = [n for n in self.nodes if temp_in_degree[n] == 0]
+
         while queue:
-            u = queue.pop(0)
+            u = queue.popleft()
+            visited_nodes.add(u)
             topo_order.append(u)
+
             for v in self.out_edges[u]:
                 temp_in_degree[v] -= 1
                 if temp_in_degree[v] == 0:
                     queue.append(v)
 
+        if len(visited_nodes) != len(self.nodes):
+            # Identify nodes that are part of the cycle
+            unvisited_nodes = [node_id for node_id in self.nodes if node_id not in visited_nodes]
+            cycle_message = (
+                f"Cycle detected in DAG. TUnprocessed nodes: {unvisited_nodes}. "
+                f"Total nodes: {len(self.nodes)}, Visited nodes: {len(visited_nodes)}. "
+                f"Please review the edges to ensure no circular dependencies exist."
+            )
+            raise RuntimeError(cycle_message)
+
+        priorities = {}
         for u in reversed(topo_order):
-            if not self.out_edges[u]:
+            children = self.out_edges[u]
+            if not children:
                 priorities[u] = 1
             else:
-                priorities[u] = 1 + max(priorities[v] for v in self.out_edges[u])
+                priorities[u] = 1 + max(priorities[v] for v in children)
 
         for node_id, priority in priorities.items():
             self.nodes[node_id].priority = priority
