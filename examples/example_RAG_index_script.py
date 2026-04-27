@@ -4,7 +4,7 @@ Start indexing your local codebase into retrieavable vector databases with chrom
 Requirements:
     chromadb (`pip install chromadb`)
     langchain_text_splitters (`pip install langchain_text`)
-    A local embedder model. By default, Chroma will pull an omnx runtime `all-miniLM-L6-v2` from HuggingFace.
+    A local embedder model. By default, Chroma will pull an omnx runtime `all-miniLM-L6-v2` instance that they built to remove dependencies.
     
 Usage:
     Replace `model_path = "/path/to/your/local/model_folder"` if you have a local model available. IMPORTANT: You must also use this model during runtime retrieval.
