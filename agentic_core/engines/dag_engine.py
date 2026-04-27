@@ -146,6 +146,11 @@ class DAGAgentRunner:
                 prio, node_id = await self.queue.get()
                 node = self.nodes[node_id]
 
+                # Skip nodes already in terminal states (can happen due to delayed retry requeue)
+                if node.state in (NodeState.SUCCESS, NodeState.FAILED, NodeState.FAILED_UPSTREAM):
+                    self.queue.task_done()
+                    continue
+
                 self.observer.on_node_start(node_id, worker_id)
                 node.state = NodeState.RUNNING
 
