@@ -54,6 +54,7 @@ class GlobalMCPRegistry:
     _sessions: dict[Tuple, _MCPSession] = {}
     _locks: dict[Tuple, asyncio.Lock] = {}
     _global_lock = asyncio.Lock()
+    _failed_sessions: set[Tuple] = set() # Track failed identity keys
 
     def __new__(cls):
         if cls._instance is None:
@@ -85,6 +86,10 @@ class GlobalMCPRegistry:
         Returns an existing session if available, or creates a new one.
         """
         identity_key = self._get_identity_key(server_config)
+
+        if identity_key in self._failed_sessions:
+            raise RuntimeError(f"Server '{server_name}' previously failed to initialize. Blocking retry.")
+        
         lock = await self._get_lock_for_identity(identity_key)
         async with lock:
             if identity_key in self._sessions:
@@ -167,7 +172,6 @@ class GlobalMCPRegistry:
                 if not init_event.is_set():
                     init_event.set()
             finally:
-                # 3. Gracefully clean up our file stream
                 if err_stream:
                     try:
                         err_stream.close()
@@ -176,7 +180,10 @@ class GlobalMCPRegistry:
 
         task = asyncio.create_task(server_task(), name=f"mcp_server_{server_name}")
         await asyncio.wait_for(init_event.wait(), timeout=60.0)
-        if session_ref["error"]: raise session_ref["error"]
+
+        if session_ref["error"]: 
+            self._failed_sessions.add(identity_key)
+            raise session_ref["error"]
 
         new_session = {"name": server_name, "session": session_proxy, "shutdown_event": shutdown_event, "task": task, "ref_count": 1}
         async with lock:
