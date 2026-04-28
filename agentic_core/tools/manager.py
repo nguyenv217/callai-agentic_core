@@ -222,8 +222,6 @@ class ToolManager:
         import atexit
         atexit.unregister(self.cleanup)
 
-    # In agentic_core/tools/manager.py
-
     def cleanup(self):
         """
         Synchronous atexit fallback to ensure background MCP tasks are stopped.
@@ -246,7 +244,7 @@ class ToolManager:
                     logger.debug(f"atexit asyncio.run cleanup encountered an issue: {e}")
 
 
-    def add_mcp_server(self, server_name: str, command: str, args: list[str] = None, env: dict[str, str] = None):
+    def add_mcp_server(self, server_name: str, command: str, args: list[str] = None, env: dict[str, str] = None, log_file: str = None):
         """
         Programmatically add an MCP server configuration.
         
@@ -255,8 +253,7 @@ class ToolManager:
             command: Executable command to start the server
             args: List of arguments for the command
             env: Environment variables for the server process
-        
-        Return
+            log_file: Optional path to log stderr for server output. Useful for debugging and avoid conflicts with TUI apps.
         """
         if self._mcp_init_in_progress:
             logger.warning("MCP is initializing. Please wait or restart the program.")
@@ -273,7 +270,8 @@ class ToolManager:
         self._mcp_config_dict["mcpServers"][server_name] = {
             "command": command,
             "args": args,
-            "env": env
+            "env": env,
+            "log_file": log_file
         }
         
         # Reset MCP initialization state to force reload on next ensure_mcp_initialized call
