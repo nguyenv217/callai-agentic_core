@@ -120,33 +120,21 @@ class GlobalMCPRegistry:
         session_proxy = _MCPSessionProxy(request_queue, current_loop, server_name)
 
         async def server_task():
+            err_stream = None
             try:
                 import os
-                if os.name == 'nt':
-                    log_file = server_config.get("log_file")
-                    
-                    for fd in (0, 1, 2): # stdin, stdout, stderr
-                        try:
-                            os.fstat(fd)
-                        except OSError:
-                            try:
-                                # If it's stderr and a log file is configured, route errors there.
-                                # otherwise, route to devnull.
-                                if fd == 2 and log_file:
-                                    # Ensure directory exists
-                                    os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
-                                    target_fd = os.open(log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND)
-                                else:
-                                    target_fd = os.open(os.devnull, os.O_RDWR)
-                                
-                                if target_fd != fd:
-                                    os.dup2(target_fd, fd)
-                                    os.close(target_fd)
-                            except OSError as e:
-                                logger.warning(f"[{server_name}] Failed to remap fd {fd}: {e}")
+
+                log_file = server_config.get("log_file")
+                if log_file:
+                    os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
+                    err_stream = open(log_file, "a", encoding="utf-8")
+                else:
+                    # Provide an explicit devnull handle if no log file is set
+                    err_stream = open(os.devnull, "w")
 
                 server_params = StdioServerParameters(command=command, args=args, env=env)
-                async with stdio_client(server_params) as (read_stream, write_stream):
+                
+                async with stdio_client(server_params, errlog=err_stream) as (read_stream, write_stream):
                     async with ClientSession(read_stream, write_stream) as session:
                         await session.initialize()
                         init_event.set()
@@ -178,6 +166,13 @@ class GlobalMCPRegistry:
                 session_ref["error"] = e
                 if not init_event.is_set():
                     init_event.set()
+            finally:
+                # 3. Gracefully clean up our file stream
+                if err_stream:
+                    try:
+                        err_stream.close()
+                    except Exception:
+                        pass
 
         task = asyncio.create_task(server_task(), name=f"mcp_server_{server_name}")
         await asyncio.wait_for(init_event.wait(), timeout=60.0)
