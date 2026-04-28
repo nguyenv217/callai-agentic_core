@@ -81,16 +81,16 @@ asyncio.run(main())
 
 ### Return Type
 
-`DAGAgentRunner.execute()` returns a `DAGResponse` objects containing nodes results and error (if any).
+`DAGAgentRunner.execute()` returns a `DAGResponse` object containing nodes results and error (if any).
 ```python
 class DAGNodeResponse:
     state: str
     result: Any
-    error_details: str | None = None
-    failed_by: str | None = None
+    error_details: str | None
+    failed_by: str | None
 
 class DAGResponse:
-    nodes: dict[str, DAGNodeResponse] = field(default_factory=dict)
+    nodes: dict[str, DAGNodeResponse]
     error: str | None = None
 ```
 
@@ -102,7 +102,7 @@ The nodes_def dictionary is the heart of your graph. Each entry follows this tup
 
 | Parameter | Type       | Description                                                                           |
 | :-------- | :--------- | :------------------------------------------------------------------------------------ |
-| `AgentRunne`r | `AgentRunner`   | The logic engine for this specific node.                                                |
+| `AgentRunner` | `AgentRunner`   | The logic engine for this specific node.                                                |
 | `RunnerConfig`  | `RunnerConfig`  | Runtime settings (max iterations, system prompt, etc.).                                 |
 | `prompt      `  | `str`           | The specific instruction for this node.                                                |
 | `max_retries `  | `int`           | How many times to retry on transient API errors (optional).                             |

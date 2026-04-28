@@ -8,7 +8,7 @@
   - clear decision actions at each step of the agent's plan, 
   - and a simple but extendable base tool class that can be used to implement arbitrarily complex workflows.
 
-**Example Applications**: Tool-calling Assistant Bots, DAG-based Agent Swarms (using custom dispatch tools), Legal Consultant Bot with RAG-based tools, and many more.
+**Example Applications**: Tool-calling Assistant Bots, DAG-based Agent Swarms (via `DAGAgentRunner` and agent-spawning tools), Legal Consultant Bot with RAG-based tools (via `RAG tool suite` installed with extra [rag] (see [docs/RAG_TOOLS.md](docs/RAG_TOOLS.md)), and many more.
 
 
 ## Table of Contents
