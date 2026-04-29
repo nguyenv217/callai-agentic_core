@@ -17,14 +17,13 @@
 2. [The Simple `chat()` Function](#the-simple-chat-function)
 3. [Tooling system: Bring-your-own-tools & MCP integration (GitHub, Filesystem, etc.)](#using-tools-implementing-basetool-or-integrate-mcp-servers)
 4. [Agent creation (Advanced) & Memory Management](#creating-your-own-agent-advanced--custom-memory-management-strategy)
-5. [Configuration Options](#configuration-options)
-6. [Project Structure](#project-structure)
-7. [Troubleshooting](#troubleshooting)
-8. [Notes on security](#security--production-readiness)
----
+5. [Streaming Capabilities](#streaming)
+6. [Configuration Options](#configuration-options)
+7. [Project Structure](#project-structure)
+8. [Troubleshooting](#troubleshooting)
+9. [Notes on security](#security--production-readiness)
 
 ## QUICK START
-
 
 ### Installation
 1. Install the package with pip:
@@ -299,6 +298,50 @@ Please see this more detailed [explanation](docs/MCP_CONFIG_GUIDE.md) in how to 
 
 ---
 
+## Streaming Capabilities
+
+The `AgentRunner` supports real-time streaming of agent events, allowing you to display reasoning, tool calls, and final responses as they happen.
+
+```python
+import asyncio
+from agentic_core.engines import AgentRunner
+from agentic_core.llm_providers import OpenAILLM
+from agentic_core.memory import MemoryManager
+from agentic_core.tools import ToolManager
+from agentic_core.interfaces import StreamEventType
+
+async def main():
+    # Setup
+    llm = OpenAILLM(api_key="sk-...", model="gpt-4o")
+    runner = AgentRunner(llm_client=llm, tools=ToolManager(), memory=MemoryManager())
+
+    user_input = "Can you explain quantum physics in one sentence?"
+    
+    # Stream the response
+    async for event in runner.stream_turn(user_input):
+        if event.type == StreamEventType.REASONING:
+            print(f"[Reasoning]: {event.content}", end="", flush=True)
+        elif event.type == StreamEventType.TEXT:
+            print(event.content, end="", flush=True)
+        elif event.type == StreamEventType.TOOL_CALL:
+            print(f"\n[Tool Call]: {event.content['function']['name']}")
+        elif event.type == StreamEventType.TOOL_RESULT:
+            print(f"\n[Tool Result]: {event.content['result']}")
+        elif event.type == StreamEventType.FINAL_RESPONSE:
+            print(f"\n\n[Done] Final response received.")
+
+asyncio.run(main())
+```
+
+**Available Event Types (`StreamEventType`):**
+- `REASONING`: The agent's internal chain-of-thought.
+- `TEXT`: The actual response text being streamed.
+- `TOOL_CALL`: Information about a tool being called.
+- `TOOL_RESULT`: The output returned by a tool.
+- `ERROR`: Any error occurred during execution.
+- `FINAL_RESPONSE`: The final consolidated `AgentResponse` object.
+
+---
 ## Creating Your Own Agent (Advanced) & Custom Memory Management Strategy
 
 If you need more control, you can create agents manually:
