@@ -165,3 +165,5 @@ memory.json
 run_docker.bat
 chromadb_data/
 index.py
+venv
+chroma-db
