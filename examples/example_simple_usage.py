@@ -4,26 +4,19 @@ ULTRA-SIMPLE EXAMPLE
 Before: You needed to understand protocols, classes, generators...
 After: Just call chat() with your API key!
 """
+from dotenv import load_dotenv
+env_path = ".env"
+if not load_dotenv(dotenv_path=env_path):
+    raise RuntimeError("No .env file found. Please create one in the project root directory and try again")
+
 import asyncio
 from agentic_core.agents import chat, create_openai_agent  # That's it!
-
 from pathlib import Path
-from dotenv import load_dotenv
-
-from agentic_core.config import ConfigurationError
-
-env_path = Path(__file__).resolve().parents[1] / ".env"
-if not load_dotenv(dotenv_path=env_path):
-    raise ConfigurationError("No .env file found. Please create one in the project root directory and try again")
 
 import os
 
-from pathlib import Path
 os.environ['MCP_SERVER_MEMORY_FILE'] = str((Path(__file__).parent.parent / "memory.jsonl").resolve())
 os.environ['MCP_CONFIG_PATH'] = str((Path(__file__).parent / "mcp_config.json").resolve())
-
-import logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', filename="debug.log")
 
 async def main():
     # ============================================================
