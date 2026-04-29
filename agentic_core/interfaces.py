@@ -75,7 +75,7 @@ class AgentResponse:
 class DAGNodeResponse:
     """Response for a single node in a DAG."""
     state: str
-    result: Any
+    result: AgentResponse | None
     error_details: str | None = None
     failed_by: str | None = None
 

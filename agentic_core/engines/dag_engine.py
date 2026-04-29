@@ -38,7 +38,7 @@ class DAGNode:
     priority: int = 0
     state: NodeState = NodeState.PENDING
     in_degree: int = 0
-    result: Any = None
+    result: AgentResponse | None = None
     max_retries: int = 0
     current_retries: int = 0
     error_details: str | None = None
