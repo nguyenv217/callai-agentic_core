@@ -141,12 +141,14 @@ class AgentRunner:
                         if response.usage:
                             self.last_usage_meta = response.usage
                 except ProviderRateLimitError as e:
-                    observer.on_error(f"Rate Limit Exceeded: {str(e)}")
+                    error_msg = f"Rate Limit Exceeded: {str(e)}"
+                    observer.on_error(error_msg)
                     yield StreamEvent(StreamEventType.ERROR, error_msg)
                     final_response.error = error_msg
                     return
                 except ProviderAuthenticationError as e:
-                    observer.on_error(f"Authentication Failed: {str(e)}")
+                    error_msg = f"Authentication Failed: {str(e)}"
+                    observer.on_error(error_msg)
                     yield StreamEvent(StreamEventType.ERROR, error_msg)
                     final_response.error = error_msg
                     return
