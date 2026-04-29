@@ -167,3 +167,4 @@ chromadb_data/
 index.py
 venv
 chroma-db
+prefill.py
