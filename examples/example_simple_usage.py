@@ -57,7 +57,7 @@ Only use these tools when necessary to conserve resources.
                 verbose=True,                 # Set True to see what's happening
                 config=config
             )
-            print(f"\n📝 Response: {result}")
+            print(f"\n📝 Response: {result.text}")
 
     except (KeyboardInterrupt, EOFError):
         pass

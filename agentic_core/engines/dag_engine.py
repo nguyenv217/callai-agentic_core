@@ -201,14 +201,7 @@ class DAGAgentRunner:
 
                         # Exponential backoff: 2^retry_count seconds, scheduled in background so all other nodes can proceed
                         backoff = 2 ** node.current_retries
-
-                        async def delayed_requeue(delay, p, n_id):
-                            await asyncio.sleep(delay)
-                            await self.queue.put((p, n_id))
-                        
-                        asyncio.create_task(delayed_requeue(backoff, -node.priority, node_id))
-
-                        # Re-queue the node
+                        await asyncio.sleep(backoff)
                         await self.queue.put((-node.priority, node_id))
                     else:
                         logger.error(f"Node {node_id} failed permanently:\n{tb_str}")

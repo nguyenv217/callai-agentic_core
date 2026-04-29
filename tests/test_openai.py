@@ -39,7 +39,7 @@ async def test_openai_auth_error_handling(mock_openai_client):
     )
     mock_openai_client.chat.completions.create.side_effect = mock_error
 
-    provider = OpenAILLM(client=mock_openai_client)
+    provider = OpenAILLM(client=mock_openai_client, model="gpt-4")
     # provider.ask yields an iterator
     responses = await _collect_async_tolist(provider.ask(messages=[{"role": "user", "content": "Hello"}]))
 
@@ -59,7 +59,7 @@ async def test_openai_rate_limit_handling(mock_openai_client):
         body=None
     )
 
-    provider = OpenAILLM(client=mock_client)
+    provider = OpenAILLM(client=mock_client, model="gpt-4")
     responses = await _collect_async_tolist(provider.ask(messages=[{"role": "user", "content": "Hello"}]))
     
     assert "RATE LIMIT" in responses[0].error
@@ -89,7 +89,7 @@ async def test_openai_successful_tool_call(mock_openai_client):
     
     mock_openai_client.chat.completions.create.return_value = mock_response
 
-    provider = OpenAILLM(client=mock_openai_client)
+    provider = OpenAILLM(client=mock_openai_client, model="gpt-4")
     responses = await _collect_async_tolist(provider.ask(messages=[{"role": "user", "content": "Weather?"}]))
 
     print(responses)

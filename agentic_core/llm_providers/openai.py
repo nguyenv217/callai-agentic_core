@@ -76,6 +76,9 @@ class OpenAILLM(ILLMClient):
                 stream_response = await self.client.chat.completions.create(**req_kwargs)
             
                 async for chunk in stream_response:
+                    if not chunk.choices:
+                        continue
+                    
                     delta = chunk.choices[0].delta
 
                     # Collect tool calls as they appear

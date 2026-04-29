@@ -11,7 +11,7 @@ class MockLLMClient(ILLMClient):
     def __init__(self):
         self.call_counts = {}
 
-    async def ask(self, messages, tools=None):
+    async def ask(self, messages, tools=None, **kwargs):
         last_message = messages[-1]["content"]
         node_id = "Unknown"
         # Infer node_id from prompt (hack for tests)

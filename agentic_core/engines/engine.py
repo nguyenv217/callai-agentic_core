@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, AsyncGenerator
 import json
 import asyncio
 
@@ -7,7 +7,7 @@ from ..tools import ToolManager
 from ..memory.manager import MemoryManager
 from ..observers import AgentEventObserver, DecisionEvent, LastIterationDecision, ToolStartDecision
 from ..config import ConfigurationError, RunnerConfig
-from ..interfaces import AgentResponse
+from ..interfaces import AgentResponse, StreamEvent, StreamEventType
 
 import logging
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ class AgentRunner:
 
     # ======== Entry point ========
 
-    async def run_turn(self, user_input: str | list[dict], observer: AgentEventObserver | None = None, config: RunnerConfig | None = None) -> AgentResponse:
+    async def stream_turn(self, user_input: str | list[dict], observer: AgentEventObserver | None = None, config: RunnerConfig | None = None) -> AsyncGenerator[StreamEvent, None]:
         if not observer:
             if not self.observer:
                 raise ConfigurationError("`observer`: `AgentEventObserver` must be provided either during initialization or at runtime.")
@@ -98,10 +98,10 @@ class AgentRunner:
         await self.tools.prepare_turn(config)
 
         active_tools = config.tools or self.tools.get_tools_from_toolset(config.toolset)
-        active_tools.extend(self.tools.get_mcp_loaded_tools()) 
+        active_tools.extend(self.tools.get_mcp_loaded_tools())
 
         if config.mcp_enable_discovery:
-            active_tools.extend(self.tools.get_discovery_tools()) 
+            active_tools.extend(self.tools.get_discovery_tools())
 
         max_iterations = config.max_iterations
         iteration = 1
@@ -112,21 +112,30 @@ class AgentRunner:
                 observer.on_iteration_start(iteration, max_iterations)
                 conversation = self.memory.get_history()
                 logger.info(f"Tools turn {iteration}: {[t['function']['name'] for t in active_tools]}")
-                response_iterator = self.llm.ask(conversation, active_tools) 
+                response_iterator = self.llm.ask(conversation, active_tools, stream=True)
 
                 turn_response = {"text": "", "reasoning": "", "tool_calls": []}
 
                 async for response in response_iterator:
                     if response.success:
-                        if response.text: turn_response["text"] += response.text
-                        if response.reasoning: turn_response["reasoning"] += response.reasoning
-                        if response.tool_calls: turn_response["tool_calls"].extend(response.tool_calls)
+                        if response.text:
+                            turn_response["text"] += response.text
+                            yield StreamEvent(StreamEventType.TEXT, response.text)
+                        if response.reasoning:
+                            turn_response["reasoning"] += response.reasoning
+                            yield StreamEvent(StreamEventType.REASONING, response.reasoning)
+                        if response.tool_calls:
+                            turn_response["tool_calls"].extend(response.tool_calls)
+                            for tc in response.tool_calls:
+                                yield StreamEvent(StreamEventType.TOOL_CALL, tc)
                         if response.usage:
                             self.last_usage_meta = response.usage
                     else:
                         observer.on_error(response.error or "Unknown LLM error")
-                        return AgentResponse(error=response.error)
-                
+                        yield StreamEvent(StreamEventType.ERROR, response.error)
+                        final_response.error = response.error
+                        return
+
                 logger.info(f"Turn response: {turn_response}")
                 if not turn_response["tool_calls"]:
                     self.memory.add_message({"role": "assistant", "content": turn_response["text"]})
@@ -134,11 +143,11 @@ class AgentRunner:
                     final_response.reasoning = turn_response["reasoning"]
                     final_response.usage = self.last_usage_meta or {}
                     break
-                
+
                 # ==== If we reach here, means it's a tool calling session ====
                 self.memory.add_message({
-                    "role": "assistant", 
-                    "content": turn_response.get("text", ""), 
+                    "role": "assistant",
+                    "content": turn_response.get("text", ""),
                     "tool_calls": turn_response["tool_calls"]
                 })
 
@@ -165,7 +174,10 @@ class AgentRunner:
                         self._add_error_tool_result(tool_name, tool_id, decision_event.message, observer)
                         continue
                     elif decision_event.action == ToolStartDecision.ABANDON:
-                        return final_response
+                        # To break from an async generator and return final_response
+                        # we can just break the while loop.
+                        iteration = max_iterations + 1
+                        break
                     elif decision_event.action == ToolStartDecision.BREAK_WITH_MSG:
                         self._add_error_tool_result(tool_name, tool_id, decision_event.message, observer)
                         break
@@ -180,7 +192,7 @@ class AgentRunner:
 
                         tasks.append(
                             self.tools.execute(
-                                tool_name, parsed_args, controller=observer, 
+                                tool_name, parsed_args, controller=observer,
                                 max_chars=config.max_chars,
                                 extra_context=config.extra_context,
                             )
@@ -199,6 +211,7 @@ class AgentRunner:
                             name=tool_name,
                             content=str(tool_result)
                         )
+                        yield StreamEvent(StreamEventType.TOOL_RESULT, {"tool": tool_name, "id": tc_id, "result": tool_result, "success": success})
 
                 iteration += 1
                 if iteration == max_iterations:
@@ -215,13 +228,31 @@ class AgentRunner:
 
             if iteration > max_iterations:
                 observer.on_error(f"Agent failed to provide a final answer after {max_iterations} iterations.")
+
         except Exception as e:
-            logger.exception("Error during run_turn")
+            logger.exception("Error during stream_turn")
             observer.on_error(str(e))
-            return AgentResponse(error=f"Engine execution error: {str(e)}")
-        
+            yield StreamEvent(StreamEventType.ERROR, f"Engine execution error: {str(e)}")
+
+            final_response.error = str(e)
+
         finally:
             observer.on_turn_complete(final_response)
+            yield StreamEvent(StreamEventType.FINAL_RESPONSE, final_response)
 
+    async def run_turn(self, user_input: str | list[dict], observer: AgentEventObserver | None = None, config: RunnerConfig | None = None) -> AgentResponse:
+        """Standard method that wraps the stream_turn to return a single block response."""
+        final_response = AgentResponse()
+        cached_error = None
+        
+        async for event in self.stream_turn(user_input, observer, config):
+            if event.type == StreamEventType.FINAL_RESPONSE:
+                final_response = event.content
+            elif event.type == StreamEventType.ERROR:
+                cached_error = event.content
+        
+        if cached_error and not final_response.error:
+            final_response.error = cached_error
+                
         return final_response
 

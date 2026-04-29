@@ -10,7 +10,7 @@ if not load_dotenv(dotenv_path=env_path):
 import asyncio
 import os
 
-from agentic_core.engines.stream_engine import AgentStreamRunner
+from agentic_core.engines import AgentRunner
 from agentic_core.llm_providers.openai import OpenAILLM
 from agentic_core.tools import BaseTool, ToolManager
 from agentic_core.memory import MemoryManager
@@ -66,21 +66,21 @@ async def main():
         memory = MemoryManager()
 
         # 3. Initialize the streaming runner
-        runner = AgentStreamRunner(
+        runner = AgentRunner(
             llm_client=llm, 
             tools=tools, 
             memory=memory, 
             config=RunnerConfig(tools=[CalculatorTool().schema]),
             observer=SilentObserver())
 
-        user_input = "What is the weather in Tokyo?"
+        user_input = input(">>>")
         print(f"User: {user_input}\n")
         print("Agent: ", end="", flush=True)
 
         started_reason = False
         stopped_reason = False
         # 4. Stream the response
-        async for event in await runner.stream(user_input):
+        async for event in runner.stream_turn(user_input):
             if event.type == StreamEventType.TEXT:
                 if not stopped_reason:
                     print("=== [End of Reasoning] ===")
