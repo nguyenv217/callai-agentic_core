@@ -253,6 +253,8 @@ class GlobalMCPRegistry:
                         session_info['task'].cancel()
                     except:
                         session_info['task'].cancel()
+        
+        self._sessions.clear() # any accidental close after first time wouldn't crash by sending to closed io pipes
 
 
 class MCPClientManager:
