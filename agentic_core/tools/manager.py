@@ -150,21 +150,19 @@ class ToolManager:
             creating the connection to the MCP server. Defaults to None
         """
         # Dynamic import prevents crashing if user doesn't have MCP dependencies installed
-        try:
-            from .mcp.manager import MCPClientManager
-            from .mcp.tools import MCPToolAdapter
-        except ImportError:
-            logger.warning("MCP dependencies missing. Skipping MCP initialization.")
-            return -1
+        from .mcp.manager import MCPClientManager
+        from .mcp.tools import MCPToolAdapter
         
         self._mcp_init_in_progress = True
         
-        mcp_manager = MCPClientManager(
-            config=self._mcp_config_dict, # config takes priority over config_path
-            config_path=self.mcp_config_path,
-            on_server_death=self.on_server_error
-        )
-        initialized = await mcp_manager.initialize(allowed_servers=allowed_servers, extra_env=extra_env or self.extra_env)
+        if not self._mcp_manager:
+            self._mcp_manager = MCPClientManager(
+                config=self._mcp_config_dict, # config takes priority over config_path
+                config_path=self.mcp_config_path,
+                on_server_death=self.on_server_error
+            )
+
+        initialized = await self._mcp_manager.initialize(allowed_servers=allowed_servers, extra_env=extra_env or self.extra_env)
 
         self._mcp_init_in_progress = False
 
@@ -173,7 +171,7 @@ class ToolManager:
             return -1
         
         # Populate standby registry
-        mcp_tools = await mcp_manager.list_all_tools()
+        mcp_tools = await self._mcp_manager.list_all_tools()
         for tool_def in mcp_tools:
             adapter = MCPToolAdapter(
                 mcp_tool_def=tool_def,
@@ -181,9 +179,7 @@ class ToolManager:
                 server_name=tool_def["server_name"]
             )
             self._mcp_standby_registry[adapter.name] = adapter
-        
-        self._mcp_manager = mcp_manager
-
+            
         # if len(self._mcp_standby_registry) > 0:
         #     self._mcp_initialized = True
 
