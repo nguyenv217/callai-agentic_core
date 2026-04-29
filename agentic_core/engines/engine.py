@@ -7,7 +7,7 @@ from ..tools import ToolManager
 from ..memory.manager import MemoryManager
 from ..observers import AgentEventObserver, DecisionEvent, LastIterationDecision, ToolStartDecision
 from ..config import ConfigurationError, RunnerConfig
-from ..interfaces import AgentResponse, StreamEvent, StreamEventType
+from ..interfaces import AgentResponse, AgenticError, ProviderAuthenticationError, ProviderRateLimitError, StreamEvent, StreamEventType
 
 import logging
 logger = logging.getLogger(__name__)
@@ -59,15 +59,8 @@ class AgentRunner:
 
     # ======== Entry point ========
 
-    async def stream_turn(self, user_input: str | list[dict], observer: AgentEventObserver | None = None, config: RunnerConfig | None = None) -> AsyncGenerator[StreamEvent, None]:
-        if not observer:
-            if not self.observer:
-                raise ConfigurationError("`observer`: `AgentEventObserver` must be provided either during initialization or at runtime.")
-            else:
-                observer = self.observer
-
-        config = config or self.config
-
+    async def _handle_setup(self, user_input: str | list[dict], config: RunnerConfig, observer: AgentEventObserver):
+        """Handles the setup of the agent runner for a new turn."""
         if config.mcp_clear_loaded_tools:
             self.tools.clear_loaded_tools()
 
@@ -97,11 +90,28 @@ class AgentRunner:
         observer.on_turn_start()
         await self.tools.prepare_turn(config)
 
+    def _get_active_tools(self, config: RunnerConfig):
         active_tools = config.tools or self.tools.get_tools_from_toolset(config.toolset)
         active_tools.extend(self.tools.get_mcp_loaded_tools())
 
         if config.mcp_enable_discovery:
             active_tools.extend(self.tools.get_discovery_tools())
+        
+        return active_tools
+
+
+    async def stream_turn(self, user_input: str | list[dict], observer: AgentEventObserver | None = None, config: RunnerConfig | None = None) -> AsyncGenerator[StreamEvent, None]:
+        if not observer:
+            if not self.observer:
+                raise ConfigurationError("`observer`: `AgentEventObserver` must be provided either during initialization or at runtime.")
+            else:
+                observer = self.observer
+
+        config = config or self.config
+
+        await self._handle_setup(user_input, config, observer)
+
+        active_tools = self._get_active_tools(config)
 
         max_iterations = config.max_iterations
         iteration = 1
@@ -115,9 +125,9 @@ class AgentRunner:
                 response_iterator = self.llm.ask(conversation, active_tools, stream=True)
 
                 turn_response = {"text": "", "reasoning": "", "tool_calls": []}
-
-                async for response in response_iterator:
-                    if response.success:
+                
+                try:
+                    async for response in response_iterator:
                         if response.text:
                             turn_response["text"] += response.text
                             yield StreamEvent(StreamEventType.TEXT, response.text)
@@ -130,11 +140,16 @@ class AgentRunner:
                                 yield StreamEvent(StreamEventType.TOOL_CALL, tc)
                         if response.usage:
                             self.last_usage_meta = response.usage
-                    else:
-                        observer.on_error(response.error or "Unknown LLM error")
-                        yield StreamEvent(StreamEventType.ERROR, response.error)
-                        final_response.error = response.error
-                        return
+                except ProviderRateLimitError as e:
+                    observer.on_error(f"Rate Limit Exceeded: {str(e)}")
+                    yield StreamEvent(StreamEventType.ERROR, error_msg)
+                    final_response.error = error_msg
+                    return
+                except ProviderAuthenticationError as e:
+                    observer.on_error(f"Authentication Failed: {str(e)}")
+                    yield StreamEvent(StreamEventType.ERROR, error_msg)
+                    final_response.error = error_msg
+                    return
 
                 logger.info(f"Turn response: {turn_response}")
                 if not turn_response["tool_calls"]:
@@ -158,6 +173,8 @@ class AgentRunner:
                     iteration=iteration,
                     max_iterations=max_iterations
                 )
+
+                # ==== Handle tool-calling ====
 
                 tasks = []
                 tc_meta = []
@@ -230,11 +247,12 @@ class AgentRunner:
                 observer.on_error(f"Agent failed to provide a final answer after {max_iterations} iterations.")
 
         except Exception as e:
-            logger.exception("Error during stream_turn")
-            observer.on_error(str(e))
-            yield StreamEvent(StreamEventType.ERROR, f"Engine execution error: {str(e)}")
-
-            final_response.error = str(e)
+            # If we reached here, they are unexpected crashes
+            logger.exception("Unexpected error during stream_turn")
+            error_msg = f"Engine execution error: {str(e)}"
+            observer.on_error(error_msg)
+            yield StreamEvent(StreamEventType.ERROR, error_msg)
+            final_response.error = error_msg
 
         finally:
             observer.on_turn_complete(final_response)

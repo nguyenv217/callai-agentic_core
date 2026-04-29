@@ -5,10 +5,11 @@ from typing import Any, AsyncIterator
 
 from ..config import ConfigurationError
 from .base import ILLMClient, LLMResponse
+from ..interfaces import ProviderAuthenticationError, ProviderRateLimitError
 
 _openai_imported=True
 try:
-    from openai import AsyncOpenAI
+    from openai import AsyncOpenAI, AuthenticationError, RateLimitError, BadRequestError, APIConnectionError
 except ImportError:
     _openai_imported=False
 
@@ -95,12 +96,10 @@ class OpenAILLM(ILLMClient):
                             })
 
                     yield LLMResponse(
-                        success=True,
                         text=delta.content or "",
                         reasoning=getattr(delta, "reasoning_content", "") or "",
                         tool_calls=tool_calls,
-                        usage={},
-                        error=None
+                        usage={}
                     )
 
                 return
@@ -109,33 +108,16 @@ class OpenAILLM(ILLMClient):
 
             msg = response.choices[0].message
             yield LLMResponse(
-                success=True,
                 text=msg.content or "",
                 reasoning= getattr(msg, "reasoning_content", "") or getattr(msg, "reasoning", ""),
                 tool_calls=[tc.model_dump() for tc in msg.tool_calls] if msg.tool_calls else [],
                 usage={
                     "prompt_tokens": response.usage.prompt_tokens,
                     "completion_tokens": response.usage.completion_tokens
-                },
-                error=None
+                }
             )
 
-        except Exception as e:
-            import openai
-            error_msg = str(e)
-            if isinstance(e, openai.AuthenticationError):
-                error_msg = f"FATAL AUTH ERROR: Invalid or missing OpenAI API key. ({e})"
-            elif isinstance(e, openai.RateLimitError):
-                error_msg = f"RATE LIMIT: OpenAI quota exceeded or rate limited. ({e})"
-            elif isinstance(e, openai.APIConnectionError):
-                error_msg = f"NETWORK ERROR: Failed to connect to OpenAI API. ({e})"
-            elif isinstance(e, openai.BadRequestError):
-                error_msg = f"BAD REQUEST: Invalid parameters or context window exceeded. ({e})"
-
-            yield LLMResponse(
-                success=False,
-                text=None,
-                tool_calls=[],
-                usage={},
-                error=error_msg
-            )
+        except AuthenticationError:
+            raise ProviderAuthenticationError
+        except RateLimitError:
+            raise ProviderRateLimitError

@@ -34,9 +34,9 @@ class MockLLMClient(ILLMClient):
             if self.call_counts[node_id] <= 2:
                 raise Exception("Rate limit reached")
             else:
-                yield LLMResponse(success=True, text="Recovered", reasoning="Done")
+                yield LLMResponse(text="Recovered", reasoning="Done")
         else:
-            yield LLMResponse(success=True, text="Success", reasoning="Done")
+            yield LLMResponse(text="Success", reasoning="Done")
 
 class MinimalToolManager(ToolManager):
     def __init__(self):

@@ -2,6 +2,10 @@ from dataclasses import dataclass, field
 from typing import Generic, TypeVar, Protocol, Any
 from enum import Enum
 
+# ===================================================
+# Decision Events
+# ===================================================
+
 class DecisionAction(Protocol):
     @property
     def required_message(self) -> bool: ...
@@ -21,7 +25,9 @@ class DecisionEvent(Generic[ActionT]):
             error_prefix = f"{type(self.action).__name__}.{self.action.name}"
             raise ValueError(f"{error_prefix} cannot be used without a message")
 
-# --- Structured Responses and Exceptions ---
+# ===================================================
+# Exceptions 
+# ===================================================
 
 class AgenticError(Exception):
     """Base exception for agentic_core"""
@@ -34,6 +40,18 @@ class MCPConnectionError(AgenticError):
 class ContextLimitExceededError(AgenticError):
     """Raised when the conversation context exceeds the LLM limit"""
     pass
+
+class ProviderAuthenticationError(AgenticError):
+    """Raised when the provider authentication fails"""
+    pass
+
+class ProviderRateLimitError(AgenticError):
+    """Raised when the provider rate limit is exceeded"""
+    pass
+
+# ===================================================
+# Structured Responses
+# ===================================================
 
 @dataclass
 class AgentResponse:

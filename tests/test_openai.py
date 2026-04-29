@@ -4,6 +4,7 @@ import pytest
 import pytest_asyncio
 from unittest.mock import MagicMock
 from unittest.mock import AsyncMock
+from agentic_core.interfaces import ProviderAuthenticationError, ProviderRateLimitError
 from agentic_core.llm_providers.base import LLMResponse
 from agentic_core.llm_providers.openai import OpenAILLM
 
@@ -30,7 +31,7 @@ def mock_openai_client():
 
 @pytest.mark.asyncio
 async def test_openai_auth_error_handling(mock_openai_client):
-    """Verifies that AuthenticationError is caught and mapped correctly."""
+    """Verifies that AuthenticationError raises ProviderAuthenticationError."""
     # Setup the mock to raise an Auth Error
     mock_error = openai.AuthenticationError(
         message="Invalid API key", 
@@ -40,30 +41,22 @@ async def test_openai_auth_error_handling(mock_openai_client):
     mock_openai_client.chat.completions.create.side_effect = mock_error
 
     provider = OpenAILLM(client=mock_openai_client, model="gpt-4")
-    # provider.ask yields an iterator
-    responses = await _collect_async_tolist(provider.ask(messages=[{"role": "user", "content": "Hello"}]))
-
-    assert len(responses) == 1
-    assert responses[0].success is False
-    assert "FATAL AUTH ERROR" in responses[0].error
+    with pytest.raises(ProviderAuthenticationError):
+        await _collect_async_tolist(provider.ask(messages=[{"role": "user", "content": "Hello"}]))
 
 
 @pytest.mark.asyncio
 async def test_openai_rate_limit_handling(mock_openai_client):
-    """Verifies that RateLimitError is handled safely."""
-    mock_client = MagicMock()
-    mock_client.chat.completions.create = AsyncMock()
-    mock_client.chat.completions.create.side_effect = openai.RateLimitError(
+    """Verifies that RateLimitError raises ProviderRateLimitError."""
+    mock_openai_client.chat.completions.create.side_effect = openai.RateLimitError(
         message="You have hit your rate limit.",
         response=MagicMock(),
         body=None
     )
 
-    provider = OpenAILLM(client=mock_client, model="gpt-4")
-    responses = await _collect_async_tolist(provider.ask(messages=[{"role": "user", "content": "Hello"}]))
-    
-    assert "RATE LIMIT" in responses[0].error
-
+    provider = OpenAILLM(client=mock_openai_client, model="gpt-4")
+    with pytest.raises(ProviderRateLimitError):
+        await _collect_async_tolist(provider.ask(messages=[{"role": "user", "content": "Hello"}]))
 
 @pytest.mark.asyncio
 async def test_openai_successful_tool_call(mock_openai_client):
@@ -94,7 +87,6 @@ async def test_openai_successful_tool_call(mock_openai_client):
 
     print(responses)
 
-    assert responses[0].success is True
     assert len(responses[0].tool_calls) == 1
     assert responses[0].tool_calls[0]["id"] == "call_123"
     assert responses[0].usage["completion_tokens"] == 20

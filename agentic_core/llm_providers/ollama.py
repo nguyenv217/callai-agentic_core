@@ -37,27 +37,22 @@ class OllamaLLM(ILLMClient):
             messages: Conversation history.
             tools: A list of JSON schemas for tools (NOT the ToolManager object).
         """
-        try:
-            req_kwargs = {
-                "model": self.model,
-                "messages": messages,
-                **self.extra_kwargs,
-                **kwargs
-            }
-            
-            # To ollama format
-            if tools:
-                req_kwargs["tools"] = [{"type": "function", "function": t["function"]} for t in tools]
+        req_kwargs = {
+            "model": self.model,
+            "messages": messages,
+            **self.extra_kwargs,
+            **kwargs
+        }
+        
+        # To ollama format
+        if tools:
+            req_kwargs["tools"] = [{"type": "function", "function": t["function"]} for t in tools]
 
-            response = await self.client.chat(**req_kwargs)
-            
-            msg = response["message"]
-            yield LLMResponse(
-                success=True,
-                text=msg.get("content", ""),
-                tool_calls=msg.get("tool_calls", []),
-                usage={},
-                error=None
-            )
-        except Exception as e:
-            yield LLMResponse(success=False, text=None, tool_calls=None, usage=None, error=str(e))
+        response = await self.client.chat(**req_kwargs)
+        
+        msg = response["message"]
+        yield LLMResponse(
+            text=msg.get("content", ""),
+            tool_calls=msg.get("tool_calls", []),
+            usage={},
+        )

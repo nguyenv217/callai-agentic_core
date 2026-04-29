@@ -29,7 +29,6 @@ async def test_anthropic_successful_tool_call():
         schema = [{"function": {"name": "get_weather", "description": "", "parameters": {}}}]
         responses = await _collect_async_tolist(provider.ask(messages=[{"role": "user", "content": "Weather?"}], tools=schema))
 
-        assert responses[0].success is True
         assert responses[0].text == "Here is the weather."
         assert len(responses[0].tool_calls) == 1
         assert responses[0].tool_calls[0]["name"] == "get_weather"
@@ -43,7 +42,6 @@ async def test_ollama_error_handling():
         provider = OllamaLLM(model="llama3.1")
         provider.client = mock_client
         
-        responses = await _collect_async_tolist(provider.ask(messages=[{"role": "user", "content": "Hi"}]))
+        with pytest.raises(Exception, match="Connection refused"):
+            responses = await _collect_async_tolist(provider.ask(messages=[{"role": "user", "content": "Hi"}]))
         
-        assert responses[0].success is False
-        assert "Connection refused" in responses[0].error
