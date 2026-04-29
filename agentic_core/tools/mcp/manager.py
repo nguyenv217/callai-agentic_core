@@ -116,6 +116,12 @@ class GlobalMCPRegistry:
                     env[key] = os.environ.get(env_var, value)
                 else:
                     env[key] = value
+        
+        def env_lookup(match):
+            key = match.group(1)
+            return os.environ.get(key, key)
+        
+        args= [re.sub(r"\${(.*?)\}", env_lookup, arg) for arg in args]
 
         shutdown_event = asyncio.Event()
         init_event = asyncio.Event()
