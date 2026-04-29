@@ -211,6 +211,18 @@ class GlobalMCPRegistry:
             self._sessions[identity_key] = new_session
         return new_session
 
+    async def _shutdown_server(self, identity_key):
+        session_info = self._sessions.pop(identity_key)
+        session_info['shutdown_event'].set()
+        try: 
+            await asyncio.wait_for(session_info['task'], timeout=5.0)
+        except asyncio.TimeoutError:
+            logger.warning(f"[Registry] Shutdown timeout for {identity_key}. Force killing task.")
+        finally: 
+            try: 
+                await session_info['task']
+            except asyncio.CancelledError: pass
+
     async def release(self, identity_key: Tuple):
         """Decrements ref count and shuts down session if last client releases it."""
         lock = await self._get_lock_for_identity(identity_key)
@@ -219,43 +231,28 @@ class GlobalMCPRegistry:
                 self._sessions[identity_key]['ref_count'] -= 1
                 if self._sessions[identity_key]['ref_count'] <= 0:
                     logger.info(f"[Registry] Ref count zero. Shutting down session for {identity_key}")
-                    session_info = self._sessions.pop(identity_key)
-                    session_info['shutdown_event'].set()
-                    try: 
-                        await asyncio.wait_for(session_info['task'], timeout=5.0)
-                    except asyncio.TimeoutError:
-                        logger.warning(f"[Registry] Shutdown timeout for {identity_key}. Force killing task.")
-                        session_info['task'].cancel()
-                    except: 
-                        session_info['task'].cancel()
-
+                    await self._shutdown_server(identity_key)
                 else:
                     logger.info(f"[Registry] Session for {identity_key} still active. Ref count: {self._sessions[identity_key]['ref_count']}")
         
     async def clear(self):
-        """Clears all sessions in the registry."""
+        """Clears all sessions in the registry concurrently."""
         async with self._global_lock:
-            # Create a list of all identity keys to avoid modifying the dict during iteration
             identity_keys = list(self._sessions.keys())
 
-        # Process each session with its own lock
-        for identity_key in identity_keys:
+        if not identity_keys:
+            logger.warning("All sessions already cleared.")
+            return
+
+        async def _shutdown_session(identity_key: Tuple):
             lock = await self._get_lock_for_identity(identity_key)
             async with lock:
                 if identity_key in self._sessions:
                     logger.info(f"[Registry] Clearing session for {identity_key}")
-                    session_info = self._sessions.pop(identity_key)
-                    session_info['shutdown_event'].set()
-                    try:
-                        await asyncio.wait_for(session_info['task'], timeout=5.0)
-                    except asyncio.TimeoutError:
-                        logger.warning(f"[Registry] Shutdown timeout for {identity_key}. Force killing task.")
-                        session_info['task'].cancel()
-                    except:
-                        session_info['task'].cancel()
-        
-        self._sessions.clear() # any accidental close after first time wouldn't crash by sending to closed io pipes
+                    await self._shutdown_server(identity_key)
 
+        # Dispatch all shutdowns concurrently
+        await asyncio.gather(*[_shutdown_session(key) for key in identity_keys], return_exceptions=True)
 
 class MCPClientManager:
     """
