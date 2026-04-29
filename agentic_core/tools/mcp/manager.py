@@ -14,6 +14,10 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+class MCPTimeoutError(Exception):
+    """Exception raised when an MCP operation times out."""
+    pass
+
 class _MCPSessionProxy:
     def __init__(self, request_queue: asyncio.Queue, loop: asyncio.AbstractEventLoop, server_name: str):
         self.request_queue = request_queue
@@ -98,101 +102,112 @@ class GlobalMCPRegistry:
                 return self._sessions[identity_key]
 
             logger.info(f"[Registry] Creating new session for '{server_name}' (Identity: {identity_key})")
-        import re, os, shutil
-        raw_command = server_config.get("command", "python")
-        args = server_config.get("args", [])
-        command = shutil.which(raw_command)
-        if not command: 
-            raise RuntimeError(f"Could not find {raw_command}")
+            import re, os, shutil
+            raw_command = server_config.get("command", "python")
+            args = server_config.get("args", [])
+            command = shutil.which(raw_command)
+            if not command: 
+                raise RuntimeError(f"Could not find {raw_command}")
 
-        safe_env_keys = ["PATH", "HOME", "USERPROFILE", "SystemRoot", "APPDATA", "LOCALAPPDATA"]
-        env = {**{k: os.environ[k] for k in safe_env_keys if k in os.environ}, **(extra_env or {})}
-        server_env = server_config.get("env", {})
-        for key, value in server_env.items():
-            if isinstance(value, str) and value.strip().startswith("${") and value.endswith("}"):
-                match = re.match(r"\${(.*?)\}", value)
-                if match:
-                    env_var = match.group(1)
-                    env[key] = os.environ.get(env_var, value)
-                else:
-                    env[key] = value
-        
-        def env_lookup(match):
-            key = match.group(1)
-            return os.environ.get(key, key)
-        
-        args= [re.sub(r"\${(.*?)\}", env_lookup, arg) for arg in args]
+            safe_env_keys = ["PATH", "HOME", "USERPROFILE", "SystemRoot", "APPDATA", "LOCALAPPDATA"]
+            env = {**{k: os.environ[k] for k in safe_env_keys if k in os.environ}, **(extra_env or {})}
+            
+            # Inject environment variables in the command and args
+            server_env = server_config.get("env", {})
+            for key, value in server_env.items():
+                if isinstance(value, str) and value.strip().startswith("${") and value.endswith("}"):
+                    match = re.match(r"\${(.*?)\}", value)
+                    if match:
+                        env_var = match.group(1)
+                        val = (extra_env or {}).get(env_var)
+                        env[key] = val if val is not None else os.environ.get(env_var, value)
+                    else:
+                        env[key] = value
+            
+            def env_lookup(match):
+                key = match.group(1)
+                val = (extra_env or {}).get(key)
+                if val is not None:
+                    return val
+                return os.environ.get(key, f"${{{key}}}") # Fallback to original string
+            
+            args = [re.sub(r"\${(.*?)\}", env_lookup, arg) for arg in args]
 
-        shutdown_event = asyncio.Event()
-        init_event = asyncio.Event()
-        session_ref = {"error": None}
-        current_loop = asyncio.get_running_loop()
-        request_queue = asyncio.Queue()
-        session_proxy = _MCPSessionProxy(request_queue, current_loop, server_name)
+            shutdown_event = asyncio.Event()
+            init_event = asyncio.Event()
+            session_ref = {"error": None}
+            current_loop = asyncio.get_running_loop()
+            request_queue = asyncio.Queue()
+            session_proxy = _MCPSessionProxy(request_queue, current_loop, server_name)
 
-        async def server_task():
-            err_stream = None
-            try:
-                import os
+            async def server_task():
+                err_stream = None
+                try:
+                    import os
 
-                log_file = server_config.get("log_file")
-                if log_file:
-                    os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
-                    err_stream = open(log_file, "a", encoding="utf-8")
-                else:
-                    # Provide an explicit devnull handle if no log file is set
-                    err_stream = open(os.devnull, "w")
+                    log_file = server_config.get("log_file")
+                    if log_file:
+                        os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
+                        err_stream = open(log_file, "a", encoding="utf-8")
+                    else:
+                        # Provide an explicit devnull handle if no log file is set
+                        err_stream = open(os.devnull, "w")
 
-                server_params = StdioServerParameters(command=command, args=args, env=env)
-                
-                async with stdio_client(server_params, errlog=err_stream) as (read_stream, write_stream):
-                    async with ClientSession(read_stream, write_stream) as session:
-                        await session.initialize()
-                        init_event.set()
+                    server_params = StdioServerParameters(command=command, args=args, env=env)
+                    
+                    async with stdio_client(server_params, errlog=err_stream) as (read_stream, write_stream):
+                        async with ClientSession(read_stream, write_stream) as session:
+                            await session.initialize()
+                            init_event.set()
 
-                        logger.info(f"[{server_name}] ACTOR: Background task ready and polling queue.")
-                        while not shutdown_event.is_set():
-                            try:
-                                action, payload, fut = await asyncio.wait_for(request_queue.get(), timeout=0.5)
+                            logger.info(f"[{server_name}] ACTOR: Background task ready and polling queue.")
+                            while not shutdown_event.is_set():
                                 try:
-                                    if action == "list_tools":
-                                        res = await session.list_tools()
-                                        if not fut.done(): fut.set_result(res)
-                                    elif action == "call_tool":
-                                        res = await session.call_tool(payload["name"], arguments=payload.get("arguments"))
-                                        logger.info(f"[{server_name}] ACTOR: Successfully executed '{payload['name']}'")
-                                        if not fut.done(): fut.set_result(res)
-                                except Exception as e:
-                                    logger.exception(f"[{server_name}] ACTOR ERROR: {type(e).__name__} - {e}")
-                                    if not fut.done(): fut.set_exception(e)
-                                finally:
-                                    request_queue.task_done()
-                            except asyncio.TimeoutError: 
-                                # Normal heartbeat
-                                pass
-            except Exception as e:
-                logger.exception(f"[{server_name}] Server task died unexpectedly: {e}")
-                if on_server_death: 
-                    on_server_death(server_name, e)
-                session_ref["error"] = e
-                if not init_event.is_set():
-                    init_event.set()
-            finally:
-                if err_stream:
-                    try:
-                        err_stream.close()
-                    except Exception:
-                        pass
+                                    action, payload, fut = await asyncio.wait_for(request_queue.get(), timeout=0.5)
+                                    try:
+                                        if action == "list_tools":
+                                            res = await session.list_tools()
+                                            if not fut.done(): fut.set_result(res)
+                                        elif action == "call_tool":
+                                            res = await session.call_tool(payload["name"], arguments=payload.get("arguments"))
+                                            logger.info(f"[{server_name}] ACTOR: Successfully executed '{payload['name']}'")
+                                            if not fut.done(): fut.set_result(res)
+                                    except Exception as e:
+                                        logger.exception(f"[{server_name}] ACTOR ERROR: {type(e).__name__} - {e}")
+                                        if not fut.done(): fut.set_exception(e)
+                                    finally:
+                                        request_queue.task_done()
+                                except asyncio.TimeoutError: 
+                                    # Normal heartbeat
+                                    pass
+                except Exception as e:
+                    logger.exception(f"[{server_name}] Server task died unexpectedly: {e}")
+                    if on_server_death: 
+                        on_server_death(server_name, e)
+                    session_ref["error"] = e
+                    if not init_event.is_set():
+                        init_event.set()
+                finally:
+                    if err_stream:
+                        try:
+                            err_stream.close()
+                        except Exception:
+                            pass
 
-        task = asyncio.create_task(server_task(), name=f"mcp_server_{server_name}")
-        await asyncio.wait_for(init_event.wait(), timeout=60.0)
+            task = asyncio.create_task(server_task(), name=f"mcp_server_{server_name}")
+            try:
+                await asyncio.wait_for(init_event.wait(), timeout=60.0)
+            except asyncio.TimeoutError:
+                task.cancel()
+                self._failed_sessions.add(identity_key)
+                raise MCPTimeoutError(f"Server '{server_name}' failed to initialize within 60 seconds (timeout).")
 
-        if session_ref["error"]: 
-            self._failed_sessions.add(identity_key)
-            raise session_ref["error"]
+            if session_ref["error"]: 
+                task.cancel() # ensure the task is killed if it died with an error
+                self._failed_sessions.add(identity_key)
+                raise session_ref["error"]
 
-        new_session = {"name": server_name, "session": session_proxy, "shutdown_event": shutdown_event, "task": task, "ref_count": 1}
-        async with lock:
+            new_session = {"name": server_name, "session": session_proxy, "shutdown_event": shutdown_event, "task": task, "ref_count": 1}
             self._sessions[identity_key] = new_session
         return new_session
 
