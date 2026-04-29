@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Generic, TypeVar, Protocol, Any
+from enum import Enum
 
 class DecisionAction(Protocol):
     @property
@@ -61,15 +62,38 @@ class DAGNodeResponse:
     failed_by: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        res = self.result
-        if hasattr(res, 'to_dict'):
-            res = res.to_dict()
         return {
             "state": self.state,
-            "result": res,
+            "result": self.result,
             "error_details": self.error_details,
             "failed_by": self.failed_by
         }
+
+@dataclass
+class DAGResponse:
+    nodes: dict[str, DAGNodeResponse]
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "nodes": {node_id: node_resp.to_dict() for node_id, node_resp in self.nodes.items()},
+            "error": self.error
+        }
+
+class StreamEventType(Enum):
+    """Types of events that can be streamed from an agent turn."""
+    TEXT = "text"
+    REASONING = "reasoning"
+    TOOL_CALL = "tool_call"
+    TOOL_RESULT = "tool_result"
+    FINAL_RESPONSE = "final_response"
+    ERROR = "error"
+
+@dataclass
+class StreamEvent:
+    """Event yielded during a streaming agent turn."""
+    type: StreamEventType
+    content: Any
 
 @dataclass
 class DAGResponse:

@@ -17,22 +17,22 @@ class OpenAILLM(ILLMClient):
     
     def __init__(
         self, 
+        model: str,
         api_key: str | None = None, 
-        model: str = "gpt-4o",
         base_url: str = "https://api.openai.com/v1",
         client: AsyncOpenAI | None = None,
         timeout: float = 30,
         **kwargs
     ):
         if not _openai_imported:
-            raise ImportError("Please install openai: pip install openai")
+            raise ImportError("Missing dependency `openai`. Please install via `pip install openai`")
         
         if client:
             self.client = client
         elif api_key:
             self.client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
         else:
-            raise ConfigurationError("Please pass either a valid api_key as 'api_key' or a configured AsyncOpenAI client instance as 'client'")
+            raise ConfigurationError("Please pass either a valid api_key as 'api_key' or a configured `AsyncOpenAI` client instance as 'client'")
             
         self.model = model
         self.extra_kwargs = kwargs
@@ -41,6 +41,7 @@ class OpenAILLM(ILLMClient):
         self, 
         messages: list[dict[str, Any]], 
         tools: list[dict[str, Any]] | None = None, 
+        stream: bool = False,
         **kwargs
     ) -> AsyncIterator[LLMResponse]:
         """
@@ -49,6 +50,7 @@ class OpenAILLM(ILLMClient):
         Args:
             messages: Conversation history.
             tools: A list of JSON schemas for tools (NOT the ToolManager object).
+            stream: If True, yields chunks as they arrive for streaming compatibility.
             **kwargs: Extra body parameters to pass to the OpenAI API.
         
         Yields:
@@ -68,8 +70,40 @@ class OpenAILLM(ILLMClient):
             if tools:
                 req_kwargs["tools"] = tools
 
-            response = await self.client.chat.completions.create(**req_kwargs)
+            # Handle streaming mode for compatibility with stream_engine.py
+            if stream:
+                req_kwargs["stream"] = True
+                stream_response = await self.client.chat.completions.create(**req_kwargs)
             
+                async for chunk in stream_response:
+                    delta = chunk.choices[0].delta
+
+                    # Collect tool calls as they appear
+                    tool_calls = []
+                    if delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            tool_calls.append({
+                                "id": tc.id or "",
+                                "type": tc.type or "function",
+                                "function": {
+                                    "name": tc.function.name if tc.function else "",
+                                    "arguments": tc.function.arguments if tc.function else ""
+                                }
+                            })
+
+                    yield LLMResponse(
+                        success=True,
+                        text=delta.content or "",
+                        reasoning=getattr(delta, "reasoning_content", "") or "",
+                        tool_calls=tool_calls,
+                        usage={},
+                        error=None
+                    )
+
+                return
+
+            response = await self.client.chat.completions.create(**req_kwargs)
+
             msg = response.choices[0].message
             yield LLMResponse(
                 success=True,
@@ -77,7 +111,7 @@ class OpenAILLM(ILLMClient):
                 reasoning= getattr(msg, "reasoning_content", "") or getattr(msg, "reasoning", ""),
                 tool_calls=[tc.model_dump() for tc in msg.tool_calls] if msg.tool_calls else [],
                 usage={
-                    "prompt_tokens": response.usage.prompt_tokens, 
+                    "prompt_tokens": response.usage.prompt_tokens,
                     "completion_tokens": response.usage.completion_tokens
                 },
                 error=None
@@ -94,11 +128,11 @@ class OpenAILLM(ILLMClient):
                 error_msg = f"NETWORK ERROR: Failed to connect to OpenAI API. ({e})"
             elif isinstance(e, openai.BadRequestError):
                 error_msg = f"BAD REQUEST: Invalid parameters or context window exceeded. ({e})"
-                
+
             yield LLMResponse(
-                success=False, 
-                text=None, 
-                tool_calls=[], 
-                usage={}, 
+                success=False,
+                text=None,
+                tool_calls=[],
+                usage={},
                 error=error_msg
             )
