@@ -427,7 +427,7 @@ class MCPClientManager:
     async def close(self):
         """Close all MCP server connections gracefully, releasing shared sessions."""
         if self._registry:
-            self._registry.clear()
+            await self._registry.clear()
             
         for session_info in self.sessions:
             server_name = session_info.get("name", "unknown")
