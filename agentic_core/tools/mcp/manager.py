@@ -255,7 +255,6 @@ class GlobalMCPRegistry:
                         session_info['task'].cancel()
 
 
-
 class MCPClientManager:
     """
     Manages lifecycle of connections to external MCP servers.
@@ -427,6 +426,9 @@ class MCPClientManager:
     
     async def close(self):
         """Close all MCP server connections gracefully, releasing shared sessions."""
+        if self._registry:
+            self._registry.clear()
+            
         for session_info in self.sessions:
             server_name = session_info.get("name", "unknown")
             identity_key = session_info.get("identity_key")
