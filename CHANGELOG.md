@@ -75,3 +75,28 @@
 * **tool:** more control for tooling, now support decision feedback before executing tools directly through AgentEventObserver ([ca2269b](https://github.com/nguyenv217/callai-agentic_core/commit/ca2269bc1c4b9748dd328eed196398a171ead848))
 * **tool:** supports for a dynamically injected system prompt along toolset. this is aanticipated for auto routing tasks ([a4d2469](https://github.com/nguyenv217/callai-agentic_core/commit/a4d246956e03e024d58c736310ebe28d4f17b544))
 * **tool:** user configurable `max_chars` for tool results ([7bab473](https://github.com/nguyenv217/callai-agentic_core/commit/7bab47351465748d4e83439f7840f20e5aa05768))
+# [](https://github.com/nguyenv217/callai-agentic_core/compare/v0.5.0...v) (2026-04-29)
+
+
+### Bug Fixes
+
+* await close mcp ([0a592c7](https://github.com/nguyenv217/callai-agentic_core/commit/0a592c715660058a4b1f0ef90ed1dde4e0547125))
+* bug where nodes could still run when terminal states are reached due to delay mechanism ([679b2df](https://github.com/nguyenv217/callai-agentic_core/commit/679b2df857a06704ae5f24171fd7e1c7b32a848d))
+* circuit break the failed init servers ([a3a5a57](https://github.com/nguyenv217/callai-agentic_core/commit/a3a5a57197841c20ee7ad0cbd579531348e3fada))
+* clean up example ([de169a1](https://github.com/nguyenv217/callai-agentic_core/commit/de169a1eecd400693ffe4179c7d4899591780001))
+* corrected mistake. mcpclient alreayd register itself with release. will just document usages instead ([9228b1b](https://github.com/nguyenv217/callai-agentic_core/commit/9228b1b72668e3441ab9130f7d90fba87bdd474e))
+* for transparency no longer try to fix double serialization. this is better controlled through explicit prompting and provider-side ([d33dd15](https://github.com/nguyenv217/callai-agentic_core/commit/d33dd1547c370ff26b4e85631a95b02d17068592))
+* mcp shutdown concurrently and await cancellation task so the they dont race with the OS in unexpected manners ([10c01a9](https://github.com/nguyenv217/callai-agentic_core/commit/10c01a93b8f35fe9dffe1ebdbb1cce2825fd9abd))
+* **mcp:** automatic shutoff for registry ([69c22cf](https://github.com/nguyenv217/callai-agentic_core/commit/69c22cfd625650c36e599bdfe52e210bbae3830c))
+* **mcp:** enhance mcp env parsing and premature spawn retry and concurrent retry when 2 agentrunner thread dispatch at same time and identity locks are not held ([e6ea69d](https://github.com/nguyenv217/callai-agentic_core/commit/e6ea69db5bc2d073ddef647f22d675a8a2564040))
+* **mcp:** remove hacky stdio routing to builtin errlog ([b4d542c](https://github.com/nguyenv217/callai-agentic_core/commit/b4d542c6517849be6bf6ccb22cccfa801a12c6fc))
+* multiple mcp client for 1 toolmanager ([3fee024](https://github.com/nguyenv217/callai-agentic_core/commit/3fee02485e98ad781434b2b8c2550042861419c8))
+* registry cleanup ([2feb615](https://github.com/nguyenv217/callai-agentic_core/commit/2feb61569ff574d557685fc65101eef6e39ac1d2))
+
+
+### Features
+
+* command can inherit envs as well ([abd9d67](https://github.com/nguyenv217/callai-agentic_core/commit/abd9d6701e86f90b4b44dc918807dec577a60c94))
+* **mcp:** allow routing stdio to avoid conflicts ([deaa1da](https://github.com/nguyenv217/callai-agentic_core/commit/deaa1da497bb578be3200b5fbeaa6e25da50c230))
+* **streaming:** iter 1 streaming with openai, new `stream_engine` ([668e0a4](https://github.com/nguyenv217/callai-agentic_core/commit/668e0a4950cd10aae6f8b6a213ae8b9acabecd32))
+* **streaming:** iter 2 better error handling ([adadf38](https://github.com/nguyenv217/callai-agentic_core/commit/adadf38605eb5a0f127cc76f2522d4af5210999e))
