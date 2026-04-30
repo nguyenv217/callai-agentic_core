@@ -53,7 +53,7 @@ class ListMCPTools(BaseTool):
         # Group tools by their source server
         servers = {}
         for tool_name, adapter in registry.items():
-            server = getattr(adapter, '_server_name', 'unknown')
+            server = getattr(adapter, 'server_name', 'unknown')
             if server not in servers:
                 servers[server] = []
             servers[server].append(adapter)
@@ -182,7 +182,7 @@ class MCPToolAdapter(BaseTool):
         """
         super().__init__()
         self._session = session
-        self._server_name = server_name
+        self.server_name = server_name
         self._timeout = timeout
         
         # Prefix the tool name to prevent collisions across servers
@@ -231,7 +231,7 @@ class MCPToolAdapter(BaseTool):
 
         try:
             # Apply timeout to prevent indefinite hangs
-            logger.info(f"Executing tool {actual_tool_name} in mcp {self._server_name}")
+            logger.info(f"Executing tool {actual_tool_name} in mcp {self.server_name}")
             result = await asyncio.wait_for(
                 self._session.call_tool(actual_tool_name, arguments=args),
                 timeout=self._timeout
@@ -251,8 +251,8 @@ class MCPToolAdapter(BaseTool):
             return "\n".join(formatted_results)
             
         except anyio.ClosedResourceError:
-            logger.error(f"MCP server {self._server_name} disconnected unexpectedly.")
-            return f"Error: The external server process for '{self._server_name}' crashed or disconnected. Please check the server logs and restart the tool."
+            logger.error(f"MCP server {self.server_name} disconnected unexpectedly.")
+            return f"Error: The external server process for '{self.server_name}' crashed or disconnected. Please check the server logs and restart the tool."
         except asyncio.TimeoutError:
             return f"Error: Timeout after {self._timeout}s"
         except Exception as e:

@@ -80,7 +80,6 @@ class ToolManager:
         self._mcp_config_dict = {}
         self._mcp_standby_registry: dict[str, MCPToolAdapter] = {}  
         self._mcp_loaded_tools: Set[BaseTool] = set()
-        self._mcp_initialized_servers = set()
         self._mcp_init_in_progress = False
         self.extra_env = extra_env
         self._mcp_manager = None
@@ -239,9 +238,9 @@ class ToolManager:
         self._mcp_init_in_progress = False
         logger.info(f"Added MCP server '{server_name}' to programmatic config.")
 
-    # ============================
+    # ========================================
     # Cleanup abd Context Management
-    # ============================
+    # ========================================
 
     async def __aenter__(self):
         """Allows ToolManager to be used as a safe async context manager."""
@@ -362,14 +361,21 @@ class ToolManager:
     
     async def disconnect_mcp(self, server_names: list[str] | None = None):
         """
-        Disconnect from MCP server(s).
+        Disconnect from MCP server(s) and wipe the tools out of registries.
         
         Args:
             server_names: List of server names to disconnect. If None, disconnects all servers.
                       If provided, only disconnects the specified servers.
         """
+        for mcp_toolname, mcp_tool_instance in self._mcp_standby_registry.items():
+            if mcp_tool_instance.server_name in server_names:
+                self._mcp_standby_registry.pop(mcp_toolname)
+                self.unload_mcp_tool(mcp_toolname)
+
         if self._mcp_manager:
             await self._mcp_manager.disconnect(server_names)
+        
+        logger.info(f"Disconnected from MCP server(s): {server_names}")
     
     def add_toolset(self, name: str, tools: list[str], prompt: str | None = None):
         self.toolsets[name] = list(tools)
