@@ -90,7 +90,7 @@ class SpawnSubAgentsTool(BaseTool):
 
     schema = {
         "type": "function",
-        "funtion": {
+        "function": {
             "name": "spawn_subagents",
             "description": "Decompose a complex goal into a set of dependent sub-tasks. "
                             "Use this when a task requires multiple steps that can be done in parallel "

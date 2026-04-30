@@ -7,7 +7,7 @@ packages = ["agentic_core"]
 
 [project]
 name = "callai-agentic_core"
-version = "0.5.0"
+version = "0.6.0"
 description = "A lightweight, modular execution engine and routing framework for LLM agents."
 readme = "README.md"
 requires-python = ">=3.10"
