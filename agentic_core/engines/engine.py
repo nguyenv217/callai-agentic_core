@@ -44,20 +44,23 @@ class AgentRunner:
         self.observer = observer
         self._toolset_prompt_loaded = False
 
-    # ======== Context management ========
+    # ===================
+    # Context management 
+    # ===================
+
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.tools.shutdown_mcp()
 
-    # ======== Helpers ========
+    # ================
+    #  Helpers 
+    # ================
 
     def _add_error_tool_result(self, tool_name: str, tool_id: str, msg: str, observer: AgentEventObserver):
         observer.on_tool_complete(tool_name, tool_id, False, msg)
         self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=msg)
-
-    # ======== Entry point ========
 
     async def _handle_setup(self, user_input: str | list[dict], config: RunnerConfig, observer: AgentEventObserver):
         """Handles the setup of the agent runner for a new turn."""
@@ -98,9 +101,38 @@ class AgentRunner:
             active_tools.extend(self.tools.get_discovery_tools())
         
         return active_tools
+    
+    # ================
+    #  Entry point 
+    # ================
 
+    async def stream_turn(
+        self, 
+        user_input: str | list[dict], 
+        observer: AgentEventObserver | None = None, 
+        config: RunnerConfig | None = None
+        ) -> AsyncGenerator[StreamEvent, None]:
+        """
+        Executes a turn of the agent, streaming events as they occur.
 
-    async def stream_turn(self, user_input: str | list[dict], observer: AgentEventObserver | None = None, config: RunnerConfig | None = None) -> AsyncGenerator[StreamEvent, None]:
+        This method handles the complete lifecycle of an agent's turn, including:
+        - Setting up the environment based on the provided configuration
+        - Processing user input
+        - Managing tool execution
+        - Streaming events (thoughts, tool usage, final responses) to the observer
+
+        Args:
+            user_input: The user's input, either as a string or a list of message dictionaries.
+            observer: An optional observer to receive events during the agent's execution.
+            config: Optional configuration that overrides the default runner configuration.
+
+        Yields:
+            StreamEvent: Events representing the agent's thought process, tool usage, and final responses.
+
+        Raises (package-specific):
+            ProviderAuthenticationError: If there's an authentication error with the LLM provider.
+            ProviderRateLimitError: If the LLM provider rate limits are exceeded.
+        """
         if not observer:
             if not self.observer:
                 raise ConfigurationError("`observer`: `AgentEventObserver` must be provided either during initialization or at runtime.")
@@ -261,7 +293,21 @@ class AgentRunner:
             yield StreamEvent(StreamEventType.FINAL_RESPONSE, final_response)
 
     async def run_turn(self, user_input: str | list[dict], observer: AgentEventObserver | None = None, config: RunnerConfig | None = None) -> AgentResponse:
-        """Standard method that wraps the stream_turn to return a single block response."""
+        """
+        Standard method that wraps the `stream_turn` to return a single block response.
+
+        Args:
+            user_input: The user's input, either as a string or a list of message dictionaries.
+            observer: An optional observer to receive events during the agent's execution.
+            config: Optional configuration that overrides the default runner configuration.
+
+        Returns:
+            AgentResponse: The final response from the agent, including text, reasoning, usage, and any errors.
+
+        Raises (package-specific):
+            ProviderAuthenticationError: If there's an authentication error with the LLM provider.
+            ProviderRateLimitError: If the LLM provider rate limits are exceeded.
+        """
         final_response = AgentResponse()
         cached_error = None
         
