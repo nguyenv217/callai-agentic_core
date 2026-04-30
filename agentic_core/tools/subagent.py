@@ -1,17 +1,17 @@
-import asyncio
+from __future__ import annotations
 import logging
-from typing import Any, Tuple, Optional
+from typing import Any, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 
-from agentic_core.engines import DAGEventObserver
+if TYPE_CHECKING:
+    from agentic_core.engines import DAGEventObserver
+    from agentic_core.tools import ToolManager
+    from agentic_core.llm_providers import ILLMClient
+    from agentic_core.engines.dag_engine import DAGAgentRunner
+    from agentic_core.engines.engine import AgentRunner, RunnerConfig
+    from agentic_core.memory.manager import MemoryManager
 
-from agentic_core.tools import ToolManager
-from agentic_core.llm_providers import ILLMClient
 from agentic_core.tools.base import BaseTool
-from agentic_core.engines.dag_engine import DAGAgentRunner
-from agentic_core.engines.engine import AgentRunner, RunnerConfig
-from agentic_core.memory.manager import MemoryManager
-
 logger = logging.getLogger(__name__)
 
 @dataclass

@@ -135,6 +135,7 @@ class AgentRunner:
         await self._handle_setup(user_input, config, observer)
 
         active_tools = self._get_active_tools(config)
+        logger.info(f"Active tools: {[t['function']['name'] for t in active_tools]}")
 
         max_iterations = config.max_iterations
         iteration = 1
