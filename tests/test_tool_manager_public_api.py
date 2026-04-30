@@ -90,7 +90,7 @@ async def test_unregister_tool_not_found():
 @pytest.mark.asyncio
 async def test_unregister_tool_removes_from_schema():
     """
-    Verifies that unregister_tool also removes tool from tools_schema.
+    Verifies that unregister_tool also removes tool from tool_schemas.
     """
     manager = ToolManager(enable_mcp_discovery=False)
     
@@ -98,13 +98,13 @@ async def test_unregister_tool_removes_from_schema():
     manager.register_tool(tool)
     
     # Verify schema exists
-    assert any(s['function']['name'] == "schema_tool" for s in manager.tools_schema)
+    assert any(s['function']['name'] == "schema_tool" for s in manager.tool_schemas)
     
     # Unregister
     manager.unregister_tool("schema_tool")
     
     # Verify schema removed
-    assert not any(s['function']['name'] == "schema_tool" for s in manager.tools_schema)
+    assert not any(s['function']['name'] == "schema_tool" for s in manager.tool_schemas)
 
 
 @pytest.mark.asyncio

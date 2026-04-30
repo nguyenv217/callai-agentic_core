@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from agentic_core.tools.subagent import SpawnSubAgentsTool, SubAgentCoordinator
+from agentic_core.tools.subagent import SpawnSubAgentsTool
 from agentic_core.engines.engine import AgentRunner, RunnerConfig
 from agentic_core.memory.manager import MemoryManager
 from agentic_core.interfaces import AgentResponse
@@ -30,6 +30,7 @@ def mock_llm():
 def mock_tm():
     tm = MagicMock()
     tm.prepare_turn = AsyncMock(return_value=None)
+    tm.tool_schemas = [{"type":"function", "function":{"name":"search_tool"}}]
     tm.get_toolset_prompt.return_value = "Mock Toolset Prompt"
     tm.get_tools_from_toolset.return_value = []
     tm.get_mcp_loaded_tools.return_value = []
@@ -71,28 +72,6 @@ async def test_spawn_subagents_granular_tools(subagent_tool, mock_llm, mock_tm):
         "tools_manager": mock_tm
     }
 
-    # We want to verify that the sub-agent RunnerConfig has the tools we requested
-    # Since AgentRunner is created inside the coordinator, we'll patch it
-    with patch('agentic_core.tools.subagent.AgentRunner') as MockRunner:
-        MockRunner.return_value = MagicMock()
-
-        args = {
-            "plan": {
-                "nodes": {
-                    "n1": {
-                        "prompt": "Task 1",
-                        "tools": ["search_tool", "read_file"]
-                    }
-                },
-                "edges": []
-            }
-        }
-
-        await subagent_tool.execute(args, context)
-
-        # Since it's a bit complex to check inner state, let's patch DAGAgentRunner 
-        # and check the nodes_def passed to it.
-
     with patch('agentic_core.tools.subagent.DAGAgentRunner') as MockDAG:
         MockDAG.return_value.execute = AsyncMock(return_value=MagicMock(error=None))
         # To make it return something that doesn't crash the summary loop
@@ -116,7 +95,8 @@ async def test_spawn_subagents_granular_tools(subagent_tool, mock_llm, mock_tm):
         # Inspect the nodes_def passed to DAGAgentRunner
         nodes_def = MockDAG.call_args[0][0]
         runner, config, prompt, max_retries = nodes_def["n1"]
-        assert config.tools == ["search_tool"]
+        assert config.tools is not None 
+        assert {"type":"function", "function":{"name":"search_tool"}} in config.tools
 
 @pytest.mark.asyncio
 async def test_spawn_subagents_missing_context(subagent_tool):

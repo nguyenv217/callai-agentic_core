@@ -111,10 +111,10 @@ class SpawnSubAgentsTool(BaseTool):
             # Sub-agents can be granted specific tools.
             # If not specified, they get a default RunnerConfig (usually only MCP tools).
             config = RunnerConfig()
-            requested_tools = cfg.get("tools", [])
+            requested_tools = cfg.get("tools")
             if requested_tools:
                 config.tools = [
-                    schema for schema in tools_manager.tools_schema 
+                    schema for schema in tools_manager.tool_schemas 
                     if schema["function"]["name"] in requested_tools
                 ]
 

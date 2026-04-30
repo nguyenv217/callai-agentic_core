@@ -71,7 +71,7 @@ class ToolManager:
         self.seed = 0
         self.extra_context = extra_context or {}
 
-        self.tools_schema = []
+        self.tool_schemas: list[ToolSchema] = []
         self._plugins: dict[str, BaseTool] = {}
         
         # --- MCP State ---
@@ -128,7 +128,7 @@ class ToolManager:
 
         if tool_instance.name not in self._plugins:  # prevents hallucinates and registers the same tool multiple times
             self._plugins[tool_instance.name] = tool_instance
-            self.tools_schema.append(tool_instance.schema)
+            self.tool_schemas.append(tool_instance.schema)
         
         if load_mcp:
             self._mcp_loaded_tools.add(tool_instance)
@@ -282,7 +282,7 @@ class ToolManager:
 
     def get_tools_from_toolset(self, toolset: str = "all") -> list[ToolSchema]:
         """Get tools for a specific toolset."""
-        return [t for t in self.tools_schema if t['function']['name'] in self.toolsets.get(toolset, [])]
+        return [t for t in self.tool_schemas if t['function']['name'] in self.toolsets.get(toolset, [])]
 
     def get_toolset_prompt(self, toolset: str) -> str | None:
         """Return the custom prompt associated with a toolset, if any."""
@@ -290,7 +290,7 @@ class ToolManager:
     
     def get_discovery_tools(self) -> list[ToolSchema]:
         """Get discovery tools."""
-        return [t for t in self.tools_schema if t['function']['name'] in self._discovery_tools]
+        return [t for t in self.tool_schemas if t['function']['name'] in self._discovery_tools]
 
     def get_registered_tools(self) -> list[str]:
         """
@@ -316,7 +316,7 @@ class ToolManager:
             return False
         
         del self._plugins[name]
-        self.tools_schema = [s for s in self.tools_schema if s['function']['name'] != name]
+        self.tool_schemas = [s for s in self.tool_schemas if s['function']['name'] != name]
         logger.info(f"Tool '{name}' unregistered.")
         return True
 
@@ -343,7 +343,7 @@ class ToolManager:
             # Also remove from plugins if present
             if name in self._plugins:
                 del self._plugins[name]
-                self.tools_schema = [s for s in self.tools_schema if s['function']['name'] != name]
+                self.tool_schemas = [s for s in self.tool_schemas if s['function']['name'] != name]
             logger.info(f"MCP tool '{name}' unloaded from loaded tools.")
             return True
         
