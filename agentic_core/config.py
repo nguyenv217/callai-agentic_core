@@ -25,7 +25,6 @@ class RunnerConfig:
         toolset (str | None = None): The name of a preconfigured `toolset` registered with `AgentRunner.tools: ToolManager`. Passing `tools` will take priority over this settings to encourage clearer tools injection. Additionally, this will attach the toolset-specific prompt to system prompt (if any).
         extra_context (dict[str, Any] | None = None): Extra context to be passed to `AgentRunner.tools.execute()`.
         mcp_extra_env (dict[str, str] | None = None): Extra environment variables to pass to `MCPClient` initialization. Overwrites `ToolManager`'s default.
-        mcp_clear_loaded_tools (bool = False): Whether to keep the last turn loaded MCP tools
         mcp_active_servers (list[str] | None = None): A list of MCP server names to be used for the agent. This is useful when you only want to use a specific set of servers. It is best accompanied with `mcp_preload_tools` and `enable_mcp_discovery=False` to conserve resources.
         mcp_preload_tools (list[str] | None = None): A list of MCP tool names to be preloaded for the agent. This is useful when you know what MCP tools you want to use.
         mcp_enable_discovery (bool = False): Whether to enable user to dynamically browse and load MCP tools. Recommended 'False' if `mcp_preload_tools` is specified
@@ -40,7 +39,6 @@ class RunnerConfig:
     extra_context: dict[str, Any] | None = None
     # MCP (Model Context Protocol) Settings
     mcp_extra_env: dict[str, str] | None = None
-    mcp_clear_loaded_tools: bool = True               
     mcp_active_servers: list[str] | None = None  # e.g. ["github", "memory"]. Supply this before supplying mcp_preload_tools.
     mcp_preload_tools: list[str] | None = None   # e.g. ["github_create_issue"]
     mcp_enable_discovery: bool = False           

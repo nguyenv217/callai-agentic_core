@@ -64,8 +64,6 @@ class AgentRunner:
 
     async def _handle_setup(self, user_input: str | list[dict], config: RunnerConfig, observer: AgentEventObserver):
         """Handles the setup of the agent runner for a new turn."""
-        if config.mcp_clear_loaded_tools:
-            self.tools.clear_loaded_tools()
 
         if config.system_prompt:
             toolset_prompt = self.tools.get_toolset_prompt(config.toolset) if config.toolset else None
