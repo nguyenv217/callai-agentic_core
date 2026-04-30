@@ -340,7 +340,7 @@ class ToolManager:
         if tool_to_remove:
             self._mcp_loaded_tools.discard(tool_to_remove)
             # Also remove from plugins if present
-            if name in self._plugins:
+            if name in list(self._plugins.keys()):
                 del self._plugins[name]
                 self.tool_schemas = [s for s in self.tool_schemas if s['function']['name'] != name]
             logger.info(f"MCP tool '{name}' unloaded from loaded tools.")
@@ -367,7 +367,7 @@ class ToolManager:
             server_names: List of server names to disconnect. If None, disconnects all servers.
                       If provided, only disconnects the specified servers.
         """
-        for mcp_toolname, mcp_tool_instance in self._mcp_standby_registry.items():
+        for mcp_toolname, mcp_tool_instance in list(self._mcp_standby_registry.items()):
             if mcp_tool_instance.server_name in server_names:
                 self._mcp_standby_registry.pop(mcp_toolname)
                 self.unload_mcp_tool(mcp_toolname)
