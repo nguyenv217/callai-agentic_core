@@ -123,7 +123,6 @@ class ToolManager:
         self.register_tool(LoadMCPTool(self))
         self._loaded_discovery_tools = True
 
-
     def register_tool(self, tool_instance: BaseTool, load_mcp=False):
         """Registers a standard tool plugin or a dynamically loaded MCP tool."""
 
@@ -204,6 +203,41 @@ class ToolManager:
             logger.error("MCP initialization timed out after 15 seconds.")
         except Exception as e:
             logger.error(f"MCP initialization failed: {e}")
+    
+    def add_mcp_server(self, server_name: str, command: str, args: list[str] = None, env: dict[str, str] = None, log_file: str = None):
+        """
+        Programmatically add an MCP server configuration.
+        
+        Args:
+            server_name: Unique identifier for the server
+            command: Executable command to start the server
+            args: List of arguments for the command
+            env: Environment variables for the server process
+            log_file: Optional path to log stderr for server output. Useful for debugging and avoid conflicts with TUI apps.
+        """
+        if self._mcp_init_in_progress:
+            logger.warning("MCP is initializing. Please wait or restart the program.")
+            return 
+
+        if args is None:
+            args = []
+        if env is None:
+            env = {}
+            
+        if "mcpServers" not in self._mcp_config_dict:
+            self._mcp_config_dict["mcpServers"] = {}
+            
+        self._mcp_config_dict["mcpServers"][server_name] = {
+            "command": command,
+            "args": args,
+            "env": env,
+            "log_file": log_file
+        }
+        
+        # Reset MCP initialization state to force reload on next ensure_mcp_initialized call
+        # self._mcp_initialized = False
+        self._mcp_init_in_progress = False
+        logger.info(f"Added MCP server '{server_name}' to programmatic config.")
 
     # ============================
     # Cleanup abd Context Management
@@ -245,41 +279,6 @@ class ToolManager:
     # ==========================================
     # PUBLIC API
     # ==========================================
-    
-    def add_mcp_server(self, server_name: str, command: str, args: list[str] = None, env: dict[str, str] = None, log_file: str = None):
-        """
-        Programmatically add an MCP server configuration.
-        
-        Args:
-            server_name: Unique identifier for the server
-            command: Executable command to start the server
-            args: List of arguments for the command
-            env: Environment variables for the server process
-            log_file: Optional path to log stderr for server output. Useful for debugging and avoid conflicts with TUI apps.
-        """
-        if self._mcp_init_in_progress:
-            logger.warning("MCP is initializing. Please wait or restart the program.")
-            return 
-
-        if args is None:
-            args = []
-        if env is None:
-            env = {}
-            
-        if "mcpServers" not in self._mcp_config_dict:
-            self._mcp_config_dict["mcpServers"] = {}
-            
-        self._mcp_config_dict["mcpServers"][server_name] = {
-            "command": command,
-            "args": args,
-            "env": env,
-            "log_file": log_file
-        }
-        
-        # Reset MCP initialization state to force reload on next ensure_mcp_initialized call
-        # self._mcp_initialized = False
-        self._mcp_init_in_progress = False
-        logger.info(f"Added MCP server '{server_name}' to programmatic config.")
 
     def get_tools_from_toolset(self, toolset: str = "all") -> list[ToolSchema]:
         """Get tools for a specific toolset."""
@@ -292,6 +291,64 @@ class ToolManager:
     def get_discovery_tools(self) -> list[ToolSchema]:
         """Get discovery tools."""
         return [t for t in self.tools_schema if t['function']['name'] in self._discovery_tools]
+
+    def get_registered_tools(self) -> list[str]:
+        """
+        Get list of all registered tool names.
+        
+        Returns:
+            List of tool names currently registered in the manager.
+        """
+        return list(self._plugins.keys())
+
+    def unregister_tool(self, name: str) -> bool:
+        """
+        Unregister a tool by name.
+        
+        Args:
+            name: The name of the tool to unregister.
+            
+        Returns:
+            True if the tool was successfully unregistered, False if not found.
+        """
+        if name not in self._plugins:
+            logger.warning(f"Tool '{name}' not found in registry.")
+            return False
+        
+        del self._plugins[name]
+        self.tools_schema = [s for s in self.tools_schema if s['function']['name'] != name]
+        logger.info(f"Tool '{name}' unregistered.")
+        return True
+
+    def unload_mcp_tool(self, name: str) -> bool:
+        """
+        Unload an MCP tool from the loaded tools set.
+        The tool remains in standby registry for potential reload.
+        
+        Args:
+            name: The name of the MCP tool to unload.
+            
+        Returns:
+            True if the tool was successfully unloaded, False if not found.
+        """
+        # Find and remove from loaded tools set
+        tool_to_remove = None
+        for tool in self._mcp_loaded_tools:
+            if tool.name == name:
+                tool_to_remove = tool
+                break
+        
+        if tool_to_remove:
+            self._mcp_loaded_tools.discard(tool_to_remove)
+            # Also remove from plugins if present
+            if name in self._plugins:
+                del self._plugins[name]
+                self.tools_schema = [s for s in self.tools_schema if s['function']['name'] != name]
+            logger.info(f"MCP tool '{name}' unloaded from loaded tools.")
+            return True
+        
+        logger.warning(f"MCP tool '{name}' not found in loaded tools.")
+        return False
 
     def get_mcp_loaded_tools(self) -> list[ToolSchema]:
         return [t.schema for t in self._mcp_loaded_tools]
@@ -319,7 +376,9 @@ class ToolManager:
         if prompt:
             self.toolset_prompts[name] = prompt
 
-    # ===== execute() =====   
+    # ===================================
+    # EXECUTION
+    # ===================================
 
     async def execute(
             self, tool_name: str, args: dict, 
@@ -369,7 +428,6 @@ class ToolManager:
         except Exception as e:
             logger.exception(f"Tool execution failed for {tool_name}")
             return f"Error parsing or executing tool arguments: {e}"
-        
 
     async def prepare_turn(self, config: RunnerConfig):
         """Forces MCP initialization and preloads requested tools before turn 1."""
@@ -394,9 +452,6 @@ class ToolManager:
             if not config_exists:
                 raise ConfigurationError("No MCP configuration found.")
 
-            if not config.mcp_enable_discovery:
-                raise ConfigurationError("You are loading MCP servers but no MCP discover tools are enabled.")
-            
             if not self._loaded_discovery_tools:
                 self._register_discovery_tools()  
 
