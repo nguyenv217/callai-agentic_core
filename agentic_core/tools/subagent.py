@@ -77,9 +77,9 @@ class SpawnSubAgentsTool(BaseTool):
     
     async def execute(self, args: dict, context: dict) -> str:
         # Resolve dependencies from context
-        llm_client = context.get("llm_client")
-        tools_manager = context.get("tools_manager")
-        parent_memory = context.get("memory_manager")
+        llm_client: ILLMClient = context.get("llm_client")
+        tools_manager: ToolManager = context.get("tools_manager")
+        parent_memory: MemoryManager = context.get("memory_manager")
         observer: DAGEventObserver = context.get("subagent_observer")
 
         if not llm_client or not tools_manager:
@@ -112,8 +112,11 @@ class SpawnSubAgentsTool(BaseTool):
             config = RunnerConfig()
             requested_tools = cfg.get("tools", [])
             if requested_tools:
-                config.tools = requested_tools
-
+                config.tools = [
+                    schema for schema in tools_manager.tools_schema 
+                    if schema["function"]["name"] in requested_tools
+                ]
+                
             prompt = cfg.get("prompt", "")
             max_retries = cfg.get("max_retries", 0)
             config.max_iterations = max_retries + 1 # approximate mapping
