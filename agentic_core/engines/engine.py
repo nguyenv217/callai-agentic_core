@@ -154,7 +154,9 @@ class AgentRunner:
                 observer.on_iteration_start(iteration, max_iterations)
                 conversation = self.memory.get_history()
                 logger.info(f"Tools turn {iteration}: {[t['function']['name'] for t in active_tools]}")
-                response_iterator = self.llm.ask(conversation, active_tools, stream=True)
+
+                kwargs = config.kwargs or {}
+                response_iterator = self.llm.ask(conversation, active_tools, stream=True, **kwargs)
 
                 turn_response = {"text": "", "reasoning": "", "tool_calls": []}
                 

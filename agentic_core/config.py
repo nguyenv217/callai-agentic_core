@@ -19,6 +19,7 @@ class RunnerConfig:
     Args:
         max_iterations (int = False): The maximum number of iterations the agent can take before failing.
         system_prompt (str | None = None): A prompt to be used as the system prompt for the agent. This overwrites any manually system prompt written to the memory manager before `run_turn()`.      
+        kwargs (dict[str, Any] | None = None): Any extra arguments passing to client.ask() method, e.g. `extra_body` for OpenAI.
         tools (list[ToolSchema] | None = None): A list of tools to be used by the agent. This includes both non-MCP and MCP tools of your choice. MCP tools included here but not loaded in last turns must be specified in `mcp_preload_tools` also to initialize properly
         toolset (str | None = None): The name of a preconfigured `toolset` registered with `AgentRunner.tools: ToolManager`. Passing `tools` will take priority over this settings to encourage clearer tools injection. Additionally, this will attach the toolset-specific prompt to system prompt (if any).
         max_chars (int | None = 10000): Result of each tool call is limited to `max_chars` characters to save tokens. Set to None for no limits. Default is 10000.
@@ -31,6 +32,7 @@ class RunnerConfig:
     max_iterations: int = 20
     max_chars: int | None = 10000
     system_prompt: str | None = None
+    kwargs: dict[str, Any] | None = None
     # Tool settings
     tools: list[ToolSchema] | None = None        
     toolset: str | None = None                   

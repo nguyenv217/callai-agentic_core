@@ -15,8 +15,9 @@ logger = logging.getLogger(__name__)
 class ListMCPTools(BaseTool):
     """Returns a lightweight catalog of available external MCP tools."""
     
-    def __init__(self, tool_manager: ToolManager):
+    def __init__(self, tool_manager: ToolManager, preview_limit: int = 3):
         self._tool_manager = tool_manager
+        self.preview_limit = preview_limit
     
     @property
     def name(self) -> str:
@@ -75,7 +76,7 @@ class ListMCPTools(BaseTool):
                 lines.append(f"\n[{server}] ({len(adapters)} tools total):")
                 
                 # Show up to 3 tools as a preview
-                preview_limit = 3
+                preview_limit = self.preview_limit
                 for adapter in adapters[:preview_limit]:
                     # Grab description and truncate it to a single line for neatness
                     raw_desc = adapter.schema['function'].get('description', 'No description')
