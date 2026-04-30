@@ -95,10 +95,10 @@ class AgentRunner:
 
     def _get_active_tools(self, config: RunnerConfig):
         active_tools = config.tools or self.tools.get_tools_from_toolset(config.toolset)
-        active_tools.extend(self.tools.get_mcp_loaded_tools())
+        active_tools.extend([t for t in self.tools.get_mcp_loaded_tools() if t not in active_tools])
 
         if config.mcp_enable_discovery:
-            active_tools.extend(self.tools.get_discovery_tools())
+            active_tools.extend([t for t in self.tools.get_discovery_tools() if t not in active_tools])
         
         return active_tools
     
@@ -115,24 +115,15 @@ class AgentRunner:
         """
         Executes a turn of the agent, streaming events as they occur.
 
-        This method handles the complete lifecycle of an agent's turn, including:
-        - Setting up the environment based on the provided configuration
-        - Processing user input
-        - Managing tool execution
-        - Streaming events (thoughts, tool usage, final responses) to the observer
-
         Args:
             user_input: The user's input, either as a string or a list of message dictionaries.
             observer: An optional observer to receive events during the agent's execution.
             config: Optional configuration that overrides the default runner configuration.
 
         Yields:
-            StreamEvent: Events representing the agent's thought process, tool usage, and final responses.
-
-        Raises (package-specific):
-            ProviderAuthenticationError: If there's an authentication error with the LLM provider.
-            ProviderRateLimitError: If the LLM provider rate limits are exceeded.
+            StreamEvent: Events representing the agent's thought process, tool usage, and final responses. Access original errors via `StreamEvent.error`: `BaseException` | `None`
         """
+
         if not observer:
             if not self.observer:
                 raise ConfigurationError("`observer`: `AgentEventObserver` must be provided either during initialization or at runtime.")

@@ -105,7 +105,7 @@ class SpawnSubAgentsTool(BaseTool):
             if parent_memory and parent_memory.system_prompt:
                 node_memory.set_system_prompt(parent_memory.system_prompt['content'])
 
-            runner = AgentRunner(self.llm_client, self.tools_manager, node_memory)
+            runner = AgentRunner(llm_client, tools_manager, node_memory)
 
             # Sub-agents can be granted specific tools.
             # If not specified, they get a default RunnerConfig (usually only MCP tools).
