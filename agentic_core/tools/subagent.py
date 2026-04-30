@@ -7,11 +7,12 @@ if TYPE_CHECKING:
     from agentic_core.engines import DAGEventObserver
     from agentic_core.tools import ToolManager
     from agentic_core.llm_providers import ILLMClient
-    from agentic_core.engines.dag_engine import DAGAgentRunner
-    from agentic_core.engines.engine import AgentRunner, RunnerConfig
-    from agentic_core.memory.manager import MemoryManager
 
+from agentic_core.engines.dag_engine import DAGAgentRunner
+from agentic_core.engines.engine import AgentRunner, RunnerConfig
+from agentic_core.memory.manager import MemoryManager
 from agentic_core.tools.base import BaseTool
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -116,7 +117,7 @@ class SpawnSubAgentsTool(BaseTool):
                     schema for schema in tools_manager.tools_schema 
                     if schema["function"]["name"] in requested_tools
                 ]
-                
+
             prompt = cfg.get("prompt", "")
             max_retries = cfg.get("max_retries", 0)
             config.max_iterations = max_retries + 1 # approximate mapping
