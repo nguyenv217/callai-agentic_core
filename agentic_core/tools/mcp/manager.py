@@ -423,6 +423,48 @@ class MCPClientManager:
             for tool in tools
         ]
     
+    async def disconnect(self, server_names: list[str] | None = None):
+        """
+        Disconnect from MCP server(s).
+        
+        Args:
+            server_names: 
+                List of server names to disconnect. If None, disconnects all servers.
+                If provided, only disconnects the specified servers.
+        """
+        if not self.sessions:
+            logger.info("No active MCP sessions to disconnect.")
+            return
+
+        if server_names is None:
+            # Disconnect all servers (same as close())
+            await self.close()
+            return
+
+        # Filter sessions to disconnect only specified servers
+        sessions_to_disconnect = [
+            s for s in self.sessions 
+            if s.get("name") in server_names
+        ]
+        
+        remaining_sessions = [
+            s for s in self.sessions 
+            if s.get("name") not in server_names
+        ]
+
+        for session_info in sessions_to_disconnect:
+            server_name = session_info.get("name", "unknown")
+            identity_key = session_info.get("identity_key")
+            try:
+                if identity_key:
+                    await self._registry.release(identity_key)
+                logger.info(f"Disconnected from '{server_name}'")
+            except Exception:
+                logger.exception(f"Error disconnecting MCP session for '{server_name}'")
+
+        # Update sessions list to keep only remaining servers
+        self.sessions = remaining_sessions
+
     async def close(self):
         """Close all MCP server connections gracefully, releasing shared sessions."""
         for session_info in self.sessions:

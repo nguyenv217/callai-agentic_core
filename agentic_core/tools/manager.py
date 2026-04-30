@@ -136,7 +136,7 @@ class ToolManager:
         # return self
 
     # ==========================================
-    # MCP NATIVE SUPPORT (Hidden from end-user)
+    # MCP Tool Management
     # ==========================================
     
     async def initialize_mcp(self, allowed_servers: list[str] | None = None, extra_env: dict[str, str] | None = None) -> int:
@@ -205,7 +205,10 @@ class ToolManager:
         except Exception as e:
             logger.error(f"MCP initialization failed: {e}")
 
-    # ===== Cleanup =====
+    # ============================
+    # Cleanup abd Context Management
+    # ============================
+
     async def __aenter__(self):
         """Allows ToolManager to be used as a safe async context manager."""
         return self
@@ -239,7 +242,10 @@ class ToolManager:
                 except Exception as e:
                     logger.debug(f"atexit asyncio.run cleanup encountered an issue: {e}")
 
-
+    # ==========================================
+    # PUBLIC API
+    # ==========================================
+    
     def add_mcp_server(self, server_name: str, command: str, args: list[str] = None, env: dict[str, str] = None, log_file: str = None):
         """
         Programmatically add an MCP server configuration.
@@ -275,10 +281,6 @@ class ToolManager:
         self._mcp_init_in_progress = False
         logger.info(f"Added MCP server '{server_name}' to programmatic config.")
 
-    # ==========================================
-    # PUBLIC API
-    # ==========================================
-
     def get_tools_from_toolset(self, toolset: str = "all") -> list[ToolSchema]:
         """Get tools for a specific toolset."""
         return [t for t in self.tools_schema if t['function']['name'] in self.toolsets.get(toolset, [])]
@@ -300,6 +302,17 @@ class ToolManager:
 
     def get_active_servers(self) -> list[str]:
         return self._mcp_manager.get_active_servers() if self._mcp_manager else []
+    
+    async def disconnect_mcp(self, server_names: list[str] | None = None):
+        """
+        Disconnect from MCP server(s).
+        
+        Args:
+            server_names: List of server names to disconnect. If None, disconnects all servers.
+                      If provided, only disconnects the specified servers.
+        """
+        if self._mcp_manager:
+            await self._mcp_manager.disconnect(server_names)
     
     def add_toolset(self, name: str, tools: list[str], prompt: str | None = None):
         self.toolsets[name] = list(tools)
@@ -404,4 +417,4 @@ class ToolManager:
                         logger.warning(f"MCP tool '{tool_name}' not found in standby registry during preload.")
 
             if config.mcp_enable_discovery and not self._loaded_discovery_tools:
-                self._register_discovery_tools()  
+                self._register_discovery_tools()

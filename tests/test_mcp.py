@@ -340,3 +340,175 @@ async def test_mcp_different_env_isolation():
         await manager2.close()
         assert len(registry._sessions) == 0
 
+
+@pytest.mark.asyncio
+async def test_mcp_disconnect_specific_server():
+    """Tests disconnecting a specific server while keeping others connected."""
+
+    config = {
+        "mcpServers": {
+            "server1": {
+                "command": "python",
+                "args": ["--server1"],
+            },
+            "server2": {
+                "command": "python",
+                "args": ["--server2"],
+            }
+        }
+    }
+
+    with patch("agentic_core.tools.mcp.manager.stdio_client") as mock_stdio, \
+         patch("agentic_core.tools.mcp.manager.ClientSession") as mock_session, \
+         patch("shutil.which", return_value="/usr/bin/python"):
+
+        mock_stdio.return_value.__aenter__.return_value = (MagicMock(), MagicMock())
+        mock_session_instance = mock_session.return_value.__aenter__.return_value
+
+        async def mock_init(): await asyncio.sleep(0)
+        mock_session_instance.initialize = mock_init
+
+        async def mock_list(): return MagicMock(tools=[])
+        mock_session_instance.list_tools = mock_list
+
+        async def mock_call(n, arguments): return MagicMock(content=[])
+        mock_session_instance.call_tool = mock_call
+
+        manager = MCPClientManager(config=config)
+        await manager.initialize()
+
+        # Both servers should be connected
+        assert len(manager.sessions) == 2
+        active = manager.get_active_servers()
+        assert "server1" in active
+        assert "server2" in active
+
+        # Disconnect only server1
+        await manager.disconnect(["server1"])
+
+        # Only server2 should remain
+        assert len(manager.sessions) == 1
+        active = manager.get_active_servers()
+        assert "server1" not in active
+        assert "server2" in active
+
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_mcp_disconnect_all_servers():
+    """Tests disconnecting all servers using disconnect(None)."""
+
+    config = {
+        "mcpServers": {
+            "server1": {
+                "command": "python",
+                "args": ["--server1"],
+            }
+        }
+    }
+
+    with patch("agentic_core.tools.mcp.manager.stdio_client") as mock_stdio, \
+         patch("agentic_core.tools.mcp.manager.ClientSession") as mock_session, \
+         patch("shutil.which", return_value="/usr/bin/python"):
+
+        mock_stdio.return_value.__aenter__.return_value = (MagicMock(), MagicMock())
+        mock_session_instance = mock_session.return_value.__aenter__.return_value
+
+        async def mock_init(): await asyncio.sleep(0)
+        mock_session_instance.initialize = mock_init
+
+        async def mock_list(): return MagicMock(tools=[])
+        mock_session_instance.list_tools = mock_list
+
+        async def mock_call(n, arguments): return MagicMock(content=[])
+        mock_session_instance.call_tool = mock_call
+
+        manager = MCPClientManager(config=config)
+        await manager.initialize()
+
+        # Server should be connected
+        assert len(manager.sessions) == 1
+        assert len(manager.get_active_servers()) == 1
+
+        # Disconnect all (None)
+        await manager.disconnect()
+
+        # All should be disconnected
+        assert len(manager.sessions) == 0
+        assert len(manager.get_active_servers()) == 0
+
+
+@pytest.mark.asyncio
+async def test_tool_manager_disconnect_mcp_all():
+    """Tests ToolManager.disconnect_mcp() disconnects all servers."""
+
+    # Create a mock MCPClientManager
+    mock_mcp_mgr = MagicMock()
+    mock_mcp_mgr.initialize = AsyncMock(return_value=True)
+    mock_mcp_mgr.list_all_tools = AsyncMock(return_value=[])
+    mock_mcp_mgr.get_active_servers = MagicMock(return_value=["test_server"])
+    mock_mcp_mgr.disconnect = AsyncMock()
+
+    # Patch where it's imported from
+    with patch("agentic_core.tools.mcp.manager.MCPClientManager", return_value=mock_mcp_mgr, create=True):
+        manager = ToolManager()
+        # Add MCP server programmatically (instead of using invalid mcp_config_dict parameter)
+        manager.add_mcp_server("test_server", "python", args=["--test"])
+        
+        # Initialize MCP
+        await manager.initialize_mcp()
+        
+        # Verify servers are active
+        assert len(manager.get_active_servers()) > 0
+        
+        # Disconnect all
+        await manager.disconnect_mcp()
+        
+        # Should have called disconnect on mock
+        mock_mcp_mgr.disconnect.assert_called_once()
+        
+        # Verify get_active_servers returns empty
+        mock_mcp_mgr.get_active_servers.return_value = []
+        assert len(manager.get_active_servers()) == 0
+
+
+@pytest.mark.asyncio
+async def test_tool_manager_disconnect_mcp_specific():
+    """Tests ToolManager.disconnect_mcp() disconnects specific servers."""
+
+    # Create a mock MCPClientManager
+    mock_mcp_mgr = MagicMock()
+    mock_mcp_mgr.initialize = AsyncMock(return_value=True)
+    mock_mcp_mgr.list_all_tools = AsyncMock(return_value=[])
+    mock_mcp_mgr.get_active_servers = MagicMock(side_effect=[
+        ["server1", "server2"],
+        ["server2"]
+    ])
+    mock_mcp_mgr.disconnect = AsyncMock()
+
+    # Patch where it's imported from
+    with patch("agentic_core.tools.mcp.manager.MCPClientManager", return_value=mock_mcp_mgr, create=True):
+        manager = ToolManager()
+        # Add MCP servers programmatically
+        manager.add_mcp_server("server1", "python", args=["--s1"])
+        manager.add_mcp_server("server2", "python", args=["--s2"])
+        
+        # Initialize MCP
+        await manager.initialize_mcp()
+        
+        # Both servers should be active
+        active = manager.get_active_servers()
+        assert "server1" in active
+        assert "server2" in active
+        
+        # Disconnect only server1
+        await manager.disconnect_mcp(["server1"])
+        
+        # Should have called disconnect with server1
+        mock_mcp_mgr.disconnect.assert_called_once_with(["server1"])
+        
+        # Only server2 should remain
+        remaining = manager.get_active_servers()
+        assert "server2" in remaining
+
