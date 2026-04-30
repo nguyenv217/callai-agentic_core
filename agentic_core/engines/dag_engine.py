@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import logging
 
 from agentic_core.config import ConfigurationError
-from agentic_core.interfaces import AgentResponse, DAGNodeResponse, DAGResponse
+from agentic_core.interfaces import AgentResponse, DAGNodeResponse, DAGResponse, ProviderRateLimitError, ProviderTimeoutError
 
 from .engine import AgentRunner, RunnerConfig
 from ..observers import AgentEventObserver
@@ -193,7 +193,8 @@ class DAGAgentRunner:
 
                     # Determine if error is retryable
                     retryable_keywords = ["timeout", "rate limit", "api error", "overloaded"]
-                    is_retryable = any(kw in error_msg.lower() for kw in retryable_keywords)
+                    retryable_exec_types = [ProviderRateLimitError, ProviderTimeoutError]
+                    is_retryable = any(kw in error_msg.lower() for kw in retryable_keywords) or any(isinstance(e, exc_type) for exc_type in retryable_exec_types)
 
                     if is_retryable and node.current_retries < node.max_retries:
                         node.current_retries += 1

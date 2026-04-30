@@ -5,11 +5,11 @@ from typing import Any, AsyncIterator
 
 from ..config import ConfigurationError
 from .base import ILLMClient, LLMResponse
-from ..interfaces import ProviderAuthenticationError, ProviderRateLimitError
+from ..interfaces import ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError
 
 _openai_imported=True
 try:
-    from openai import AsyncOpenAI, AuthenticationError, RateLimitError, BadRequestError, APIConnectionError
+    from openai import AsyncOpenAI, AuthenticationError, RateLimitError, BadRequestError, APIConnectionError, APITimeoutError
 except ImportError:
     _openai_imported=False
 
@@ -121,3 +121,5 @@ class OpenAILLM(ILLMClient):
             raise ProviderAuthenticationError
         except RateLimitError:
             raise ProviderRateLimitError
+        except APITimeoutError:
+            raise ProviderTimeoutError

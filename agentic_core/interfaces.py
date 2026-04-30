@@ -49,6 +49,10 @@ class ProviderRateLimitError(AgenticError):
     """Raised when the provider rate limit is exceeded"""
     pass
 
+class ProviderTimeoutError(AgenticError):
+    """Raised when the provider request times out"""
+    pass
+
 # ===================================================
 # Structured Responses
 # ===================================================
