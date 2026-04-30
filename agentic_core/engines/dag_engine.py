@@ -41,6 +41,7 @@ class DAGNode:
     result: AgentResponse | None = None
     max_retries: int = 0
     current_retries: int = 0
+    error: BaseException | None = None
     error_details: str | None = None
     failed_by: str | None = None
 
@@ -206,9 +207,9 @@ class DAGAgentRunner:
                     else:
                         logger.error(f"Node {node_id} failed permanently:\n{tb_str}")
                         node.state = NodeState.FAILED
-                        node.result = error_msg
+                        node.error = e
                         node.error_details = tb_str
-                        self.observer.on_node_complete(node_id, NodeState.FAILED, node.result)
+                        self.observer.on_node_complete(node_id, NodeState.FAILED, error_msg)
                         await self._cascade_failure(node_id)
 
                 finally:
@@ -237,7 +238,7 @@ class DAGAgentRunner:
         try:
             self.compile()
         except RuntimeError as e:
-            return DAGResponse(error="RuntimeError: " + str(e))
+            return DAGResponse(error=RuntimeError(str(e)))
         
         for node_id, node in self.nodes.items():
             if node.in_degree == 0:
@@ -258,6 +259,7 @@ class DAGAgentRunner:
             nodes_resp[node_id] = DAGNodeResponse(
                 state=node.state.name,
                 result=node.result,
+                error=node.error,
                 error_details=node.error_details,
                 failed_by=node.failed_by
             )

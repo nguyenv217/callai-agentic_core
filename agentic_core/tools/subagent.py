@@ -47,7 +47,6 @@ class SubAgentCoordinator:
 
             runner = AgentRunner(self.llm_client, self.tools_manager, node_memory)
 
-            # Granular Tool Control:
             # Sub-agents can be granted specific tools.
             # If not specified, they get a default RunnerConfig (usually only MCP tools).
             config = RunnerConfig()

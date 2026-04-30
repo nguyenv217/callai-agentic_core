@@ -76,6 +76,7 @@ class DAGNodeResponse:
     """Response for a single node in a DAG."""
     state: str
     result: AgentResponse | None
+    error: BaseException | None # due to the nature of swarm we must store this
     error_details: str | None = None
     failed_by: str | None = None
 
@@ -89,8 +90,9 @@ class DAGNodeResponse:
 
 @dataclass
 class DAGResponse:
-    nodes: dict[str, DAGNodeResponse]
-    error: str | None = None
+    """Structured response from a DAG execution."""
+    nodes: dict[str, DAGNodeResponse] = field(default_factory=dict)
+    error: BaseException | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -113,15 +115,5 @@ class StreamEvent:
     type: StreamEventType
     content: Any
 
-@dataclass
-class DAGResponse:
-    """Structured response from a DAG execution."""
-    nodes: dict[str, DAGNodeResponse] = field(default_factory=dict)
-    error: str | None = None
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "nodes": {node_id: node_resp.to_dict() for node_id, node_resp in self.nodes.items()},
-            "error": self.error
-        }
 

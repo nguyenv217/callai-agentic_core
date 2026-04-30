@@ -114,7 +114,7 @@ async def test_permanent_failure_no_retry():
 
     assert results.nodes["A"].state == "FAILED"
     assert llm.call_counts["Node_A"] == 1
-    assert "Fatal error" in results.nodes["A"].result
+    assert "Fatal error" in str(results.nodes["A"].error)
     assert results.nodes["A"].error_details is not None
 
 @pytest.mark.asyncio
