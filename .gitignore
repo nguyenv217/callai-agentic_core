@@ -11,6 +11,7 @@ Dockerfile
 .dockerignore
 __pycache__/
 .pytest_cache/
+.pytest_cache
 .pycache
 .cache
 .cache.sqlite
