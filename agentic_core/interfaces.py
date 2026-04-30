@@ -80,7 +80,7 @@ class DAGNodeResponse:
     """Response for a single node in a DAG."""
     state: str
     result: AgentResponse | None
-    error: BaseException | None # due to the nature of swarm we must store this
+    error: BaseException | None = None # due to the nature of swarm we must store this
     error_details: str | None = None
     failed_by: str | None = None
 
