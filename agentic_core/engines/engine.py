@@ -94,12 +94,13 @@ class AgentRunner:
         await self.tools.prepare_turn(config)
 
     def _get_active_tools(self, config: RunnerConfig):
-        active_tools = config.tools or self.tools.get_tools_from_toolset(config.toolset)
+        active_tools = list(config.tools) if config.tools else self.tools.get_tools_from_toolset(config.toolset)
+        
         active_tools.extend([t for t in self.tools.get_mcp_loaded_tools() if t not in active_tools])
-
+        
         if config.mcp_enable_discovery:
             active_tools.extend([t for t in self.tools.get_discovery_tools() if t not in active_tools])
-        
+            
         return active_tools
     
     # ================
