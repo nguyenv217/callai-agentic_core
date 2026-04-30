@@ -3,6 +3,8 @@ import logging
 from typing import Any, Tuple, Optional
 from dataclasses import dataclass
 
+from agentic_core.engines import DAGEventObserver
+
 from agentic_core.tools import ToolManager
 from agentic_core.llm_providers import ILLMClient
 from agentic_core.tools.base import BaseTool
@@ -16,71 +18,7 @@ logger = logging.getLogger(__name__)
 class SubAgentPlan:
     nodes: dict[str, dict[str, Any]]
     edges: list[Tuple[str, str]]
-
-class SubAgentCoordinator:
-    """
-    Handles the orchestration of sub-agents. 
-    Decouples the tool interface from the engine implementation.
-    """
-    def __init__(self, llm_client: ILLMClient, tools_manager: ToolManager):
-        self.llm_client = llm_client
-        self.tools_manager = tools_manager
-
-    async def run_plan(self, plan_data: dict[str, Any], parent_memory: Optional[MemoryManager] = None) -> str:
-        nodes_config = plan_data.get("nodes", {})
-        edges_raw = plan_data.get("edges", [])
-
-        if not nodes_config:
-            return "Error: The plan must contain at least one node."
-
-        # Convert edges to tuples
-        edges = [tuple(edge) for edge in edges_raw if isinstance(edge, list) and len(edge) == 2]
-
-        nodes_def = {}
-        for node_id, cfg in nodes_config.items():
-            # Isolation: each sub-agent gets its own memory
-            node_memory = MemoryManager()
-
-            # Inherit system prompt if available
-            if parent_memory and parent_memory.system_prompt:
-                node_memory.set_system_prompt(parent_memory.system_prompt['content'])
-
-            runner = AgentRunner(self.llm_client, self.tools_manager, node_memory)
-
-            # Sub-agents can be granted specific tools.
-            # If not specified, they get a default RunnerConfig (usually only MCP tools).
-            config = RunnerConfig()
-            requested_tools = cfg.get("tools", [])
-            if requested_tools:
-                config.tools = requested_tools
-
-            prompt = cfg.get("prompt", "")
-            max_retries = cfg.get("max_retries", 0)
-            config.max_iterations = max_retries + 1 # approximate mapping
-
-            nodes_def[node_id] = (runner, config, prompt, max_retries)
-
-        try:
-            dag_runner = DAGAgentRunner(nodes_def, edges)
-            result = await dag_runner.execute()
-
-            if result.error:
-                return f"DAG Execution Error: {result.error}"
-
-            # Summarize results for the parent agent
-            summary = []
-            for node_id, node in dag_runner.nodes.items():
-                res = node.result
-                res_text = res.text if hasattr(res, 'text') else str(res)
-                status = node.state.name
-                summary.append(f"[{status}] Task {node_id}: {res_text}")
-
-            return "Sub-agent execution results:\n" + "\n".join(summary)
-
-        except Exception as e:
-            logger.exception("Failed to execute sub-agent plan")
-            return f"Unexpected error during sub-agent orchestration: {str(e)}"
-
+        
 class SpawnSubAgentsTool(BaseTool):
     """
     Tool that provides agent with subagent spawning capability.
@@ -135,21 +73,70 @@ class SpawnSubAgentsTool(BaseTool):
             }
         }
     }
-
-    def __init__(self):
-        # No longer requiring llm_client and tools_manager at init
-        super().__init__()
-
+    
+    
     async def execute(self, args: dict, context: dict) -> str:
         # Resolve dependencies from context
         llm_client = context.get("llm_client")
         tools_manager = context.get("tools_manager")
         parent_memory = context.get("memory_manager")
+        observer: DAGEventObserver = context.get("subagent_observer")
 
         if not llm_client or not tools_manager:
             return "Error: Sub-agent spawning requires 'llm_client' and 'tools_manager' in the context."
 
-        coordinator = SubAgentCoordinator(llm_client, tools_manager)
         plan_data = args.get("plan", {})
 
-        return await coordinator.run_plan(plan_data, parent_memory)
+        nodes_config = plan_data.get("nodes", {})
+        edges_raw = plan_data.get("edges", [])
+
+        if not nodes_config:
+            return "Error: The plan must contain at least one node."
+
+        # Convert edges to tuples
+        edges = [tuple(edge) for edge in edges_raw if isinstance(edge, list) and len(edge) == 2]
+
+        nodes_def = {}
+        for node_id, cfg in nodes_config.items():
+            # Isolation: each sub-agent gets its own memory
+            node_memory = MemoryManager()
+
+            # Inherit system prompt if available
+            if parent_memory and parent_memory.system_prompt:
+                node_memory.set_system_prompt(parent_memory.system_prompt['content'])
+
+            runner = AgentRunner(self.llm_client, self.tools_manager, node_memory)
+
+            # Sub-agents can be granted specific tools.
+            # If not specified, they get a default RunnerConfig (usually only MCP tools).
+            config = RunnerConfig()
+            requested_tools = cfg.get("tools", [])
+            if requested_tools:
+                config.tools = requested_tools
+
+            prompt = cfg.get("prompt", "")
+            max_retries = cfg.get("max_retries", 0)
+            config.max_iterations = max_retries + 1 # approximate mapping
+
+            nodes_def[node_id] = (runner, config, prompt, max_retries)
+
+        try:
+            dag_runner = DAGAgentRunner(nodes_def, edges, observer=observer)
+            result = await dag_runner.execute()
+
+            if result.error:
+                return f"DAG Execution Error: {result.error}"
+
+            # Summarize results for the parent agent
+            summary = []
+            for node_id, node in dag_runner.nodes.items():
+                res = node.result
+                res_text = res.text if hasattr(res, 'text') else str(res)
+                status = node.state.name
+                summary.append(f"[{status}] Task {node_id}: {res_text}")
+
+            return "Sub-agent execution results:\n" + "\n".join(summary)
+
+        except Exception as e:
+            logger.exception("Failed to execute sub-agent plan")
+            return f"Unexpected error during sub-agent orchestration: {str(e)}"
