@@ -4,9 +4,7 @@ from typing import Any, Tuple, Optional
 from dataclasses import dataclass
 
 from agentic_core.tools import ToolManager
-
 from agentic_core.llm_providers import ILLMClient
-
 from agentic_core.tools.base import BaseTool
 from agentic_core.engines.dag_engine import DAGAgentRunner
 from agentic_core.engines.engine import AgentRunner, RunnerConfig
@@ -31,7 +29,7 @@ class SubAgentCoordinator:
     async def run_plan(self, plan_data: dict[str, Any], parent_memory: Optional[MemoryManager] = None) -> str:
         nodes_config = plan_data.get("nodes", {})
         edges_raw = plan_data.get("edges", [])
-        
+
         if not nodes_config:
             return "Error: The plan must contain at least one node."
 
@@ -42,25 +40,34 @@ class SubAgentCoordinator:
         for node_id, cfg in nodes_config.items():
             # Isolation: each sub-agent gets its own memory
             node_memory = MemoryManager()
-            
+
             # Inherit system prompt if available
             if parent_memory and parent_memory.system_prompt:
                 node_memory.set_system_prompt(parent_memory.system_prompt['content'])
 
             runner = AgentRunner(self.llm_client, self.tools_manager, node_memory)
+
+            # Granular Tool Control:
+            # Sub-agents can be granted specific tools.
+            # If not specified, they get a default RunnerConfig (usually only MCP tools).
             config = RunnerConfig()
+            requested_tools = cfg.get("tools", [])
+            if requested_tools:
+                config.tools = requested_tools
+
             prompt = cfg.get("prompt", "")
             max_retries = cfg.get("max_retries", 0)
-            
+            config.max_iterations = max_retries + 1 # approximate mapping
+
             nodes_def[node_id] = (runner, config, prompt, max_retries)
 
         try:
             dag_runner = DAGAgentRunner(nodes_def, edges)
             result = await dag_runner.execute()
-            
+
             if result.error:
                 return f"DAG Execution Error: {result.error}"
-            
+
             # Summarize results for the parent agent
             summary = []
             for node_id, node in dag_runner.nodes.items():
@@ -68,7 +75,7 @@ class SubAgentCoordinator:
                 res_text = res.text if hasattr(res, 'text') else str(res)
                 status = node.state.name
                 summary.append(f"[{status}] Task {node_id}: {res_text}")
-                
+
             return "Sub-agent execution results:\n" + "\n".join(summary)
 
         except Exception as e:
@@ -81,7 +88,7 @@ class SpawnSubAgentsTool(BaseTool):
     It uses a SubAgentCoordinator to manage the lifecycle of the sub-agent swarm.
     """
     name = "spawn_subagents"
-    
+
     schema = {
         "type": "function",
         "funtion": {
@@ -99,11 +106,12 @@ class SpawnSubAgentsTool(BaseTool):
                         "properties": {
                             "nodes": {
                                 "type": "object",
-                                "description": "Map of node_id to task config. Example: {'task1': {'prompt': 'Do X'}}",
+                                "description": "Map of node_id to task config. Example: {'task1': {'prompt': 'Do X', 'tools': ['web_search']}}",
                                 "additionalProperties": {
                                     "type": "object",
                                     "properties": {
                                         "prompt": {"type": "string", "description": "Instruction for the sub-agent."},
+                                        "tools": {"type": "array", "items": {"type": "string"}, "description": "List of specific tools to grant this sub-agent."},
                                         "max_retries": {"type": "integer", "description": "Number of retries allowed for this task."}
                                     },
                                     "required": ["prompt"]
@@ -129,20 +137,20 @@ class SpawnSubAgentsTool(BaseTool):
         }
     }
 
-    def __init__(self, llm_client: ILLMClient, tools_manager: ToolManager):
-        self.coordinator = SubAgentCoordinator(llm_client, tools_manager)
+    def __init__(self):
+        # No longer requiring llm_client and tools_manager at init
+        super().__init__()
 
     async def execute(self, args: dict, context: dict) -> str:
-        # The coordinator can be passed in context for better testability, 
-        # otherwise instantiate it using context providers.
-        coordinator = context.get("subagent_coordinator")
-        
-        if not coordinator:
-            if not self.coordinator:
-                return "Error: Sub-agent spawning requires 'llm_client' and 'tools_manager' in the context."
-            coordinator = self.coordinator
-
-        plan_data = args.get("plan", {})
+        # Resolve dependencies from context
+        llm_client = context.get("llm_client")
+        tools_manager = context.get("tools_manager")
         parent_memory = context.get("memory_manager")
-        
+
+        if not llm_client or not tools_manager:
+            return "Error: Sub-agent spawning requires 'llm_client' and 'tools_manager' in the context."
+
+        coordinator = SubAgentCoordinator(llm_client, tools_manager)
+        plan_data = args.get("plan", {})
+
         return await coordinator.run_plan(plan_data, parent_memory)

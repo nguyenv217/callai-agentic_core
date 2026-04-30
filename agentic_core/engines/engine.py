@@ -245,7 +245,12 @@ class AgentRunner:
                             self.tools.execute(
                                 tool_name, parsed_args, controller=observer,
                                 max_chars=config.max_chars,
-                                extra_context=config.extra_context,
+                                extra_context={
+                                    **(config.extra_context or {}),
+                                    "llm_client": self.llm,
+                                    "tools_manager": self.tools,
+                                    "memory_manager": self.memory,
+                                },
                             )
                         )
                         tc_meta.append((tc["id"], tool_name))
