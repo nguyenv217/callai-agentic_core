@@ -7,6 +7,7 @@ import logging
 
 from agentic_core.config import ConfigurationError
 from agentic_core.interfaces import AgentResponse, DAGNodeResponse, DAGResponse, ProviderRateLimitError, ProviderTimeoutError
+from agentic_core.utils import clean_context_for_downstream
 
 from .engine import AgentRunner, RunnerConfig
 from ..observers import AgentEventObserver
@@ -157,7 +158,7 @@ class DAGAgentRunner:
 
                 try:
                     parent_results = [
-                        f"Node {p_id} result: {self.nodes[p_id].result}"
+                        f"Node {p_id} result: {clean_context_for_downstream(self.nodes[p_id].result.text)}"
                         for p_id in self.in_edges[node_id]
                     ]
 
