@@ -64,7 +64,7 @@ class AgentResponse:
     reasoning: str = ""
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     usage: dict[str, Any] = field(default_factory=dict)
-    error: str | None = None
+    error: BaseException | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -118,6 +118,7 @@ class StreamEvent:
     """Event yielded during a streaming agent turn."""
     type: StreamEventType
     content: Any
+    error: Exception | None = None
 
 
 

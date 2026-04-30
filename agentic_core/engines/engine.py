@@ -7,7 +7,7 @@ from ..tools import ToolManager
 from ..memory.manager import MemoryManager
 from ..observers import AgentEventObserver, DecisionEvent, LastIterationDecision, ToolStartDecision
 from ..config import ConfigurationError, RunnerConfig
-from ..interfaces import AgentResponse, AgenticError, ProviderAuthenticationError, ProviderRateLimitError, StreamEvent, StreamEventType
+from ..interfaces import AgentResponse, AgenticError, ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError, StreamEvent, StreamEventType
 
 import logging
 logger = logging.getLogger(__name__)
@@ -177,15 +177,20 @@ class AgentRunner:
                 except ProviderRateLimitError as e:
                     error_msg = f"Rate Limit Exceeded: {str(e)}"
                     observer.on_error(error_msg)
-                    yield StreamEvent(StreamEventType.ERROR, error_msg)
+                    yield StreamEvent(StreamEventType.ERROR, error_msg, error=e)
                     final_response.error = error_msg
                     return
                 except ProviderAuthenticationError as e:
                     error_msg = f"Authentication Failed: {str(e)}"
                     observer.on_error(error_msg)
-                    yield StreamEvent(StreamEventType.ERROR, error_msg)
+                    yield StreamEvent(StreamEventType.ERROR, error_msg, error=e)
                     final_response.error = error_msg
                     return
+                except ProviderTimeoutError as e:
+                    error_msg = f"Timeout: {str(e)}"
+                    observer.on_error(error_msg)
+                    yield StreamEvent(StreamEventType.ERROR, error_msg, error=e)
+                    final_response.error = error_msg
 
                 logger.info(f"Turn response: {turn_response}")
                 if not turn_response["tool_calls"]:
@@ -292,7 +297,7 @@ class AgentRunner:
             logger.exception("Unexpected error during stream_turn")
             error_msg = f"Engine execution error: {str(e)}"
             observer.on_error(error_msg)
-            yield StreamEvent(StreamEventType.ERROR, error_msg)
+            yield StreamEvent(StreamEventType.ERROR, error_msg, error=e)
             final_response.error = error_msg
 
         finally:
@@ -317,15 +322,18 @@ class AgentRunner:
         """
         final_response = AgentResponse()
         cached_error = None
+        cached_error_msg = None
         
         async for event in self.stream_turn(user_input, observer, config):
             if event.type == StreamEventType.FINAL_RESPONSE:
                 final_response = event.content
             elif event.type == StreamEventType.ERROR:
-                cached_error = event.content
+                cached_error = event.error
+                cached_error_msg = event.content
         
         if cached_error and not final_response.error:
             final_response.error = cached_error
+            final_response.text += cached_error_msg
                 
         return final_response
 
