@@ -3,6 +3,9 @@ import logging
 from typing import Any, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 
+from agentic_core.interfaces import IterationLimitReachedError
+from agentic_core.utils import convert_exception_to_message
+
 if TYPE_CHECKING:
     from agentic_core.engines import DAGEventObserver
     from agentic_core.tools import ToolManager
@@ -130,7 +133,7 @@ class SpawnSubAgentsTool(BaseTool):
             result = await dag_runner.execute()
 
             if result.error:
-                return f"DAG Execution Error: {result.error}"
+                return f"DAG Execution Error: {convert_exception_to_message(result.error)}"
 
             # Summarize results for the parent agent
             summary = []
@@ -139,6 +142,8 @@ class SpawnSubAgentsTool(BaseTool):
                     res_text = node.result.text if hasattr(node.result, 'text') else str(node.result)
                 else:
                     res_text = f"Execution halted: {node.error}"
+                    if isinstance(node.error, IterationLimitReachedError):
+                        res_text += " (Hint: You can retry spawning this subagent by providing a higher 'max_iterations' in the node config)"
                 status = node.state.name
                 summary.append(f"[{status}] Task {node_id}: {res_text}")
 

@@ -240,7 +240,7 @@ class DAGAgentRunner:
         try:
             self.compile()
         except RuntimeError as e:
-            return DAGResponse(error=RuntimeError(str(e)))
+            return DAGResponse(error=e)
         
         for node_id, node in self.nodes.items():
             if node.in_degree == 0:
