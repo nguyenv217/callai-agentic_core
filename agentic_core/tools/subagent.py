@@ -49,8 +49,9 @@ class SpawnSubAgentsTool(BaseTool):
                                     "type": "object",
                                     "properties": {
                                         "prompt": {"type": "string", "description": "Instruction for the sub-agent."},
-                                        "tools": {"type": "array", "items": {"type": "string"}, "description": "List of specific tools to grant this sub-agent."},
-                                        "max_retries": {"type": "integer", "description": "Number of retries allowed for this task."}
+                                        "tools": {"type": "array", "items": {"type": "string"}, "description": "List of specific tools to grant this sub-agent. Tools must be loaded into your context already."},
+                                        "max_retries": {"type": "integer", "description": "Number of times to retry the entire task if it encounters an API or network error."},
+                                        "max_iterations": {"type": "integer", "description": "Maximum number of tool-calling iterations the sub-agent is allowed to take. Default is 10."}
                                     },
                                     "required": ["prompt"]
                                 }
@@ -120,7 +121,7 @@ class SpawnSubAgentsTool(BaseTool):
 
             prompt = cfg.get("prompt", "")
             max_retries = cfg.get("max_retries", 0)
-            config.max_iterations = max_retries + 1 # approximate mapping
+            config.max_iterations = cfg.get("max_iterations", 10)
 
             nodes_def[node_id] = (runner, config, prompt, max_retries)
 
@@ -134,8 +135,10 @@ class SpawnSubAgentsTool(BaseTool):
             # Summarize results for the parent agent
             summary = []
             for node_id, node in dag_runner.nodes.items():
-                res = node.result
-                res_text = res.text if hasattr(res, 'text') else str(res)
+                if node.state.name == "SUCCESS" and node.result:
+                    res_text = node.result.text if hasattr(node.result, 'text') else str(node.result)
+                else:
+                    res_text = f"Execution halted: {node.error}"
                 status = node.state.name
                 summary.append(f"[{status}] Task {node_id}: {res_text}")
 

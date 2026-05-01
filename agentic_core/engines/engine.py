@@ -7,7 +7,7 @@ from ..tools import ToolManager
 from ..memory.manager import MemoryManager
 from ..observers import AgentEventObserver, DecisionEvent, LastIterationDecision, ToolStartDecision
 from ..config import ConfigurationError, RunnerConfig
-from ..interfaces import AgentResponse, AgenticError, ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError, StreamEvent, StreamEventType
+from ..interfaces import AgentResponse, AgenticError, IterationLimitReachedError, ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError, StreamEvent, StreamEventType
 
 import logging
 logger = logging.getLogger(__name__)
@@ -279,9 +279,16 @@ class AgentRunner:
                         })
                     elif decision_event.action == LastIterationDecision.ABANDON:
                         break
+                    elif decision_event.action == LastIterationDecision.EXTEND:
+                        max_iterations += decision_event.extended_iterations_count or max_iterations
+                        continue
 
             if iteration > max_iterations:
-                observer.on_error(f"Agent failed to provide a final answer after {max_iterations} iterations.")
+                error_msg = f"Agent failed to provide a final answer after {max_iterations} iterations."
+                observer.on_error(error_msg)
+                limit_error = IterationLimitReachedError(error_msg)
+                final_response.error = limit_error
+                yield StreamEvent(StreamEventType.ERROR, error_msg, error=limit_error)
 
         except Exception as e:
             # If we reached here, they are unexpected crashes

@@ -19,6 +19,7 @@ class DecisionEvent(Generic[ActionT]):
     """Event for observing the decision made by an agent."""    
     action: ActionT
     message: str | None = None
+    extended_iterations_count: int | None = None
 
     def __post_init__(self):
         if self.action.required_message and self.message is None:
@@ -51,6 +52,10 @@ class ProviderRateLimitError(AgenticError):
 
 class ProviderTimeoutError(AgenticError):
     """Raised when the provider request times out"""
+    pass
+
+class IterationLimitReachedError(Exception):
+    """Raised when the agent exceeds the maximum number"""
     pass
 
 # ===================================================

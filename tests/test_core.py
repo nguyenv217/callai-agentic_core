@@ -1,6 +1,7 @@
 import pytest
 from agentic_core.agents.builder import create_openai_agent
 from agentic_core.config import RunnerConfig
+from agentic_core.interfaces import IterationLimitReachedError
 from agentic_core.llm_providers.base import ILLMClient, LLMResponse
 from agentic_core.observers.standard import SilentObserver
 from agentic_core.tools.base import BaseTool
@@ -53,7 +54,7 @@ async def test_max_iterations_reached(mock_llm_class):
     config = RunnerConfig(max_iterations=3)
     result = await agent.run_turn("Loop me", SilentObserver(), config=config)
 
-    assert result.error is None or "error" not in result
+    assert isinstance(result.error, IterationLimitReachedError)
     assert mock_llm.call_count == 3
 
 @pytest.mark.asyncio
@@ -134,6 +135,6 @@ async def test_observer_abandon_turn(mock_llm_class, error_tool_factory):
 
     result = await agent.run_turn("Abandon me", observer)
 
-    assert result.error is None
+    assert isinstance(result.error, IterationLimitReachedError)
     assert result.text == ""
 

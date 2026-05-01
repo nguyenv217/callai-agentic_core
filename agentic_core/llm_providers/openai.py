@@ -3,6 +3,8 @@ OpenAI LLM Provider.
 """
 from typing import Any, AsyncIterator
 
+from openai import AsyncStream
+
 from ..config import ConfigurationError
 from .base import ILLMClient, LLMResponse
 from ..interfaces import ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError
@@ -10,6 +12,7 @@ from ..interfaces import ProviderAuthenticationError, ProviderRateLimitError, Pr
 _OPENAI_IMPORTED=True
 try:
     from openai import AsyncOpenAI, AuthenticationError, RateLimitError, BadRequestError, APIConnectionError, APITimeoutError
+    from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 except ImportError:
     _OPENAI_IMPORTED=False
 
@@ -74,7 +77,7 @@ class OpenAILLM(ILLMClient):
             # Handle streaming mode for compatibility with stream_engine.py
             if stream:
                 req_kwargs["stream"] = True
-                stream_response = await self.client.chat.completions.create(**req_kwargs)
+                stream_response: AsyncStream[ChatCompletionChunk] = await self.client.chat.completions.create(**req_kwargs)
             
                 async for chunk in stream_response:
                     if not chunk.choices:

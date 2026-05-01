@@ -34,15 +34,17 @@ class LastIterationDecision(Enum):
         CONTINUE: proceed with the last iteration (agent may continue calling tools until iteration budget is depleted)
         LEAVE_MESSAGE: leave a final message for the agent and continue with the last iteration
         ABANDON: return immediately
+        EXTEND: extends the max iteration budget by `max_iterations_count` (if not supplied/is None, defaults to current config's `max_iterations`) 
     """
     CONTINUE = auto()
     LEAVE_MESSAGE = auto()
     ABANDON = auto()
+    EXTEND = auto()
 
     @property
     def required_message(self):
         return self == LastIterationDecision.LEAVE_MESSAGE
-
+    
 class AgentEventObserver(ABC):
     """Base class for observing agent events."""
     
