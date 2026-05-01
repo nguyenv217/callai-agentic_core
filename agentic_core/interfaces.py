@@ -64,7 +64,15 @@ class IterationLimitReachedError(Exception):
 
 @dataclass
 class AgentResponse:
-    """Structured response from an agent turn."""
+    """Structured response from an agent turn.
+    
+    Attributes:
+        text (str): The text response from the agent
+        reasoning (str): The reasoning behind the response
+        tool_calls (list[dict[str, Any]]: List of tool calls
+        usage (dict[str, Any]): Usage information from the inference API
+        error (`BaseException` | None): Error occured during execution
+    """
     text: str = ""
     reasoning: str = ""
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
@@ -82,7 +90,17 @@ class AgentResponse:
 
 @dataclass
 class DAGNodeResponse:
-    """Response for a single node in a DAG."""
+    """
+    Response for a single node in a DAG.
+
+    Attributes:
+        state (str): One of the following: "PENDING", "READY", "RUNNING", "SUCCESS", "FAILED", "FAILED_UPSTREAM", "RETRYING"
+        result (`AgentResponse` | None): The result of the node execution if successful.
+        error (`BaseException` | None): Error occured during execution
+        error_details (str | None): Error details if any
+        failed_by (str | None): Id of parent node failed upstreamed 
+        
+    """
     state: str
     result: AgentResponse | None
     error: BaseException | None = None # due to the nature of swarm we must store this
@@ -123,7 +141,7 @@ class StreamEvent:
     """Event yielded during a streaming agent turn."""
     type: StreamEventType
     content: Any
-    error: Exception | None = None
+    error: BaseException | None = None
 
 
 
