@@ -43,7 +43,7 @@ def subagent_tool():
 @pytest.mark.asyncio
 async def test_spawn_subagents_basic_flow(subagent_tool, mock_llm, mock_tm):
     context = {
-        "memory_manager": MemoryManager(),
+        
         "llm_client": mock_llm,
         "tools_manager": mock_tm
     }
@@ -67,7 +67,7 @@ async def test_spawn_subagents_basic_flow(subagent_tool, mock_llm, mock_tm):
 @pytest.mark.asyncio
 async def test_spawn_subagents_granular_tools(subagent_tool, mock_llm, mock_tm):
     context = {
-        "memory_manager": MemoryManager(),
+        
         "llm_client": mock_llm,
         "tools_manager": mock_tm
     }
@@ -108,7 +108,7 @@ async def test_spawn_subagents_missing_context(subagent_tool):
 @pytest.mark.asyncio
 async def test_spawn_subagents_invalid_plan(subagent_tool):
     context = {
-        "memory_manager": MemoryManager(),
+        
         "llm_client": MagicMock(),
         "tools_manager": MagicMock()
     }
@@ -119,4 +119,4 @@ async def test_spawn_subagents_invalid_plan(subagent_tool):
         }
     }
     result = await subagent_tool.execute(args, context)
-    assert "Error: The plan must contain at least one node" in result
+    assert "Validation Error" in result

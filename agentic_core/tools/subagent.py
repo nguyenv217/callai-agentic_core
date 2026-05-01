@@ -34,10 +34,14 @@ class SpawnSubAgentsTool(BaseTool):
         "type": "function",
         "function": {
             "name": "spawn_subagents",
-            "description": "Decompose a complex goal into a set of dependent sub-tasks. "
-                            "Use this when a task requires multiple steps that can be done in parallel "
-                            "or have strict sequential dependencies. "
-                            "Define nodes (tasks) and edges (dependencies).",
+            "description": (
+                        "Decompose a complex goal into a set of dependent sub-tasks. "
+                        "Use this when a task requires multiple steps that can be done in parallel "
+                        "or have strict sequential dependencies. "
+                        "CRITICAL KNOWLEDGE FLOW: Context and outputs from a node are ONLY passed to its "
+                        "direct downstream dependents. Parallel branches are completely isolated and share NO knowledge. "
+                        "Design your nodes and edges accordingly."
+                    ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -84,7 +88,6 @@ class SpawnSubAgentsTool(BaseTool):
         # Resolve dependencies from context
         llm_client: ILLMClient = context.get("llm_client")
         tools_manager: ToolManager = context.get("tools_manager")
-        parent_memory: MemoryManager = context.get("memory_manager")
         observer: DAGEventObserver = context.get("subagent_observer")
 
         if not llm_client or not tools_manager:
@@ -95,8 +98,22 @@ class SpawnSubAgentsTool(BaseTool):
         nodes_config = plan_data.get("nodes", {})
         edges_raw = plan_data.get("edges", [])
 
-        if not nodes_config:
-            return "Error: The plan must contain at least one node."
+        if not nodes_config or not isinstance(nodes_config, dict):
+            return "Validation Error: 'nodes' must be a non-empty dictionary mapping node IDs to their configurations."
+
+        if not isinstance(edges_raw, list):
+            return "Validation Error: 'edges' must be a list of dependency pairs."
+        
+        edges = []
+        for edge in edges_raw:
+            if not isinstance(edge, (list, tuple)) or len(edge) != 2:
+                return f"Validation Error: Invalid edge format {edge}. Each edge must be exactly a pair of node IDs like ['from_node', 'to_node']."
+            
+            u, v = edge
+            if u not in nodes_config:
+                return f"Validation Error: Edge references unknown source node '{u}'. Node must exist in 'nodes'."
+            if v not in nodes_config:
+                return f"Validation Error: Edge references unknown target node '{v}'. Node must exist in 'nodes'."
 
         # Convert edges to tuples
         edges = [tuple(edge) for edge in edges_raw if isinstance(edge, list) and len(edge) == 2]
@@ -105,10 +122,6 @@ class SpawnSubAgentsTool(BaseTool):
         for node_id, cfg in nodes_config.items():
             # Isolation: each sub-agent gets its own memory
             node_memory = MemoryManager()
-
-            # Inherit system prompt if available
-            if parent_memory and parent_memory.system_prompt:
-                node_memory.set_system_prompt(parent_memory.system_prompt['content'])
 
             runner = AgentRunner(llm_client, tools_manager, node_memory)
 
