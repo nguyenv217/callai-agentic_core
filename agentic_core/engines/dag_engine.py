@@ -1,21 +1,19 @@
 import asyncio
 import traceback
 from enum import Enum, auto
-from typing import Any, Tuple
+from typing import Tuple
 from dataclasses import dataclass
 import logging
 
 from agentic_core.config import ConfigurationError
 from agentic_core.interfaces import AgentResponse, DAGNodeResponse, DAGResponse, ProviderRateLimitError, ProviderTimeoutError
 from agentic_core.utils import clean_context_for_downstream
-
 from .engine import AgentRunner, RunnerConfig
 from ..observers import AgentEventObserver
 
 logger = logging.getLogger(__name__)
 
 class NodeExecutionError(Exception):
-    """Custom exception for errors during node execution."""
     def __init__(self, node_id: str, message: str, original_exception: Exception | None = None):
         self.node_id = node_id
         self.original_exception = original_exception
@@ -49,16 +47,12 @@ class DAGNode:
 class DAGEventObserver(AgentEventObserver):
     def on_node_queued(self, node_id: str, priority: int):
         logger.info(f"[DAG] Node {node_id} queued with priority {priority}")
-
     def on_node_start(self, node_id: str, worker_id: int):
         logger.info(f"[DAG] Worker {worker_id} starting node {node_id}")
-
     def on_node_complete(self, node_id: str, status: NodeState, result: AgentResponse):
         logger.info(f"[DAG] Node {node_id} completed with status {status}")
-
     def on_node_retry(self, node_id: str, retry_count: int, max_retries: int):
         logger.info(f"[DAG] Node {node_id} failed. Retrying ({retry_count}/{max_retries})...")
-
     def on_graph_complete(self, diagnostics: DAGResponse):
         logger.info(f"[DAG] Graph execution complete. Diagnostics: {diagnostics.to_dict()}")
 
@@ -68,7 +62,8 @@ class DAGAgentRunner:
         nodes_def: dict[str, Tuple[AgentRunner, RunnerConfig, str, int]] | None, 
         edges: list[Tuple[str, str]], 
         max_concurrency: int = 4,
-        observer: DAGEventObserver | None = None
+        observer: DAGEventObserver | None = None,
+        checkpoint_state: dict[str, AgentResponse] | None = None
     ):
         """
         Engine for concurrent dispatch of agent swarms with dependencies modeled as a Directed Acyclic Graph (DAG) .
@@ -100,34 +95,39 @@ class DAGAgentRunner:
         self.max_concurrency = max_concurrency
         self.observer = observer or DAGEventObserver()
         self.queue = asyncio.PriorityQueue()
+        
+        if checkpoint_state:
+            for node_id, result in checkpoint_state.items():
+                if node_id in self.nodes:
+                    node = self.nodes[node_id]
+                    node.state = NodeState.SUCCESS
+                    node.result = result
+                    # Decrement in_degree for all downstream nodes to unlock them
+                    for child_id in self.out_edges[node_id]:
+                        self.in_degree[child_id] -= 1
+                        self.nodes[child_id].in_degree = self.in_degree[child_id]
 
     def compile(self):
-        """Cycle detection and Critical Path priority scoring."""
         from collections import deque
-
         temp_in_degree = self.in_degree.copy()
         queue = deque([n for n in self.nodes if temp_in_degree[n] == 0])
         visited_nodes = set()
-
         topo_order = []
 
         while queue:
             u = queue.popleft()
             visited_nodes.add(u)
             topo_order.append(u)
-
             for v in self.out_edges[u]:
                 temp_in_degree[v] -= 1
                 if temp_in_degree[v] == 0:
                     queue.append(v)
 
         if len(visited_nodes) != len(self.nodes):
-            # Identify nodes that are part of the cycle
             unvisited_nodes = [node_id for node_id in self.nodes if node_id not in visited_nodes]
             cycle_message = (
-                f"Cycle detected in DAG. TUnprocessed nodes: {unvisited_nodes}. "
-                f"Total nodes: {len(self.nodes)}, Visited nodes: {len(visited_nodes)}. "
-                f"Please review the edges to ensure no circular dependencies exist."
+                f"Cycle detected in DAG. Unprocessed nodes: {unvisited_nodes}. "
+                f"Total nodes: {len(self.nodes)}, Visited nodes: {len(visited_nodes)}."
             )
             raise RuntimeError(cycle_message)
 
@@ -148,7 +148,6 @@ class DAGAgentRunner:
                 prio, node_id = await self.queue.get()
                 node = self.nodes[node_id]
 
-                # Skip nodes already in terminal states (can happen due to delayed retry requeue)
                 if node.state in (NodeState.SUCCESS, NodeState.FAILED, NodeState.FAILED_UPSTREAM):
                     self.queue.task_done()
                     continue
@@ -161,7 +160,6 @@ class DAGAgentRunner:
                         f"Node {p_id} result: {clean_context_for_downstream(self.nodes[p_id].result.text)}"
                         for p_id in self.in_edges[node_id]
                     ]
-
                     context_prefix = "\n\nParent Context:\n" + "\n".join(parent_results) if parent_results else ""
                     full_prompt = node.prompt + context_prefix
 
@@ -191,8 +189,7 @@ class DAGAgentRunner:
                 except Exception as e:
                     tb_str = traceback.format_exc()
                     error_msg = str(e)
-
-                    # Determine if error is retryable
+                    
                     retryable_keywords = ["timeout", "rate limit", "api error", "overloaded"]
                     retryable_exec_types = [ProviderRateLimitError, ProviderTimeoutError]
                     is_retryable = any(kw in error_msg.lower() for kw in retryable_keywords) or any(isinstance(e, exc_type) for exc_type in retryable_exec_types)
@@ -202,7 +199,6 @@ class DAGAgentRunner:
                         node.state = NodeState.RETRYING
                         self.observer.on_node_retry(node_id, node.current_retries, node.max_retries)
 
-                        # Exponential backoff: 2^retry_count seconds, scheduled in background so all other nodes can proceed
                         backoff = 2 ** node.current_retries
                         await asyncio.sleep(backoff)
                         await self.queue.put((-node.priority, node_id))
@@ -213,7 +209,6 @@ class DAGAgentRunner:
                         node.error_details = tb_str
                         self.observer.on_node_complete(node_id, NodeState.FAILED, error_msg)
                         await self._cascade_failure(node_id)
-
                 finally:
                     self.queue.task_done()
             except asyncio.CancelledError:
@@ -228,6 +223,7 @@ class DAGAgentRunner:
                 continue
             visited.add(node_id)
             node = self.nodes[node_id]
+
             if node.state not in (NodeState.SUCCESS, NodeState.FAILED):
                 node.state = NodeState.FAILED_UPSTREAM
                 node.failed_by = failed_node_id
@@ -240,15 +236,19 @@ class DAGAgentRunner:
         try:
             self.compile()
         except RuntimeError as e:
-            return DAGResponse(error=e)
-        
+            return DAGResponse(error=RuntimeError(str(e)))
+            
         for node_id, node in self.nodes.items():
+            if node.state == NodeState.SUCCESS:
+                continue # Skip nodes pre-completed by checkpoint
+                
             if node.in_degree == 0:
                 node.state = NodeState.READY
                 await self.queue.put((-node.priority, node_id))
                 self.observer.on_node_queued(node_id, node.priority)
 
         workers = [asyncio.create_task(self._worker(i)) for i in range(self.max_concurrency)]
+
         try:
             await self.queue.join()
         finally:
@@ -265,6 +265,7 @@ class DAGAgentRunner:
                 error_details=node.error_details,
                 failed_by=node.failed_by
             )
+
         response = DAGResponse(nodes=nodes_resp)
         self.observer.on_graph_complete(response)
         return response
