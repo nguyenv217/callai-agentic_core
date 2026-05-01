@@ -120,7 +120,10 @@ class AgentRunner:
             config: Optional configuration that overrides the default runner configuration.
 
         Yields:
-            StreamEvent: Events representing the agent's thought process, tool usage, and final responses. Access original errors via `StreamEvent.error`: `BaseException` | `None`
+            `StreamEvent`: 
+                Events representing the agent's thought process, tool usage, and final responses. 
+                Access content type via `StreamEvent.type` and `StreamEvent.content`
+                Access original errors via `StreamEvent.error`: `BaseException` | `None`
         """
 
         if not observer:

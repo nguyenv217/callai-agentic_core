@@ -133,8 +133,8 @@ class StreamEventType(Enum):
     REASONING = "reasoning"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
-    FINAL_RESPONSE = "final_response"
     ERROR = "error"
+    FINAL_RESPONSE = "final_response"
 
 @dataclass
 class StreamEvent:
