@@ -59,8 +59,8 @@ class DAGEventObserver(AgentEventObserver):
     def on_node_retry(self, node_id: str, retry_count: int, max_retries: int):
         logger.info(f"[DAG] Node {node_id} failed. Retrying ({retry_count}/{max_retries})...")
 
-    def on_graph_complete(self, diagnostics: dict[str, Any]):
-        logger.info(f"[DAG] Graph execution complete. Diagnostics: {diagnostics}")
+    def on_graph_complete(self, diagnostics: DAGResponse):
+        logger.info(f"[DAG] Graph execution complete. Diagnostics: {diagnostics.to_dict()}")
 
 class DAGAgentRunner:
     def __init__(
@@ -266,5 +266,5 @@ class DAGAgentRunner:
                 failed_by=node.failed_by
             )
         response = DAGResponse(nodes=nodes_resp)
-        self.observer.on_graph_complete(response.to_dict())
+        self.observer.on_graph_complete(response)
         return response
