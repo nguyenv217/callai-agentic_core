@@ -7,11 +7,11 @@ from ..config import ConfigurationError
 from .base import ILLMClient, LLMResponse
 from ..interfaces import ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError
 
-_openai_imported=True
+_OPENAI_IMPORTED=True
 try:
     from openai import AsyncOpenAI, AuthenticationError, RateLimitError, BadRequestError, APIConnectionError, APITimeoutError
 except ImportError:
-    _openai_imported=False
+    _OPENAI_IMPORTED=False
 
 class OpenAILLM(ILLMClient):
     """OpenAI GPT adapter."""
@@ -25,7 +25,7 @@ class OpenAILLM(ILLMClient):
         timeout: float = 30,
         **kwargs
     ):
-        if not _openai_imported:
+        if not _OPENAI_IMPORTED:
             raise ImportError("Missing dependency `openai`. Please install via `pip install openai`")
         
         if client:

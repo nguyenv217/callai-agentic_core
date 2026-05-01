@@ -1,4 +1,3 @@
-from typing import List, Protocol, Optional
 from ..core import IEmbeddingProvider
 
 class OpenAIEmbedder(IEmbeddingProvider):
@@ -25,7 +24,7 @@ class OpenAIEmbedder(IEmbeddingProvider):
             self._client = AsyncOpenAI(api_key=self._api_key)
         return self._client
     
-    async def embed(self, texts: List[str]) -> List[List[float]]:
+    async def embed(self, texts: list[str]) -> list[list[float]]:
         response = await self.client.embeddings.create(
             model=self._model,
             input=texts,
@@ -47,7 +46,7 @@ class OllamaEmbedder(IEmbeddingProvider):
         self._base_url = base_url
         self._model = model
     
-    async def embed(self, texts: List[str]) -> List[List[float]]:
+    async def embed(self, texts: list[str]) -> list[list[float]]:
         import ollama
         embeddings = []
         for text in texts:
@@ -77,14 +76,14 @@ class LocalEmbedder(IEmbeddingProvider):
             
             self._model = SentenceTransformer(self._model_name, device=self._device)
     
-    async def embed(self, texts: List[str]) -> List[List[float]]:
+    async def embed(self, texts: list[str]) -> list[list[float]]:
         self._load_model()
         embeddings = self._model.encode(texts, convert_to_numpy=True, show_progress_bar=False)
         return embeddings.tolist()
 
 
 class MockEmbedder(IEmbeddingProvider):
-    async def embed(self, texts: List[str]) -> List[List[float]]:
+    async def embed(self, texts: list[str]) -> list[list[float]]:
         import hashlib
         embeddings = []
         for text in texts:

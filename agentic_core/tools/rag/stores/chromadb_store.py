@@ -9,7 +9,6 @@ try:
 except ImportError:
     raise ConfigurationError("ChromaDB is not installed. Please install with `pip install chromadb`")    
     
-
 class ChromaDBVectorStore(IVectorStore):
     def __init__(
         self,
