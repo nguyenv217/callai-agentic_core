@@ -188,12 +188,16 @@ class AgentRunner:
                         if response.reasoning:
                             turn_response["reasoning"] += response.reasoning
                             yield StreamEvent(StreamEventType.REASONING, response.reasoning)
-                        if response.tool_calls:
-                            turn_response["tool_calls"].extend(response.tool_calls)
-                            for tc in response.tool_calls:
-                                yield StreamEvent(StreamEventType.TOOL_CALL, tc)
+                        if response.tool_calls: # we compromise with non-responsiveness for a while tool argumemnts are accumulated
+                            if response.finish_reason == "tool_calls":
+                                turn_response["tool_calls"].extend(response.tool_calls)
+                                for tc in response.tool_calls:
+                                    yield StreamEvent(StreamEventType.TOOL_CALL, tc)
+                            else: 
+                                yield StreamEvent(StreamEventType.TOOL_STARTED, tc['function'].get('name')) # gives end-user the name which is the only useful variable
                         if response.usage:
                             self.last_usage_meta = response.usage
+
                 except ProviderRateLimitError as e:
                     error_msg = f"Rate Limit Exceeded: {str(e)}"
                     observer.on_error(error_msg)
@@ -352,12 +356,15 @@ class AgentRunner:
             ProviderRateLimitError: If the LLM provider rate limits are exceeded.
         """
         final_response = AgentResponse()
+        final_response.tool_calls = []
         cached_error = None
         cached_error_msg = None
-        
+
         async for event in self.stream_turn(user_input, observer, config):
             if event.type == StreamEventType.FINAL_RESPONSE:
                 final_response = event.content
+            elif event.type == StreamEventType.TOOL_CALL:
+                final_response.tool_calls.append(event.content)
             elif event.type == StreamEventType.ERROR:
                 cached_error = event.error
                 cached_error_msg = event.content

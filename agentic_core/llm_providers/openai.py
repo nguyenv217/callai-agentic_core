@@ -3,16 +3,13 @@ OpenAI LLM Provider.
 """
 from typing import Any, AsyncIterator
 
-from openai import AsyncStream
-
 from ..config import ConfigurationError
 from .base import ILLMClient, LLMResponse
-from ..interfaces import ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError
+from ..interfaces import ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError, Message, ToolSchema
 
 _OPENAI_IMPORTED=True
 try:
     from openai import AsyncOpenAI, AuthenticationError, RateLimitError, BadRequestError, APIConnectionError, APITimeoutError
-    from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
 except ImportError:
     _OPENAI_IMPORTED=False
 
@@ -43,8 +40,8 @@ class OpenAILLM(ILLMClient):
     
     async def ask(
         self, 
-        messages: list[dict[str, Any]], 
-        tools: list[dict[str, Any]] | None = None, 
+        messages: list[Message], 
+        tools: list[ToolSchema] | None = None, 
         stream: bool = False,
         **kwargs
     ) -> AsyncIterator[LLMResponse]:
@@ -61,8 +58,7 @@ class OpenAILLM(ILLMClient):
             AsyncIterator[LLMResponse]: An iterator of LLMResponse objects.
         """
         try:
-            # Build request kwargs dynamically to avoid SDK validation errors
-            # when tools=None is passed (which causes 400 Bad Request)
+            # Build request kwargs dynamically to avoid SDK validation errors when tools=None is passed
             req_kwargs = {
                 "model": self.model,
                 "messages": messages,
@@ -70,49 +66,66 @@ class OpenAILLM(ILLMClient):
                 **kwargs
             }
             
-            # Only attach tools if actually present - prevents "None" validation errors
             if tools:
                 req_kwargs["tools"] = tools
 
+            accumulated_tools = {}
+
             # Handle streaming mode for compatibility with stream_engine.py
             if stream:
-                req_kwargs["stream"] = True
-                stream_response: AsyncStream[ChatCompletionChunk] = await self.client.chat.completions.create(**req_kwargs)
+                stream_response = await self.client.chat.completions.create(stream=True, **req_kwargs)
             
                 async for chunk in stream_response:
                     if not chunk.choices:
                         continue
                     
-                    delta = chunk.choices[0].delta
+                    choice = chunk.choices[0]
+                    delta = choice.delta
 
                     # Collect tool calls as they appear
-                    tool_calls = []
                     if delta.tool_calls:
-                        for tc in delta.tool_calls:
-                            tool_calls.append({
-                                "id": tc.id or "",
-                                "type": tc.type or "function",
-                                "function": {
-                                    "name": tc.function.name if tc.function else "",
-                                    "arguments": tc.function.arguments if tc.function else ""
+                        for tc_delta in delta.tool_calls:
+                            idx = tc_delta.index
+                            
+                            # If this is a new tool call index, initialize it
+                            if idx not in accumulated_tools:
+                                accumulated_tools[idx] = {
+                                    "id": "",
+                                    "type": "function",
+                                    "function": {"name": "", "arguments": ""}
                                 }
-                            })
+                            
+                            target = accumulated_tools[idx]
+                            
+                            # Update ID if present (usually only in the first chunk for this index)
+                            if tc_delta.id:
+                                target["id"] = tc_delta.id
+                            
+                            # Update Function details
+                            if tc_delta.function:
+                                if tc_delta.function.name:
+                                    target["function"]["name"] += tc_delta.function.name
+                                if tc_delta.function.arguments:
+                                    target["function"]["arguments"] += tc_delta.function.arguments
 
+                    current_tool_calls = list(accumulated_tools.values())
+                    
                     yield LLMResponse(
                         text=delta.content or "",
-                        reasoning=getattr(delta, "reasoning_content", "") or "",
-                        tool_calls=tool_calls,
-                        usage={}
+                        reasoning=getattr(delta, "reasoning_content") or getattr(delta, "reasoning") or getattr(delta, "thinking") or "",
+                        tool_calls=current_tool_calls,
+                        usage=chunk.usage or {}, # only yielded at last chunk
+                        finish_reason=choice.finish_reason
                     )
 
                 return
 
-            response = await self.client.chat.completions.create(**req_kwargs)
+            response = await self.client.chat.completions.create(stream=False,**req_kwargs)
 
             msg = response.choices[0].message
             yield LLMResponse(
                 text=msg.content or "",
-                reasoning= getattr(msg, "reasoning_content", "") or getattr(msg, "reasoning", ""),
+                reasoning=getattr(msg, "reasoning_content") or getattr(msg, "reasoning") or getattr(msg, "thinking") or "",
                 tool_calls=[tc.model_dump() for tc in msg.tool_calls] if msg.tool_calls else [],
                 usage={
                     "prompt_tokens": response.usage.prompt_tokens,
