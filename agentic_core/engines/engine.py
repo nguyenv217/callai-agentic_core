@@ -1,6 +1,8 @@
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, Callable
 import json
 import asyncio
+
+from agentic_core.utils import HeuristicFailedToParse, heuristic_json_parse
 
 from ..llm_providers import ILLMClient 
 from ..tools import ToolManager
@@ -8,7 +10,12 @@ from ..memory.manager import MemoryManager
 from ..observers import AgentEventObserver
 from ..decisions import DecisionEvent, LastIterationAction, LastIterationDecision, ToolStartDecision
 from ..config import ConfigurationError, RunnerConfig
-from ..interfaces import AgentResponse, AgenticError, IterationLimitReachedError, ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError, StreamEvent, StreamEventType
+from ..interfaces import (
+    AgentResponse, 
+    IterationLimitReachedError, 
+    ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError, 
+    StreamEvent, StreamEventType
+)
 
 import logging
 logger = logging.getLogger(__name__)
@@ -25,7 +32,8 @@ class AgentRunner:
         tools: ToolManager,
         memory: MemoryManager,
         config: RunnerConfig | None = None,
-        observer: AgentEventObserver | None = None
+        observer: AgentEventObserver | None = None,
+        tool_args_parser: Callable[[str], dict[str, Any]] | None = None
     ):
         """
         Initializes the AgentRunner with the provided LLM client, tools, memory, and configuration.
@@ -36,6 +44,9 @@ class AgentRunner:
             memory (MemoryManager): Handles the agent's memory operations.
             config (RunnerConfig): Configuration settings for the agent runner. Can be overwritten at runtime.
             observer (AgentEventObserver): Observer for agent events. Can be overwritten at runtime.
+            tool_args_parser (Callable[[str], dict[str,Any]): 
+                Custom runtime tool argument parser for LLM `tool_call` whenever the argument is a string and need manual parsing. 
+                Defaults to `heuristic_json_parse()` which attemps to extract and parse the string heuristically with regex and ast.
         """
         self.llm = llm_client
         self.tools = tools 
@@ -44,6 +55,7 @@ class AgentRunner:
         self.config = config or RunnerConfig()
         self.observer = observer
         self._toolset_prompt_loaded = False
+        self.tool_args_parser = tool_args_parser or heuristic_json_parse
 
     # ===================
     # Context management 
@@ -110,7 +122,8 @@ class AgentRunner:
         self, 
         user_input: str | list[dict], 
         observer: AgentEventObserver | None = None, 
-        config: RunnerConfig | None = None
+        config: RunnerConfig | None = None,
+        tool_args_parser: Callable[[str], dict[str, Any]] | None = None
         ) -> AsyncGenerator[StreamEvent, None]:
         """
         Executes a turn of the agent, streaming events as they occur.
@@ -235,8 +248,10 @@ class AgentRunner:
                             break
                         case ToolStartDecision.CONTINUE():
                             try:
-                                parsed_args = json.loads(tool_args) if isinstance(tool_args, str) else tool_args
-                            except json.JSONDecodeError as e:
+                                parser = tool_args_parser or self.tool_args_parser
+
+                                parsed_args = parser(tool_args) if isinstance(tool_args, str) else tool_args
+                            except HeuristicFailedToParse as e:
                                 error_msg = f"Error: Invalid JSON arguments provided. Please fix the syntax and try again. Details: {str(e)}"
                                 observer.on_tool_complete(tool_name, tool_id, False, error_msg)
                                 self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=error_msg)
