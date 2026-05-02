@@ -13,6 +13,9 @@ from ..interfaces import AgentResponse, AgenticError, IterationLimitReachedError
 import logging
 logger = logging.getLogger(__name__)
 
+import os
+ITERATION_HARD_CAP = os.getenv("AGENTIC_ITERATION_MAXIMUM") or 50
+
 class AgentRunner:
     """
     A class that manages the execution of an agent, coordinating between an LLM client,
@@ -95,7 +98,8 @@ class AgentRunner:
     def _get_active_tools(self, config: RunnerConfig):
         active_tools = list(config.tools) if config.tools else self.tools.get_tools_from_toolset(config.toolset)
         
-        active_tools.extend([t for t in self.tools.get_mcp_loaded_tools() if t not in active_tools])
+        if config.mcp_use_loaded_tools:
+            active_tools.extend([t for t in self.tools.get_mcp_loaded_tools() if t not in active_tools])
         
         if config.mcp_enable_discovery:
             active_tools.extend([t for t in self.tools.get_discovery_tools() if t not in active_tools])
@@ -145,7 +149,7 @@ class AgentRunner:
         final_response = AgentResponse()
 
         try:
-            while iteration <= max_iterations:
+            while iteration <= max_iterations and iteration <= ITERATION_HARD_CAP:
                 observer.on_iteration_start(iteration, max_iterations)
                 conversation = self.memory.get_history()
                 logger.info(f"Tools turn {iteration}: {[t['function']['name'] for t in active_tools]}")

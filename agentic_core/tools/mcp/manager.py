@@ -48,6 +48,7 @@ class _MCPSession(TypedDict):
     task: asyncio.Task
     ref_count: int
 
+
 class GlobalMCPRegistry:
     """
     A singleton registry that manages a pool of active MCP sessions.
@@ -66,11 +67,12 @@ class GlobalMCPRegistry:
         return cls._instance
 
     @staticmethod
-    def _get_identity_key(server_config: dict[str, Any]) -> Tuple:
+    def _get_identity_key(server_config: dict[str, Any], tenant_id: str = "default") -> Tuple:
+        """Identity key hash from (command, args, eng) and a tenant_id to prevent cross-tenant poisoning"""
         command = server_config.get("command", "python")
         args = tuple(server_config.get("args", []))
         env = tuple(sorted(server_config.get("env", {}).items()))
-        return (command, args, env)
+        return (tenant_id, command, args, env)
 
     async def _get_lock_for_identity(self, identity_key: Tuple) -> asyncio.Lock:
         async with self._global_lock:
@@ -83,13 +85,14 @@ class GlobalMCPRegistry:
         server_name: str,
         server_config: dict[str, Any],
         extra_env: dict[str, str] | None,
-        on_server_death: Callable[[str, Exception], Any] | None
+        on_server_death: Callable[[str, Exception], Any] | None,
+        tenant_id: str = "default"
     ) -> _MCPSession:
         """
         Acquires a session for the given configuration.
         Returns an existing session if available, or creates a new one.
         """
-        identity_key = self._get_identity_key(server_config)
+        identity_key = self._get_identity_key(server_config, tenant_id)
 
         if identity_key in self._failed_sessions:
             raise RuntimeError(f"Server '{server_name}' previously failed to initialize. Blocking retry.")
@@ -110,7 +113,14 @@ class GlobalMCPRegistry:
                 raise RuntimeError(f"Could not find {raw_command}")
 
             safe_env_keys = ["PATH", "HOME", "USERPROFILE", "SystemRoot", "APPDATA", "LOCALAPPDATA"]
-            env = {**{k: os.environ[k] for k in safe_env_keys if k in os.environ}, **(extra_env or {})}
+            env = {k: os.environ[k] for k in safe_env_keys if k in os.environ}
+            if extra_env:
+                for k, v in extra_env.items():
+                    # Validate keys are alphanumeric + underscore
+                    if not k.replace("_", "").isalnum():
+                        logger.warning(f"Dropping unsafe extra_env key: {k}")
+                        continue
+                    env[k] = str(v)
             
             # Inject environment variables in the command and args
             server_env = server_config.get("env", {})
@@ -124,15 +134,6 @@ class GlobalMCPRegistry:
                     else:
                         env[key] = value
             
-            def env_lookup(match):
-                key = match.group(1)
-                val = (extra_env or {}).get(key)
-                if val is not None:
-                    return val
-                return os.environ.get(key, f"${{{key}}}") # Fallback to original string
-            
-            args = [re.sub(r"\${(.*?)\}", env_lookup, arg) for arg in args]
-
             shutdown_event = asyncio.Event()
             init_event = asyncio.Event()
             session_ref = {"error": None}
@@ -310,7 +311,7 @@ class MCPClientManager:
     def get_active_servers(self):
         return [s['name'] for s in self.sessions]
 
-    async def initialize(self, allowed_servers: list[str] | None = None, extra_env: dict[str, str] | None = None) -> bool:
+    async def initialize(self, allowed_servers: list[str] | None = None, extra_env: dict[str, str] | None = None, tenant_id: str = "default") -> bool:
         """
         Initialize connections to configured MCP servers.
 
@@ -349,7 +350,7 @@ class MCPClientManager:
         try:
             server_names = list(servers_to_start.keys())
             results = await asyncio.gather(
-                *(self._connect_to_server(name, cfg, extra_env) for name, cfg in servers_to_start.items()),
+                *(self._connect_to_server(name, cfg, extra_env, tenant_id) for name, cfg in servers_to_start.items()),
                 return_exceptions=True
             )
 
@@ -362,8 +363,8 @@ class MCPClientManager:
         except ImportError:
             raise ConfigurationError("MCP SDK not installed. Run: `pip install mcp`")
 
-    async def _connect_to_server(self, server_name: str, server_config: dict[str, Any], extra_env: dict[str, str] | None):
-        identity_key = self._registry._get_identity_key(server_config)
+    async def _connect_to_server(self, server_name: str, server_config: dict[str, Any], extra_env: dict[str, str] | None, tenant_id: str = "default"):
+        identity_key = self._registry._get_identity_key(server_config, tenant_id)
 
         session_info = await self._registry.acquire(
             server_name,

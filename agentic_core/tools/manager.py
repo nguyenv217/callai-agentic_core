@@ -129,12 +129,12 @@ class ToolManager:
     async def initialize_mcp(self, allowed_servers: list[str] | None = None, extra_env: dict[str, str] | None = None) -> int:
         """Connects to MCP servers and pre-loads tool definitions into standby.
         Args:
-        allowed_servers: 
-            List of server names to connect to instead of connecting to all 
-            configured servers. Defaults to None.
-        extra_env: 
-            Dictionary of extra environment variables to be used when 
-            creating the connection to the MCP server. Defaults to None
+            allowed_servers: 
+                List of server names to connect to instead of connecting to all 
+                configured servers. Defaults to None.
+            extra_env: 
+                Dictionary of extra environment variables to be used when 
+                creating the connection to the MCP server. Defaults to None
         """
         # Dynamic import prevents crashing if user doesn't have MCP dependencies installed
         from .mcp.manager import MCPClientManager
