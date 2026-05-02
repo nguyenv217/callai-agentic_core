@@ -115,7 +115,6 @@ class OpenAILLM(ILLMClient):
                         reasoning=getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None) or getattr(delta, "thinking", None) or "",
                         tool_calls=current_tool_calls,
                         usage=chunk.usage or {}, # only yielded at last chunk
-                        finish_reason=choice.finish_reason
                     )
 
                 return

@@ -15,7 +15,7 @@ async def test_tool_json_decode_error(mock_llm_class):
     """Test that invalid JSON arguments from LLM are handled gracefully."""
     resp1 = LLMResponse(
        text="", usage={},
-        tool_calls=[{"id": "call_1", "function": {"name": "add_numbers", "arguments": '{"a": 5, "b":'}}], finish_reason="tool_calls"
+        tool_calls=[{"id": "call_1", "function": {"name": "add_numbers", "arguments": '{"a": 5, "b":'}}], 
     )
     resp2 = LLMResponse(text="I fixed the JSON.", tool_calls=[], usage={})
 
@@ -36,7 +36,7 @@ async def test_max_iterations_reached(mock_llm_class):
     resp = LLMResponse(
        text="", usage={},
         tool_calls=[{"id": "loop", "function": {"name": "loop_tool", "arguments": "{}"}}],
-        finish_reason="tool_calls"
+        
     )
     mock_llm = mock_llm_class([resp] * 10)
 
@@ -64,7 +64,7 @@ async def test_tool_exception_handling(mock_llm_class, error_tool_factory):
     resp1 = LLMResponse(
         text="", usage={},
         tool_calls=[{"id": "fail_1", "function": {"name": "error_tool", "arguments": "{}"}}],
-        finish_reason="tool_calls"
+        
     )
     resp2 = LLMResponse(text="The tool failed, but I'm okay.", tool_calls=[], usage={}, )
 
@@ -103,7 +103,7 @@ async def test_observer_skip_tool(mock_llm_class, error_tool_factory):
     resp1 = LLMResponse(
         text="", usage={},
         tool_calls=[{"id": "skip_1", "function": {"name": "error_tool", "arguments": "{}"}}],
-        finish_reason="tool_calls"
+        
     )
     resp2 = LLMResponse(text="Tool was skipped.", tool_calls=[], usage={}, )
 
@@ -127,7 +127,7 @@ async def test_observer_abandon_turn(mock_llm_class, error_tool_factory):
     resp1 = LLMResponse(
         text="", usage={},
         tool_calls=[{"id": "abandon_1", "function": {"name": "error_tool", "arguments": "{}"}}],
-        finish_reason="tool_calls"
+        
     )
 
     mock_llm = mock_llm_class([resp1])

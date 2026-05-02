@@ -16,13 +16,11 @@ class LLMResponse:
         tool_calls: List of tool calls (if any).
         usage: Token usage information.
         reasoning: Optional reasoning trace (if supported by the LLM/provider).
-        finish_reason: Indicating why stream stopped. This is useful for signalling state transitions during streaming for the engine. Generally, users do not need to make use of it.
     """
     text: str | None = None
     tool_calls: list[ToolResponse] | None = None
     usage: dict | None = None
     reasoning: str | None = None
-    finish_reason: str | None = None
 
 class ILLMClient(Protocol):
     """

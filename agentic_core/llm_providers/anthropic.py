@@ -104,8 +104,7 @@ class AnthropicLLM(ILLMClient):
                                             "name": block.name,
                                             "arguments": block.input
                                         }
-                                    }],
-                                    finish_reason="tool_calls" # no accumulation needed
+                                    }]
                                 )
                 return
             

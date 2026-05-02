@@ -69,7 +69,6 @@ class OllamaLLM(ILLMClient):
                         text=msg.content or "",
                         reasoning=msg.thinking or "",
                         tool_calls=tool_calls,
-                    finish_reason="tool_calls", # no accumulation needed
                         usage={}
                     )
                 else:                            

@@ -189,13 +189,7 @@ class AgentRunner:
                             turn_response["reasoning"] += response.reasoning
                             yield StreamEvent(StreamEventType.REASONING, response.reasoning)
                         if response.tool_calls: # we compromise with non-responsiveness for a while tool argumemnts are accumulated
-                            if response.finish_reason == "tool_calls":
-                                turn_response["tool_calls"].extend(response.tool_calls)
-                                for tc in response.tool_calls:
-                                    yield StreamEvent(StreamEventType.TOOL_CALL, tc)
-                            else: 
-                                for tc in response.tool_calls:
-                                    yield StreamEvent(StreamEventType.TOOL_STARTED, tc['function'].get('name')) # gives end-user the name which is the only useful variable
+                            turn_response["tool_calls"].extend(response.tool_calls)
                         if response.usage:
                             self.last_usage_meta = response.usage
 
@@ -218,12 +212,16 @@ class AgentRunner:
                     final_response.error = error_msg
 
                 logger.info(f"Turn response: {turn_response}")
+
                 if not turn_response["tool_calls"]:
                     self.memory.add_message({"role": "assistant", "content": turn_response["text"]})
                     final_response.text = turn_response["text"]
                     final_response.reasoning = turn_response["reasoning"]
                     final_response.usage = self.last_usage_meta or {}
                     break
+
+                for tc in turn_response["tool_calls"]:
+                    yield StreamEvent(StreamEventType.TOOL_CALL, tc)
 
                 # ==== If we reach here, means it's a tool calling session ====
                 self.memory.add_message({
