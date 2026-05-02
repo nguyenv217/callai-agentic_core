@@ -28,6 +28,7 @@ class OllamaLLM(ILLMClient):
         self, 
         messages: list[dict[str, Any]], 
         tools: list[dict[str, Any]] | None = None, 
+        stream: bool = True,
         **kwargs
     ) -> AsyncIterator[LLMResponse]:
         """
@@ -35,7 +36,7 @@ class OllamaLLM(ILLMClient):
         
         Args:
             messages: Conversation history.
-            tools: A list of JSON schemas for tools (NOT the ToolManager object).
+            tools: A list of JSON schemas for tools
         """
         req_kwargs = {
             "model": self.model,
@@ -48,11 +49,36 @@ class OllamaLLM(ILLMClient):
         if tools:
             req_kwargs["tools"] = [{"type": "function", "function": t["function"]} for t in tools]
 
-        response = await self.client.chat(**req_kwargs)
+        if stream:
+            stream_response = await self.client.chat(stream=True, **req_kwargs)
+            async for chunk in stream_response:
+                msg = chunk.message
+                tool_calls = []
+                if msg.tool_calls:
+                    for tc in msg.tool_calls:
+                            # ollama doesnt take id nor type, simply assumes `function``
+                            tool_calls.append({
+                                "id": "",
+                                "type":"function",
+                                "function": {
+                                    "name": tc.function.name if tc.function else "",
+                                    "arguments": tc.function.arguments if tc.function else ""
+                                }
+                            })
+                yield LLMResponse(
+                    text=msg.content or "",
+                    reasoning=msg.thinking or "",
+                    tool_calls=tool_calls,
+                    usage={}
+                )
+            return
+
+        response = await self.client.chat(stream=False, **req_kwargs)
         
-        msg = response["message"]
+        msg = response.message
         yield LLMResponse(
-            text=msg.get("content", ""),
-            tool_calls=msg.get("tool_calls", []),
+            text=msg.content,
+            reasoning=msg.thinking,
+            tool_calls=msg.tool_calls,
             usage={},
         )

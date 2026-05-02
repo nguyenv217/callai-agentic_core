@@ -9,10 +9,11 @@ class LLMResponse:
     """
     Response from an LLM provider.
 
-    text: The text response from the LLM.
-    tool_calls: List of tool calls (if any).
-    usage: Token usage information.
-    reasoning: Optional reasoning trace (if supported by the LLM/provider).
+    Attributes:
+        text: The text response from the LLM.
+        tool_calls: List of tool calls (if any).
+        usage: Token usage information.
+        reasoning: Optional reasoning trace (if supported by the LLM/provider).
     """
     text: str | None = None
     tool_calls: list[dict] | None = None
