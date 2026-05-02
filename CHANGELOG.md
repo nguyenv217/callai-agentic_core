@@ -1,18 +1,3 @@
-# (2026-04-26)
-
-### Breaking Changes
-* **API Interface**: `chat()` and `AgentRunner.run_turn()` now return a structured `AgentResponse` object instead of a string or dict. Use `.text` to access the response content.
-
-### Features
-* **Session Management**: Added `session_id` to `chat()` to enable persistence of Memory and MCP connections across turns.
-* **Lifecycle Management**: `AgentRunner` now supports the async context manager protocol (`async with`), ensuring all MCP subprocesses are cleaned up immediately.
-* **Performance**: `GlobalMCPRegistry` now uses granular per-server locks, preventing global bottlenecks during concurrent server initialization in web environments.
-
-### Bug Fixes
-
-* for transparency no longer try to fix double serialization. this is better controlled through explicit prompting and provider-side ([d33dd15](https://github.com/nguyenv217/callai-agentic_core/commit/d33dd1547c370ff26b4e85631a95b02d17068592))
-
----
 #  (2026-04-25)
 
 
@@ -75,6 +60,23 @@
 * **tool:** more control for tooling, now support decision feedback before executing tools directly through AgentEventObserver ([ca2269b](https://github.com/nguyenv217/callai-agentic_core/commit/ca2269bc1c4b9748dd328eed196398a171ead848))
 * **tool:** supports for a dynamically injected system prompt along toolset. this is aanticipated for auto routing tasks ([a4d2469](https://github.com/nguyenv217/callai-agentic_core/commit/a4d246956e03e024d58c736310ebe28d4f17b544))
 * **tool:** user configurable `max_chars` for tool results ([7bab473](https://github.com/nguyenv217/callai-agentic_core/commit/7bab47351465748d4e83439f7840f20e5aa05768))
+
+# (2026-04-26)
+
+### Breaking Changes
+* **API Interface**: `chat()` and `AgentRunner.run_turn()` now return a structured `AgentResponse` object instead of a string or dict. Use `.text` to access the response content.
+
+### Features
+* **Session Management**: Added `session_id` to `chat()` to enable persistence of Memory and MCP connections across turns.
+* **Lifecycle Management**: `AgentRunner` now supports the async context manager protocol (`async with`), ensuring all MCP subprocesses are cleaned up immediately.
+* **Performance**: `GlobalMCPRegistry` now uses granular per-server locks, preventing global bottlenecks during concurrent server initialization in web environments.
+
+### Bug Fixes
+
+* for transparency no longer try to fix double serialization. this is better controlled through explicit prompting and provider-side ([d33dd15](https://github.com/nguyenv217/callai-agentic_core/commit/d33dd1547c370ff26b4e85631a95b02d17068592))
+
+---
+
 # [](https://github.com/nguyenv217/callai-agentic_core/compare/v0.5.0...v) (2026-04-29)
 
 
@@ -100,3 +102,20 @@
 * **mcp:** allow routing stdio to avoid conflicts ([deaa1da](https://github.com/nguyenv217/callai-agentic_core/commit/deaa1da497bb578be3200b5fbeaa6e25da50c230))
 * **streaming:** iter 1 streaming with openai, new `stream_engine` ([668e0a4](https://github.com/nguyenv217/callai-agentic_core/commit/668e0a4950cd10aae6f8b6a213ae8b9acabecd32))
 * **streaming:** iter 2 better error handling ([adadf38](https://github.com/nguyenv217/callai-agentic_core/commit/adadf38605eb5a0f127cc76f2522d4af5210999e))
+# [](https://github.com/nguyenv217/callai-agentic_core/compare/v0.6.0...v) (2026-05-01)
+
+
+### Bug Fixes
+
+* also remove standby registry when server is disconnected ([5dd5679](https://github.com/nguyenv217/callai-agentic_core/commit/5dd567983cd8742a743acfe35a5eb27fd8f8413e))
+* bug multilating dictionary while iterating ([b2c8947](https://github.com/nguyenv217/callai-agentic_core/commit/b2c8947835bb44c9a189aad185f4761a883fc747))
+* subagent tool validation before passing to engine ([62a5889](https://github.com/nguyenv217/callai-agentic_core/commit/62a5889fa20bc77eb286104f0a424620a20bb43c))
+* typos in tests ([c7208de](https://github.com/nguyenv217/callai-agentic_core/commit/c7208de0bd50f626b05d1543a25dc252346af0dd))
+
+
+### Features
+
+* `DAGeventObserver` record the original dagresponse object instead of dict ([25a3806](https://github.com/nguyenv217/callai-agentic_core/commit/25a3806f02b9bf50ab2f057f3d7110a4a13f06d2))
+* checkpoint/resume failed graphs ([ef8c8c9](https://github.com/nguyenv217/callai-agentic_core/commit/ef8c8c9472b05ca4c6e8cc07010e6e70de68b941))
+* new ops on last iteration - extend. and will raise `LastIterationError` to better accomodate deeply nested swarm workflow ([aabb745](https://github.com/nguyenv217/callai-agentic_core/commit/aabb745e425cc745d8ab540be8271d28f138d1fd))
+* validate tools config for spawn sbuagent tool as well ([c528e7d](https://github.com/nguyenv217/callai-agentic_core/commit/c528e7d21a3c18ad13e5c5a77ab659ac2fb9c6f0))
