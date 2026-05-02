@@ -1,7 +1,44 @@
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal, TypedDict
 from enum import Enum
 
+# ===================================================
+# Common response interfaces 
+# ===================================================
+
+class ToolResponse(TypedDict):
+    id: str
+    type: Literal["function"]
+
+    class Function(TypedDict):
+        name: str
+        arguments: str | dict[str, Any]
+    
+    function: Function
+
+class Message(TypedDict):
+    role: Literal["user", "assistant", "tool"]
+    content: str
+    
+    # The following arguments are presented when role = "tool"
+    tool_name: str | None 
+    tool_call_id: str | None
+
+class ToolSchema(TypedDict):
+    type: Literal["function"]
+
+    class FunctionSchema(TypedDict):
+        name: str
+        description: str
+
+        class Parameters(TypedDict):
+            type: Literal["object"]
+            properties: dict[str, dict[str, Any]]
+
+        parameters: Parameters
+        required: list[str]
+
+    function: FunctionSchema
 
 # ===================================================
 # Exceptions 
@@ -38,7 +75,7 @@ class IterationLimitReachedError(Exception):
 # ===================================================
 # Structured Responses
 # ===================================================
-
+    
 @dataclass
 class AgentResponse:
     """Structured response from an agent turn.
@@ -52,7 +89,7 @@ class AgentResponse:
     """
     text: str = ""
     reasoning: str = ""
-    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    tool_calls: list[ToolResponse] = field(default_factory=list)
     usage: dict[str, Any]  | None = None
     error: BaseException | None = None
 
@@ -110,6 +147,7 @@ class StreamEventType(Enum):
     REASONING = "reasoning"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
+    TOOL_STARTED = "tool_started"
     ERROR = "error"
     FINAL_RESPONSE = "final_response"
 
@@ -117,7 +155,7 @@ class StreamEventType(Enum):
 class StreamEvent:
     """Event yielded during a streaming agent turn."""
     type: StreamEventType
-    content: Any
+    content: Any = None
     error: BaseException | None = None
 
 

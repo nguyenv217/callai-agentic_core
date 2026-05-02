@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Any
 from dataclasses import dataclass
 
 if TYPE_CHECKING:
-    from agentic_core.tools.base import ToolSchema
+    from agentic_core.interfaces import ToolSchema
 
 import logging
 logger = logging.getLogger(__name__)

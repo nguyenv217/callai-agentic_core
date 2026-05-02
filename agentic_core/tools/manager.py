@@ -11,7 +11,7 @@ from agentic_core.constants import MCP_INITLIAZE_TIMEOUT
 
 from ..config import ConfigurationError
 from ..decisions import DecisionEvent, ToolOnPromptDecision
-from .base import ToolSchema
+from ..interfaces import ToolSchema
 
 if TYPE_CHECKING:
     from .base import BaseTool

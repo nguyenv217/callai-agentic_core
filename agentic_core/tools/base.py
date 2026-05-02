@@ -1,15 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Literal, TypedDict, Mapping, Any
-
-class ToolSchemaFunction(TypedDict):
-    name: str
-    description: str
-    parameters: Mapping[str, Any]
-
-class ToolSchema(TypedDict):
-    type: Literal['function']
-    funtion: ToolSchemaFunction
-
+from ..interfaces import ToolSchema
 
 class BaseTool(ABC):
     """Interface for all executable tools."""
