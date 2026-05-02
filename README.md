@@ -52,7 +52,8 @@ async def main():
         provider="openai",
         api_key="sk-..."  # Your OpenAI key
     )
-    print(result.text)
+    agent_response = result.response
+    print(agent_response.text)
 
 asyncio.run(main())
 ```
@@ -71,7 +72,8 @@ async def main():
         base_url="https://router.huggingface.co/v1",
         model="meta-llama/Llama-3.1-8B-Instruct"
     )
-    print(result.text)
+    agent_response = result.response
+    print(agent_response.text)
 
 asyncio.run(main())
 ```
@@ -84,7 +86,8 @@ result = await chat(
     provider="anthropic", 
     api_key="sk-ant-..."  # Your Anthropic key
 )
-print(result.text)
+agent_response = result.response
+    print(agent_response.text)
 ```
 
 ### If you have Ollama (local, no key needed):
@@ -94,7 +97,8 @@ result = await chat(
     message="What's the weather in Tokyo?",
     provider="ollama"  # No API key needed!
 )
-print(result.text)
+agent_response = result.response
+    print(agent_response.text)
 ```
 
 **That's it!** Want to see what's happening? Add `verbose=True`.
@@ -126,7 +130,8 @@ result = await chat(
     api_key="sk-...",
     session_id="user_session_123"
 )
-print(result.text)
+response = result.response
+print(response.text)
 
 
 # Advanced usage with RunnerConfig
@@ -143,7 +148,13 @@ result = await chat(
 )
 ```
 
-**Returns:** An `AgentResponse` object containing `text`, `reasoning`, `tool_calls`, `usage`, and `error` fields.
+**Returns:** A `ChatResult` object containing an `AgentResponse` with `text`, `reasoning`, `tool_calls`, `usage`, and `error` fields, and useful metadata: `session_id`, `tenant_id`.
+```python
+class ChatResult:
+    response: AgentResponse
+    session_id: str | None = None
+    tenant_id: str | None = None
+```
 
 ---
 

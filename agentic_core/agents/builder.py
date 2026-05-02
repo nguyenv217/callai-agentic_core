@@ -6,6 +6,7 @@ understanding the underlying protocols.
 """
 from __future__ import annotations
 from typing import TYPE_CHECKING
+from dataclasses import dataclass
 
 if TYPE_CHECKING:
     from openai import OpenAI
@@ -98,6 +99,11 @@ def create_ollama_agent(
     
     return AgentRunner(llm_client=llm, tools=tools, memory=memory)
 
+@dataclass
+class ChatResult:
+    response: AgentResponse
+    session_id: str | None = None
+    tenant_id: str | None = None
 
 async def chat(
     message: str,
@@ -160,4 +166,8 @@ async def chat(
     # Run the turn
     result = await agent.run_turn(message, observer=observer, config=config)
 
-    return result
+    return ChatResult(
+        response= result,
+        session_id=session_id,
+        tenant_id=tenant_id
+    )
