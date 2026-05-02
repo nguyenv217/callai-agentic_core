@@ -3,7 +3,7 @@ import json
 
 from agentic_core.constants import MEMORY_MANAGER_MAX_CHARS
 
-from .strategies import TruncationStrategy, DefaultTruncationStrategy
+from .strategies import NoTruncationStrategy, TruncationStrategy, DefaultTruncationStrategy
 
 class MemoryManager:
     def __init__(self, max_chars: int = MEMORY_MANAGER_MAX_CHARS, strategy: TruncationStrategy = None):
@@ -19,7 +19,7 @@ class MemoryManager:
         self.messages: list[dict] = []
         self.system_prompt: dict = None
         self.max_chars = max_chars
-        self.strategy = strategy or DefaultTruncationStrategy()
+        self.strategy = strategy or NoTruncationStrategy()
         self._hash_obj = hashlib.sha256()
         self._current_hash = None
         # self.truncate_by_pop = False

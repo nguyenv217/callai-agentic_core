@@ -218,14 +218,18 @@ class GlobalMCPRegistry:
     async def _shutdown_server(self, identity_key):
         session_info = self._sessions.pop(identity_key)
         session_info['shutdown_event'].set()
+        task = session_info['task']
         try: 
-            await asyncio.wait_for(session_info['task'], timeout=5.0)
-        except asyncio.TimeoutError:
-            logger.warning(f"[Registry] Shutdown timeout for {identity_key}. Force killing task.")
-        finally: 
-            try: 
-                await session_info['task']
-            except asyncio.CancelledError: pass
+            await asyncio.wait_for(task, timeout=2.0)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, RuntimeError):
+                pass
+        except Exception as e:
+            logger.debug(f"[Registry] Unexpected error shutting down {identity_key}: {e}")
+            task.cancel()
 
     async def release(self, identity_key: Tuple):
         """Decrements ref count and shuts down session if last client releases it."""
