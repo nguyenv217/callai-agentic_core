@@ -282,6 +282,7 @@ class AgentRunner:
                                 "role":'user',
                                 "content": msg
                             })
+                            continue
                         case LastIterationDecision.ABANDON():
                             break
                         case LastIterationDecision.EXTEND(max_iterations_count):
