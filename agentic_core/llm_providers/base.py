@@ -4,7 +4,9 @@ LLM Provider base interfaces.
 from typing import Any, Protocol, AsyncIterator
 from dataclasses import dataclass
 
-from agentic_core.interfaces import ToolResponse
+from agentic_core.tools import ToolSchema
+
+from agentic_core.interfaces import ToolResponse, Message
 
 @dataclass
 class LLMResponse:
@@ -33,8 +35,8 @@ class ILLMClient(Protocol):
     
     def ask(
         self,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]] | None = None,
+        messages: list[Message],
+        tools: list[ToolSchema] | None = None,
         **kwargs
     ) -> AsyncIterator[LLMResponse]: 
         """
