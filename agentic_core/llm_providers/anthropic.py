@@ -96,8 +96,11 @@ class AnthropicLLM(ILLMClient):
                             yield LLMResponse(
                                 tool_calls=[{
                                     "id": block.id,
-                                    "name": block.name,
-                                    "arguments": block.input 
+                                    "type": "function",
+                                    "function": {
+                                        "name": block.name,
+                                        "arguments": block.input
+                                    }
                                 }],
                                 finish_reason="tool_calls" # no accumulation needed
                             )

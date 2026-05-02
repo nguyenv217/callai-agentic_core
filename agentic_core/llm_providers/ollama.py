@@ -86,6 +86,12 @@ class OllamaLLM(ILLMClient):
         yield LLMResponse(
             text=msg.content,
             reasoning=msg.thinking,
-            tool_calls=msg.tool_calls,
+            tool_calls=[
+                {
+                    "id": "", 
+                    "type": "function", 
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments}
+                } for tc in msg.tool_calls
+            ] if msg.tool_calls else [],
             usage={},
         )

@@ -194,7 +194,8 @@ class AgentRunner:
                                 for tc in response.tool_calls:
                                     yield StreamEvent(StreamEventType.TOOL_CALL, tc)
                             else: 
-                                yield StreamEvent(StreamEventType.TOOL_STARTED, tc['function'].get('name')) # gives end-user the name which is the only useful variable
+                                for tc in response.tool_calls:
+                                    yield StreamEvent(StreamEventType.TOOL_STARTED, tc['function'].get('name')) # gives end-user the name which is the only useful variable
                         if response.usage:
                             self.last_usage_meta = response.usage
 
