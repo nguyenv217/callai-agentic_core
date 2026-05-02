@@ -15,7 +15,11 @@ logger = logging.getLogger(__name__)
 
 import os
 try:
-    AGENTIC_ITERATION_MAXIMUM = int(os.getenv("AGENTIC_ITERATION_MAXIMUM")) or 50
+    agentic_max = os.getenv("AGENTIC_ITERATION_MAXIMUM")
+    if agentic_max:
+        AGENTIC_ITERATION_MAXIMUM = int(agentic_max)
+    else:
+        AGENTIC_ITERATION_MAXIMUM = 50
 except ValueError:
     logger.warning("Invalid value for AGENTIC_ITERATION_MAXIMUM")
     AGENTIC_ITERATION_MAXIMUM = 50
