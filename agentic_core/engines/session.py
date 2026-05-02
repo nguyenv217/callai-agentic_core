@@ -9,26 +9,32 @@ class SessionManager:
         self._sessions: dict[str, AgentRunner] = {}
         self._lock = None
 
-    async def get_runner(self, session_id: str, creator_func) -> AgentRunner:
+    def _get_key(self, tenant_id: str, session_id: str) -> str:
+        return f"{tenant_id}::{session_id}"
+
+    async def get_runner(self, session_id: str, creator_func, tenant_id: str = "default") -> AgentRunner:
         if self._lock is None:
             self._lock = asyncio.Lock()
 
+        cache_key = self._get_key(tenant_id, session_id)
+
         async with self._lock:
             if session_id in self._sessions:
-                return self._sessions[session_id]
+                return self._sessions[cache_key]
 
             runner = await creator_func()
-            self._sessions[session_id] = runner
+            self._sessions[cache_key] = runner
             return runner
 
-    async def remove_session(self, session_id: str):
+    async def remove_session(self, session_id: str, tenant_id: str = "default"):
         if self._lock is None:
             self._lock = asyncio.Lock()
-
+            
+        cache_key = self._get_key(tenant_id, session_id)
+        
         async with self._lock:
-            if session_id in self._sessions:
-                runner = self._sessions.pop(session_id)
-                # ToolManager is handled by AgentRunner usually, but we should try to close it.
+            if cache_key in self._sessions:
+                runner = self._sessions.pop(cache_key)
                 if hasattr(runner, "tools") and hasattr(runner.tools, "shutdown_mcp"):
                     await runner.tools.shutdown_mcp()
 
