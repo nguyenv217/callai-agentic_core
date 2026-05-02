@@ -56,7 +56,7 @@ class SpawnSubAgentsTool(BaseTool):
                                     "type": "object",
                                     "properties": {
                                         "prompt": {"type": "string", "description": "Instruction for the sub-agent."},
-                                        "tools": {"type": "array", "items": {"type": "string"}, "description": "List of specific tools to grant this sub-agent. Tools must be loaded into your context already."},
+                                        "tools": {"type": "array", "items": {"type": "string"}, "description": "List of specific tools to grant this sub-agent. Tools must be loaded into your context already. By default, sub-agents do not get any tools and cannot load new tools."},
                                         "max_retries": {"type": "integer", "description": "Number of times to retry the entire task if it encounters an API or network error."},
                                         "max_iterations": {"type": "integer", "description": "Maximum number of tool-calling iterations the sub-agent is allowed to take. Default is 10."}
                                     },
@@ -126,8 +126,7 @@ class SpawnSubAgentsTool(BaseTool):
             runner = AgentRunner(llm_client, tools_manager, node_memory)
 
             # Sub-agents can be granted specific tools.
-            # If not specified, they get a default RunnerConfig (usually only MCP tools).
-            config = RunnerConfig()
+            config = RunnerConfig(mcp_use_loaded_tools=False, mcp_enable_discovery=False)
             requested_tools = cfg.get("tools")
             if requested_tools:
                 config.tools = [
