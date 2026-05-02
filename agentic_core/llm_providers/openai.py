@@ -112,7 +112,7 @@ class OpenAILLM(ILLMClient):
                     
                     yield LLMResponse(
                         text=delta.content or "",
-                        reasoning=getattr(delta, "reasoning_content") or getattr(delta, "reasoning") or getattr(delta, "thinking") or "",
+                        reasoning=getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None) or getattr(delta, "thinking", None) or "",
                         tool_calls=current_tool_calls,
                         usage=chunk.usage or {}, # only yielded at last chunk
                         finish_reason=choice.finish_reason
@@ -125,7 +125,7 @@ class OpenAILLM(ILLMClient):
             msg = response.choices[0].message
             yield LLMResponse(
                 text=msg.content or "",
-                reasoning=getattr(msg, "reasoning_content") or getattr(msg, "reasoning") or getattr(msg, "thinking") or "",
+                reasoning=getattr(msg, "reasoning_content", None) or getattr(msg, "reasoning", None) or getattr(msg, "thinking", None) or "",
                 tool_calls=[tc.model_dump() for tc in msg.tool_calls] if msg.tool_calls else [],
                 usage={
                     "prompt_tokens": response.usage.prompt_tokens,

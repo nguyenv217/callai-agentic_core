@@ -4,7 +4,7 @@ Anthropic LLM Provider.
 from typing import AsyncIterator, Any
 
 from .base import ILLMClient, LLMResponse
-from ..interfaces import Message, ToolSchema
+from ..interfaces import Message, ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError, ToolSchema
 
 class AnthropicLLM(ILLMClient):
     """Anthropic Claude adapter."""
@@ -38,6 +38,8 @@ class AnthropicLLM(ILLMClient):
             messages: Conversation history.
             tools: A list of JSON schemas for tools (NOT the `ToolManager` object).
         """
+        from anthropic.types import RateLimitError, AuthenticationError, GatewayTimeoutError
+
         system = None
         anthropic_messages = []
         
@@ -81,50 +83,58 @@ class AnthropicLLM(ILLMClient):
                 for t in tools
             ]
         
-        if stream:
-            async with self.client.messages.stream(**req_kwargs) as event_stream:
-                async for event in event_stream:
-                    if event.type == "text":
-                        yield LLMResponse(text=event.text)
+        try:
+            if stream:
+                async with self.client.messages.stream(**req_kwargs) as event_stream:
+                    async for event in event_stream:
+                        if event.type == "text":
+                            yield LLMResponse(text=event.text)
 
-                    if event.type == "thinking":
-                        yield LLMResponse(reasoning=event.thinking)
-                    
-                    elif event.type == "content_block_stop":
-                        block = event.content_block
-                        if block.type == "tool_use":
-                            yield LLMResponse(
-                                tool_calls=[{
-                                    "id": block.id,
-                                    "type": "function",
-                                    "function": {
-                                        "name": block.name,
-                                        "arguments": block.input
-                                    }
-                                }],
-                                finish_reason="tool_calls" # no accumulation needed
-                            )
-            return
-        
-        response = await self.client.messages.create(**req_kwargs)
-        text_content = ""
-        tool_calls = []
-        
-        for block in response.content:
-            if block.type == "text":
-                text_content += block.text
-            elif block.type == "tool_use":
-                tool_calls.append({
-                    "name": block.name,
-                    "id": block.id,
-                    "arguments": block.input
-                })
-        
-        yield LLMResponse(
-            text=text_content,
-            tool_calls=tool_calls,
-            usage={
-                "prompt_tokens": response.usage.input_tokens, 
-                "completion_tokens": response.usage.output_tokens
-            },
-        )
+                        if event.type == "thinking":
+                            yield LLMResponse(reasoning=event.thinking)
+                        
+                        elif event.type == "content_block_stop":
+                            block = event.content_block
+                            if block.type == "tool_use":
+                                yield LLMResponse(
+                                    tool_calls=[{
+                                        "id": block.id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": block.name,
+                                            "arguments": block.input
+                                        }
+                                    }],
+                                    finish_reason="tool_calls" # no accumulation needed
+                                )
+                return
+            
+            response = await self.client.messages.create(**req_kwargs)
+            text_content = ""
+            tool_calls = []
+            
+            for block in response.content:
+                if block.type == "text":
+                    text_content += block.text
+                elif block.type == "tool_use":
+                    tool_calls.append({
+                        "name": block.name,
+                        "id": block.id,
+                        "arguments": block.input
+                    })
+            
+            yield LLMResponse(
+                text=text_content,
+                tool_calls=tool_calls,
+                usage={
+                    "prompt_tokens": response.usage.input_tokens, 
+                    "completion_tokens": response.usage.output_tokens
+                },
+            )
+    
+        except AuthenticationError:
+            raise ProviderAuthenticationError(f"openai client: Invalid API key for {self.model}")
+        except RateLimitError:
+            raise ProviderRateLimitError(f"openai client: Rate limit exceeded for {self.model}")
+        except GatewayTimeoutError:
+            raise ProviderTimeoutError(f"openai client: Request timed out for {self.model}")
