@@ -70,7 +70,10 @@ class GlobalMCPRegistry:
     def _get_identity_key(server_config: dict[str, Any], tenant_id: str = "default") -> Tuple:
         """Identity key hash from (command, args, eng) and a tenant_id to prevent cross-tenant poisoning"""
         command = server_config.get("command", "python")
-        args = tuple(server_config.get("args", []))
+        raw_args = server_config.get("args", [])
+        if isinstance(raw_args, str):
+            raw_args = [raw_args]
+        args = tuple(raw_args)
         env = tuple(sorted(server_config.get("env", {}).items()))
         return (tenant_id, command, args, env)
 

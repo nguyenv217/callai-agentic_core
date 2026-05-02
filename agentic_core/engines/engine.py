@@ -14,7 +14,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 import os
-ITERATION_HARD_CAP = os.getenv("AGENTIC_ITERATION_MAXIMUM") or 50
+try:
+    AGENTIC_ITERATION_MAXIMUM = int(os.getenv("AGENTIC_ITERATION_MAXIMUM")) or 50
+except ValueError:
+    logger.warning("Invalid value for AGENTIC_ITERATION_MAXIMUM")
+    AGENTIC_ITERATION_MAXIMUM = 50
 
 class AgentRunner:
     """
@@ -149,7 +153,7 @@ class AgentRunner:
         final_response = AgentResponse()
 
         try:
-            while iteration <= max_iterations and iteration <= ITERATION_HARD_CAP:
+            while iteration <= max_iterations and iteration <= AGENTIC_ITERATION_MAXIMUM:
                 observer.on_iteration_start(iteration, max_iterations)
                 conversation = self.memory.get_history()
                 logger.info(f"Tools turn {iteration}: {[t['function']['name'] for t in active_tools]}")

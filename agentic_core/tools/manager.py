@@ -42,7 +42,8 @@ class ToolManager:
         enable_mcp_discovery: bool = True,
         extra_env: dict[str, str] | None = None,
         extra_context: dict[str, Any] | None = None,
-        on_server_error: Callable[[str, Exception], None] | None = None
+        on_server_error: Callable[[str, Exception], None] | None = None,
+        tenant_id: str = "default"
     ):
         """
         Initializes the ToolManager.
@@ -54,6 +55,7 @@ class ToolManager:
             enable_mcp_discovery: If True, the ToolManager will inject MCP discovery tools on each agent run.
             extra_env: Extra environment variables to pass to MCPClient initialization.
             on_server_error: Hook on event of a MCP server death. The function implementing this should expect `server_name` and the exception as arguments.
+            tenant_id: The tenant ID to use for this ToolManager.
         """
 
         self.active_sessions = {}
@@ -62,6 +64,8 @@ class ToolManager:
 
         self.tool_schemas: list[ToolSchema] = []
         self._plugins: dict[str, BaseTool] = {}
+        
+        self.tenant_id = tenant_id
         
         # --- MCP State ---
         self.mcp_config_path = mcp_config_path
@@ -149,7 +153,11 @@ class ToolManager:
                 on_server_death=self.on_server_error
             )
 
-        initialized = await self._mcp_manager.initialize(allowed_servers=allowed_servers, extra_env=extra_env or self.extra_env)
+        initialized = await self._mcp_manager.initialize(
+            allowed_servers=allowed_servers, 
+            extra_env=extra_env or self.extra_env,
+            tenant_id=self.tenant_id
+        )
 
         self._mcp_init_in_progress = False
 
