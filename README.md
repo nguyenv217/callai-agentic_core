@@ -545,5 +545,5 @@ Agents interacting with APIs that return massive, deeply nested JSON payloads ma
 * The tool strictly requires MCP configuration via `RunnerConfig` to be valid and well-formed to avoid malicious runtime tool injection.  
 * Utilize `ToolExecutionController.on_prompt_respond()` (blocks, prompt the user for feedback) and `ToolExecutionController.on_prompt_confirmation()` (blocks, prompt the user to confirm (y/n) with event hooks) for control **during tool execution**.
 * `AgentEventObserver` implementing `on_tool_start()` provides means to enforce human validation before assembling tool coroutine pool and executing, with different levels of control (use `ToolStartDecision`).
-* Write your system prompt carefully and choose your MCP servers wisely.
+* Heuristically detect and remove unsafe payloads from external data sources (brittle). Most importantly, write your system prompt carefully and choose your MCP servers wisely. Dry-run extensively on domain-specific vulnerable prompts and refine system prompt. This is perhaps the single most effective mitigation against prompt injection.
 * Finally, this tool is all about robustness - it's meant to be a lightweight engine for agentic applications. Hence, it is at the developer responsibility to enforce security measures against the above risks.
