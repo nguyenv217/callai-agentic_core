@@ -3,8 +3,8 @@ Anthropic LLM Provider.
 """
 from typing import AsyncIterator, Any
 
-from anthropic import AsyncStream
 from .base import ILLMClient, LLMResponse
+from ..interfaces import Message, ToolSchema
 
 class AnthropicLLM(ILLMClient):
     """Anthropic Claude adapter."""
@@ -26,8 +26,8 @@ class AnthropicLLM(ILLMClient):
     
     async def ask(
         self, 
-        messages: list[dict[str, Any]], 
-        tools: list[dict[str, Any]] | None = None, 
+        messages: list[Message], 
+        tools: list[ToolSchema] | None = None, 
         stream: bool = False,
         **kwargs
     ) -> AsyncIterator[LLMResponse]:
@@ -36,32 +36,43 @@ class AnthropicLLM(ILLMClient):
         
         Args:
             messages: Conversation history.
-            tools: A list of JSON schemas for tools (NOT the ToolManager object).
+            tools: A list of JSON schemas for tools (NOT the `ToolManager` object).
         """
-        # Convert messages to Anthropic format
         system = None
         anthropic_messages = []
-        for msg in messages:
-            if msg.get("role") == "system":
-                system = msg.get("content", "")
-            else:
-                anthropic_messages.append(msg)
         
-        # Build request kwargs dynamically
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content")
+            
+            if role == "system":
+                system = content
+            elif role == "tool":
+                # Anthropic requires tool results to be role: "user" with a `tool_result` content block.
+                anthropic_messages.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": msg.get("tool_call_id"),
+                        "content": str(content)
+                    }]
+                })
+            else:
+                anthropic_messages.append({"role": role, "content": content})
+
         req_kwargs = {
             "model": self.model,
             "messages": anthropic_messages,
+            "max_tokens": kwargs.get("max_tokens", 4096),
             **self.extra_kwargs,
             **kwargs
         }
         
-        # Only attach system and tools if they exist
         if system:
             req_kwargs["system"] = system
         
         if tools:
-            # Convert OpenAI-style tool schema to Anthropic format
-            anthropic_tools = [
+            req_kwargs["tools"] = [
                 {
                     "name": t["function"]["name"],
                     "description": t["function"]["description"],
@@ -69,8 +80,6 @@ class AnthropicLLM(ILLMClient):
                 }
                 for t in tools
             ]
-            req_kwargs["tools"] = anthropic_tools
-    
         
         if stream:
             async with self.client.messages.stream(**req_kwargs) as event_stream:
@@ -89,9 +98,9 @@ class AnthropicLLM(ILLMClient):
                                     "id": block.id,
                                     "name": block.name,
                                     "arguments": block.input 
-                                }]
+                                }],
+                                finish_reason="tool_calls" # no accumulation needed
                             )
-
             return
         
         response = await self.client.messages.create(**req_kwargs)
