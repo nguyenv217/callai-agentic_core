@@ -1,12 +1,10 @@
 """
 LLM Provider base interfaces.
 """
-from typing import Any, Protocol, AsyncIterator
+from typing import Protocol, AsyncIterator
 from dataclasses import dataclass
 
-from agentic_core.tools import ToolSchema
-
-from agentic_core.interfaces import ToolResponse, Message
+from agentic_core.interfaces import ToolResponse, Message, ToolSchema
 
 @dataclass
 class LLMResponse:
