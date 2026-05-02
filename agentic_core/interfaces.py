@@ -147,7 +147,6 @@ class StreamEventType(Enum):
     REASONING = "reasoning"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
-    TOOL_STARTED = "tool_started"
     ERROR = "error"
     FINAL_RESPONSE = "final_response"
 

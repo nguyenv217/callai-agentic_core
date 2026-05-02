@@ -189,7 +189,7 @@ class AgentRunner:
                             turn_response["reasoning"] += response.reasoning
                             yield StreamEvent(StreamEventType.REASONING, response.reasoning)
                         if response.tool_calls: # we compromise with non-responsiveness for a while tool argumemnts are accumulated
-                            turn_response["tool_calls"].extend(response.tool_calls)
+                            turn_response["tool_calls"] = response.tool_calls
                         if response.usage:
                             self.last_usage_meta = response.usage
 
