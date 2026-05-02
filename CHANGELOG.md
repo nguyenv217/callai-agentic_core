@@ -6,7 +6,6 @@
 * [no ci] old test branch pruned ([b9d6abe](https://github.com/nguyenv217/callai-agentic_core/commit/b9d6abe797aa7022c927da7e05d07be07da07013))
 * better configuratoin error handling. can still import placeholders for convenience ([466ea40](https://github.com/nguyenv217/callai-agentic_core/commit/466ea406b5bbb1e76f2f918a5b04f6fb3bb0223b))
 * cleaner seperation between runtime loaded tools and user configured ([272a88a](https://github.com/nguyenv217/callai-agentic_core/commit/272a88a9134e38175ab024a9a0872dcc2bba73f8))
-* clearer import pattern ([06974f9](https://github.com/nguyenv217/callai-agentic_core/commit/06974f9d20c3fb2e8d6f2d807e96bae516334e32))
 * clearer import pattern. supply the subpackages ([619990f](https://github.com/nguyenv217/callai-agentic_core/commit/619990f341acf076daa2fea804c8ab1e1725569f))
 * **engine:** async iterator support ([68735db](https://github.com/nguyenv217/callai-agentic_core/commit/68735db5658f48b36c8a1f233d93d2f291090c03))
 * **engine:** config.system_prompt should be optional so end-user can quickly build agent with preconfigured system prompt ([8ba1732](https://github.com/nguyenv217/callai-agentic_core/commit/8ba1732bee7680aca643927f8b7cbd8d41078641))
@@ -40,7 +39,6 @@
 ### Features
 
 * **engine:** Much more granular control over tooling turn and iteration ([f1ce63a](https://github.com/nguyenv217/callai-agentic_core/commit/f1ce63acca00da9d53972c41af173bf1dc34164e))
-* **engine:** Much more granular control over tooling turn and iteration ([9bdd887](https://github.com/nguyenv217/callai-agentic_core/commit/9bdd887a6b387d565bf5cd024e317182cfdfe3bf))
 * **engine:** new DAGpowered engine ([585f947](https://github.com/nguyenv217/callai-agentic_core/commit/585f94721adb7eb2b6783d30f518c2182bba129b))
 * heuristically find reasoning field ([ee5c882](https://github.com/nguyenv217/callai-agentic_core/commit/ee5c882edf86d165fcf090a91f63486faeea051d))
 * **interface:** new reasoning field ([372b396](https://github.com/nguyenv217/callai-agentic_core/commit/372b39614c23d6fc229be7bea5240674e5988adc))
@@ -73,7 +71,7 @@
 
 ### Bug Fixes
 
-* for transparency no longer try to fix double serialization. this is better controlled through explicit prompting and provider-side ([d33dd15](https://github.com/nguyenv217/callai-agentic_core/commit/d33dd1547c370ff26b4e85631a95b02d17068592))
+* for transparency no longer try to fix double serialization which may misintepret agent intention. this is better controlled through explicit prompting and provider-side ([d33dd15](https://github.com/nguyenv217/callai-agentic_core/commit/d33dd1547c370ff26b4e85631a95b02d17068592))
 
 ---
 
@@ -82,7 +80,6 @@
 
 ### Bug Fixes
 
-* await close mcp ([0a592c7](https://github.com/nguyenv217/callai-agentic_core/commit/0a592c715660058a4b1f0ef90ed1dde4e0547125))
 * bug where nodes could still run when terminal states are reached due to delay mechanism ([679b2df](https://github.com/nguyenv217/callai-agentic_core/commit/679b2df857a06704ae5f24171fd7e1c7b32a848d))
 * circuit break the failed init servers ([a3a5a57](https://github.com/nguyenv217/callai-agentic_core/commit/a3a5a57197841c20ee7ad0cbd579531348e3fada))
 * clean up example ([de169a1](https://github.com/nguyenv217/callai-agentic_core/commit/de169a1eecd400693ffe4179c7d4899591780001))
@@ -119,3 +116,25 @@
 * checkpoint/resume failed graphs ([ef8c8c9](https://github.com/nguyenv217/callai-agentic_core/commit/ef8c8c9472b05ca4c6e8cc07010e6e70de68b941))
 * new ops on last iteration - extend. and will raise `LastIterationError` to better accomodate deeply nested swarm workflow ([aabb745](https://github.com/nguyenv217/callai-agentic_core/commit/aabb745e425cc745d8ab540be8271d28f138d1fd))
 * validate tools config for spawn sbuagent tool as well ([c528e7d](https://github.com/nguyenv217/callai-agentic_core/commit/c528e7d21a3c18ad13e5c5a77ab659ac2fb9c6f0))
+# [](https://github.com/nguyenv217/callai-agentic_core/compare/v0.6.0...v) (2026-05-02)
+
+
+### Bug Fixes
+
+* add finish_reasong to test ([552d3db](https://github.com/nguyenv217/callai-agentic_core/commit/552d3db3fd7b164ab19a8c639e2ca89971f4fd5e))
+* anthropic tool format needs dynamic extraction from openai-compatible messages ([5776a98](https://github.com/nguyenv217/callai-agentic_core/commit/5776a98e762eb571b7f391db1ad996020a63c2e9))
+* fix 1: ([d4a6f5e](https://github.com/nguyenv217/callai-agentic_core/commit/d4a6f5ed26d4a0460cd0bb702f9fba76561fbb5e))
+* fix 3: tenant_id for chat() session manager and recover removed chat() session_id functionality ([d968101](https://github.com/nguyenv217/callai-agentic_core/commit/d9681019df84321647192f9da956fd2908a4630a))
+* fix tried to parse none when getenv ([01605b5](https://github.com/nguyenv217/callai-agentic_core/commit/01605b54728be23efcc8fc90d892050bec1a08dc))
+* missing continue ([0f7705b](https://github.com/nguyenv217/callai-agentic_core/commit/0f7705b7d93a60b0b3740c860ed064b878d493fa))
+* ollama use `tool_name` not `name` for the tool call history ([e1abdbd](https://github.com/nguyenv217/callai-agentic_core/commit/e1abdbd801bd8b58ea0ae8c347d188fcb5954781))
+* **streaming:** openai client need accumulated tool arguments so we implemented accumulation and now yield StreamEventType.TOOL_START to signal processing.  compromise for stability and simplcity with working apps ([642785e](https://github.com/nguyenv217/callai-agentic_core/commit/642785eabdb8bb640a2532885bdc0450225e2bd2))
+* subagent tool validation before passing to engine ([62a5889](https://github.com/nguyenv217/callai-agentic_core/commit/62a5889fa20bc77eb286104f0a424620a20bb43c))
+* TTL for global runner session and add metadata to chat() ([9fc5d77](https://github.com/nguyenv217/callai-agentic_core/commit/9fc5d775cae608664fde05f9a02e3422c9c48c0f))
+* typos in tests ([c7208de](https://github.com/nguyenv217/callai-agentic_core/commit/c7208de0bd50f626b05d1543a25dc252346af0dd))
+
+
+### Features
+
+* allow configurable json.load alternative for tool argument parsing (if string) or now use a better default heuristics ([6e38bef](https://github.com/nguyenv217/callai-agentic_core/commit/6e38bef7be8e93bfca1b14f09a004900e9aac432))
+* streaming for ollama ([5855a5a](https://github.com/nguyenv217/callai-agentic_core/commit/5855a5af54cd61a5bc2b960dd72265a0e34a3c41))
