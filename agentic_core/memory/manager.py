@@ -38,7 +38,7 @@ class MemoryManager:
 
     def add_tool_result(self, name: str, tool_call_id: str, content: str):
         """Adds a tool result message."""
-        msg = {"role": "tool", "name": name, "tool_call_id": tool_call_id, "content": content}
+        msg = {"role": "tool", "tool_name": name, "tool_call_id": tool_call_id, "content": content}
         self.messages.append(msg)
         self._update_hash()
 

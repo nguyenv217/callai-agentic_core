@@ -1,9 +1,9 @@
 """
 Ollama LLM Provider.
 """
-from typing import AsyncIterator, Any
+from typing import AsyncIterator
 from .base import ILLMClient, LLMResponse
-
+from ..interfaces import Message, ToolSchema
 
 class OllamaLLM(ILLMClient):
     """Ollama local LLM adapter."""
@@ -26,8 +26,8 @@ class OllamaLLM(ILLMClient):
     
     async def ask(
         self, 
-        messages: list[dict[str, Any]], 
-        tools: list[dict[str, Any]] | None = None, 
+        messages: list[Message], 
+        tools: list[ToolSchema] | None = None, 
         stream: bool = True,
         **kwargs
     ) -> AsyncIterator[LLMResponse]:
@@ -53,8 +53,8 @@ class OllamaLLM(ILLMClient):
             stream_response = await self.client.chat(stream=True, **req_kwargs)
             async for chunk in stream_response:
                 msg = chunk.message
-                tool_calls = []
                 if msg.tool_calls:
+                    tool_calls = []
                     for tc in msg.tool_calls:
                             # ollama doesnt take id nor type, simply assumes `function``
                             tool_calls.append({
@@ -65,12 +65,19 @@ class OllamaLLM(ILLMClient):
                                     "arguments": tc.function.arguments if tc.function else ""
                                 }
                             })
-                yield LLMResponse(
-                    text=msg.content or "",
-                    reasoning=msg.thinking or "",
-                    tool_calls=tool_calls,
-                    usage={}
-                )
+                    yield LLMResponse(
+                        text=msg.content or "",
+                        reasoning=msg.thinking or "",
+                        tool_calls=tool_calls,
+                    finish_reason="tool_calls", # no accumulation needed
+                        usage={}
+                    )
+                else:                            
+                    yield LLMResponse(
+                        text=msg.content or "",
+                        reasoning=msg.thinking or "",
+                        usage={}
+                    )
             return
 
         response = await self.client.chat(stream=False, **req_kwargs)
