@@ -121,8 +121,8 @@ class OpenAILLM(ILLMClient):
             )
 
         except AuthenticationError:
-            raise ProviderAuthenticationError
+            raise ProviderAuthenticationError(f"openai client: Invalid API key for {self.model}")
         except RateLimitError:
-            raise ProviderRateLimitError
+            raise ProviderRateLimitError(f"openai client: Rate limit exceeded for {self.model}")
         except APITimeoutError:
-            raise ProviderTimeoutError
+            raise ProviderTimeoutError(f"openai client: Request timed out for {self.model}")

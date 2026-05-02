@@ -5,7 +5,8 @@ import asyncio
 from ..llm_providers import ILLMClient 
 from ..tools import ToolManager
 from ..memory.manager import MemoryManager
-from ..observers import AgentEventObserver, DecisionEvent, LastIterationDecision, ToolStartDecision
+from ..observers import AgentEventObserver
+from ..decisions import DecisionEvent, LastIterationAction, LastIterationDecision, ToolStartDecision
 from ..config import ConfigurationError, RunnerConfig
 from ..interfaces import AgentResponse, AgenticError, IterationLimitReachedError, ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError, StreamEvent, StreamEventType
 
@@ -219,42 +220,41 @@ class AgentRunner:
                     tool_args = tc['function'].get("arguments", {})
                     tool_id = tc.get("id", "")
 
-                    decision_event: DecisionEvent[ToolStartDecision] = observer.on_tool_start(tool_name, tool_id, tool_args)
-                    if decision_event.action == ToolStartDecision.SKIP:
-                        continue
-                    elif decision_event.action == ToolStartDecision.SKIP_WITH_MSG:
-                        self._add_error_tool_result(tool_name, tool_id, decision_event.message, observer)
-                        continue
-                    elif decision_event.action == ToolStartDecision.ABANDON:
-                        # To break from an async generator and return final_response
-                        # we can just break the while loop.
-                        iteration = max_iterations + 1
-                        break
-                    elif decision_event.action == ToolStartDecision.BREAK_WITH_MSG:
-                        self._add_error_tool_result(tool_name, tool_id, decision_event.message, observer)
-                        break
-                    else:
-                        try:
-                            parsed_args = json.loads(tool_args) if isinstance(tool_args, str) else tool_args
-                        except json.JSONDecodeError as e:
-                            error_msg = f"Error: Invalid JSON arguments provided. Please fix the syntax and try again. Details: {str(e)}"
-                            observer.on_tool_complete(tool_name, tool_id, False, error_msg)
-                            self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=error_msg)
+                    decision_event = observer.on_tool_start(tool_name, tool_id, tool_args)
+                    match decision_event.action:
+                        case ToolStartDecision.SKIP():
                             continue
+                        case ToolStartDecision.SKIP_WITH_MSG(msg):
+                            self._add_error_tool_result(tool_name, tool_id, msg, observer)
+                            continue
+                        case ToolStartDecision.ABANDON():
+                            iteration = max_iterations + 1
+                            break
+                        case ToolStartDecision.BREAK_WITH_MSG(msg):
+                            self._add_error_tool_result(tool_name, tool_id, msg, observer)
+                            break
+                        case ToolStartDecision.CONTINUE():
+                            try:
+                                parsed_args = json.loads(tool_args) if isinstance(tool_args, str) else tool_args
+                            except json.JSONDecodeError as e:
+                                error_msg = f"Error: Invalid JSON arguments provided. Please fix the syntax and try again. Details: {str(e)}"
+                                observer.on_tool_complete(tool_name, tool_id, False, error_msg)
+                                self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=error_msg)
+                                continue
 
-                        tasks.append(
-                            self.tools.execute(
-                                tool_name, parsed_args, controller=observer,
-                                max_chars=config.max_chars,
-                                extra_context={
-                                    **(config.extra_context or {}),
-                                    "llm_client": self.llm,
-                                    "tools_manager": self.tools,
-                                    "memory_manager": self.memory,
-                                },
+                            tasks.append(
+                                self.tools.execute(
+                                    tool_name, parsed_args, controller=observer,
+                                    max_chars=config.max_chars,
+                                    extra_context={
+                                        **(config.extra_context or {}),
+                                        "llm_client": self.llm,
+                                        "tools_manager": self.tools,
+                                        "memory_manager": self.memory,
+                                    },
+                                )
                             )
-                        )
-                        tc_meta.append((tc["id"], tool_name))
+                            tc_meta.append((tc["id"], tool_name))
 
                 if len(tasks) > 0:
                     tool_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -272,19 +272,21 @@ class AgentRunner:
 
                 iteration += 1
                 if iteration == max_iterations:
-                    decision_event: DecisionEvent[LastIterationDecision] = observer.on_final_iteration()
-                    if decision_event.action == LastIterationDecision.CONTINUE:
-                        continue
-                    elif decision_event.action == LastIterationDecision.LEAVE_MESSAGE:
-                        self.memory.add_message({
-                            "role":'user',
-                            "content": decision_event.message
-                        })
-                    elif decision_event.action == LastIterationDecision.ABANDON:
-                        break
-                    elif decision_event.action == LastIterationDecision.EXTEND:
-                        max_iterations += decision_event.extended_iterations_count or max_iterations
-                        continue
+                    decision_event: DecisionEvent[LastIterationAction] = observer.on_final_iteration()
+
+                    match decision_event.action:
+                        case LastIterationDecision.CONTINUE():
+                            continue
+                        case LastIterationDecision.LEAVE_MSG(msg):
+                            self.memory.add_message({
+                                "role":'user',
+                                "content": msg
+                            })
+                        case LastIterationDecision.ABANDON():
+                            break
+                        case LastIterationDecision.EXTEND(max_iterations_count):
+                            max_iterations += max_iterations_count or max_iterations
+                            continue
 
             if iteration > max_iterations:
                 error_msg = f"Agent failed to provide a final answer after {max_iterations} iterations."

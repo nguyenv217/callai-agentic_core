@@ -10,7 +10,7 @@ import json
 from agentic_core.constants import MCP_INITLIAZE_TIMEOUT
 
 from ..config import ConfigurationError
-from ..interfaces import DecisionAction, DecisionEvent
+from ..decisions import DecisionEvent, ToolOnPromptDecision
 from .base import ToolSchema
 
 if TYPE_CHECKING:
@@ -20,22 +20,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-from enum import Enum, auto
-
-class ToolOnPromptAction(Enum):
-    CONFIRM = auto()
-    REJECT = auto()
-    REJECT_WITH_MSG = auto()
-
-    @property
-    def required_message(self):
-        return self == ToolOnPromptAction.REJECT_WITH_MSG
-
 class ToolExecutionController(Protocol):
     """Protocol for tool execution control."""
     on_chat_notified: Callable[[str], None] | None = None
     on_prompt_respond: Callable[[Any], str] | None = None
-    on_prompt_confirmation: Callable[[Any], DecisionEvent[ToolOnPromptAction]] | None = None
+    on_prompt_confirmation: Callable[[Any], DecisionEvent[ToolOnPromptDecision]] | None = None
 
 class ToolManager:
     """

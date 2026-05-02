@@ -1,30 +1,7 @@
 from dataclasses import dataclass, field
-from typing import Generic, TypeVar, Protocol, Any
+from typing import Any
 from enum import Enum
 
-# ===================================================
-# Decision Events
-# ===================================================
-
-class DecisionAction(Protocol):
-    @property
-    def required_message(self) -> bool: ...
-    @property
-    def name(self) -> str: ...
-
-ActionT = TypeVar("ActionT", bound=DecisionAction)
-
-@dataclass
-class DecisionEvent(Generic[ActionT]):
-    """Event for observing the decision made by an agent."""    
-    action: ActionT
-    message: str | None = None
-    extended_iterations_count: int | None = None
-
-    def __post_init__(self):
-        if self.action.required_message and self.message is None:
-            error_prefix = f"{type(self.action).__name__}.{self.action.name}"
-            raise ValueError(f"{error_prefix} cannot be used without a message")
 
 # ===================================================
 # Exceptions 
@@ -76,7 +53,7 @@ class AgentResponse:
     text: str = ""
     reasoning: str = ""
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
-    usage: dict[str, Any] = field(default_factory=dict)
+    usage: dict[str, Any]  | None = None
     error: BaseException | None = None
 
     def to_dict(self) -> dict[str, Any]:

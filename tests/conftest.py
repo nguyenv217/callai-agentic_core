@@ -4,7 +4,7 @@ from typing import AsyncIterator, Iterator
 from agentic_core.llm_providers.base import ILLMClient, LLMResponse
 from agentic_core.tools.base import BaseTool
 from agentic_core.observers.standard import SilentObserver
-from agentic_core.observers import DecisionEvent, ToolStartDecision
+from agentic_core.decisions import DecisionEvent, ToolStartDecision
 
 # --- SHARED MOCKS ---
 
@@ -97,14 +97,14 @@ class ControlObserver(SilentObserver):
         if self.tool_decision:
             action = self.tool_decision[0]
             msg = self.tool_decision[1] if len(self.tool_decision) > 1 else None
-            return DecisionEvent(action=action, message=msg)
+            return DecisionEvent(action=(action() if not msg else action(msg)))
         return super().on_tool_start(tool_name, tool_id, tool_args)
 
     def on_final_iteration(self):
         if self.last_decision:
             action = self.last_decision[0]
             msg = self.last_decision[1] if len(self.last_decision) > 1 else None
-            return DecisionEvent(action=action, message=msg)
+            return DecisionEvent(action=action)
         return super().on_final_iteration()
 
 # --- FIXTURES ---

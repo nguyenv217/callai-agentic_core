@@ -5,7 +5,7 @@ from agentic_core.interfaces import IterationLimitReachedError
 from agentic_core.llm_providers.base import ILLMClient, LLMResponse
 from agentic_core.observers.standard import SilentObserver
 from agentic_core.tools.base import BaseTool
-from agentic_core.observers import DecisionEvent, ToolStartDecision, LastIterationDecision
+from agentic_core.decisions import DecisionEvent, ToolStartDecision, LastIterationDecision
 from tests.conftest import ControlObserver
 
 # --- TESTS ---

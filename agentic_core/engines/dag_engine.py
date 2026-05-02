@@ -5,9 +5,11 @@ from typing import Tuple
 from dataclasses import dataclass
 import logging
 
+from agentic_core.decisions import DecisionEvent, NodeFailureAction, NodeFailureDecision
+
 from agentic_core.config import ConfigurationError
 from agentic_core.interfaces import AgentResponse, DAGNodeResponse, DAGResponse, ProviderRateLimitError, ProviderTimeoutError
-from agentic_core.utils import clean_context_for_downstream
+from agentic_core.utils import clean_context_for_downstream, convert_exception_to_message
 from .engine import AgentRunner, RunnerConfig
 from ..observers import AgentEventObserver
 
@@ -44,6 +46,7 @@ class DAGNode:
     error_details: str | None = None
     failed_by: str | None = None
 
+
 class DAGEventObserver(AgentEventObserver):
     def on_node_queued(self, node_id: str, priority: int):
         logger.info(f"[DAG] Node {node_id} queued with priority {priority}")
@@ -55,6 +58,9 @@ class DAGEventObserver(AgentEventObserver):
         logger.info(f"[DAG] Node {node_id} failed. Retrying ({retry_count}/{max_retries})...")
     def on_graph_complete(self, diagnostics: DAGResponse):
         logger.info(f"[DAG] Graph execution complete. Diagnostics: {diagnostics.to_dict()}")
+    
+    def on_node_permanent_failure(self, node_id: str, error: Exception) -> DecisionEvent[NodeFailureAction]:
+        return DecisionEvent(action=NodeFailureDecision.CASCADE())
 
 class DAGAgentRunner:
     def __init__(
@@ -142,6 +148,10 @@ class DAGAgentRunner:
         for node_id, priority in priorities.items():
             self.nodes[node_id].priority = priority
 
+    async def _schedule_retry(self, node_id: str, priority: int, delay: float):
+        await asyncio.sleep(delay)
+        await self.queue.put((-priority, node_id))
+
     async def _worker(self, worker_id: int):
         while True:
             try:
@@ -170,7 +180,7 @@ class DAGAgentRunner:
                     )
 
                     if result.error:
-                        raise NodeExecutionError(node_id, result.error)
+                        raise NodeExecutionError(node_id, str(result.error), result.error)
 
                     node.result = result
                     node.state = NodeState.SUCCESS
@@ -200,15 +210,27 @@ class DAGAgentRunner:
                         self.observer.on_node_retry(node_id, node.current_retries, node.max_retries)
 
                         backoff = 2 ** node.current_retries
-                        await asyncio.sleep(backoff)
+                        asyncio.create_task(self._schedule_retry(node_id, node.priority, backoff))
                         await self.queue.put((-node.priority, node_id))
                     else:
                         logger.error(f"Node {node_id} failed permanently:\n{tb_str}")
                         node.state = NodeState.FAILED
                         node.error = e
                         node.error_details = tb_str
-                        self.observer.on_node_complete(node_id, NodeState.FAILED, error_msg)
-                        await self._cascade_failure(node_id)
+
+                        decision_event = self.observer.on_node_permanent_failure(node_id, e)
+                        match decision_event.action:
+                            case NodeFailureDecision.CASCADE():
+                                await self._cascade_failure(node_id)
+                                self.observer.on_node_complete(node_id, NodeState.FAILED, error_msg)
+
+                            case NodeFailureDecision.IGNORE():
+                                node.result = AgentResponse(text=f"IGNORED: Node {node_id} failed permanently: {convert_exception_to_message(e)}.")
+                                node.state = NodeState.SUCCESS 
+                        
+                            case NodeFailureDecision.FALLBACK(msg):
+                                node.result = AgentResponse(text=msg)
+                                node.state = NodeState.SUCCESS 
                 finally:
                     self.queue.task_done()
             except asyncio.CancelledError:

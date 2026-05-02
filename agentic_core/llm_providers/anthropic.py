@@ -2,8 +2,9 @@
 Anthropic LLM Provider.
 """
 from typing import AsyncIterator, Any
-from .base import ILLMClient, LLMResponse
 
+from anthropic import AsyncStream
+from .base import ILLMClient, LLMResponse
 
 class AnthropicLLM(ILLMClient):
     """Anthropic Claude adapter."""
@@ -27,6 +28,7 @@ class AnthropicLLM(ILLMClient):
         self, 
         messages: list[dict[str, Any]], 
         tools: list[dict[str, Any]] | None = None, 
+        stream: bool = False,
         **kwargs
     ) -> AsyncIterator[LLMResponse]:
         """
@@ -68,9 +70,31 @@ class AnthropicLLM(ILLMClient):
                 for t in tools
             ]
             req_kwargs["tools"] = anthropic_tools
-
-        response = await self.client.messages.create(**req_kwargs)
+    
         
+        if stream:
+            async with self.client.messages.stream(**req_kwargs) as event_stream:
+                async for event in event_stream:
+                    if event.type == "text":
+                        yield LLMResponse(text=event.text)
+
+                    if event.type == "thinking":
+                        yield LLMResponse(reasoning=event.thinking)
+                    
+                    elif event.type == "content_block_stop":
+                        block = event.content_block
+                        if block.type == "tool_use":
+                            yield LLMResponse(
+                                tool_calls=[{
+                                    "id": block.id,
+                                    "name": block.name,
+                                    "arguments": block.input 
+                                }]
+                            )
+
+            return
+        
+        response = await self.client.messages.create(**req_kwargs)
         text_content = ""
         tool_calls = []
         
