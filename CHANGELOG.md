@@ -138,3 +138,23 @@
 
 * allow configurable json.load alternative for tool argument parsing (if string) or now use a better default heuristics ([6e38bef](https://github.com/nguyenv217/callai-agentic_core/commit/6e38bef7be8e93bfca1b14f09a004900e9aac432))
 * streaming for ollama ([5855a5a](https://github.com/nguyenv217/callai-agentic_core/commit/5855a5af54cd61a5bc2b960dd72265a0e34a3c41))
+# [](https://github.com/nguyenv217/callai-agentic_core/compare/v0.6.0...v) (2026-05-03)
+
+
+### Bug Fixes
+
+* a simpler way to achieve completed tool parsing is simply to wait for stream to finish, no need for `finish_reason` ([f56cc3b](https://github.com/nguyenv217/callai-agentic_core/commit/f56cc3b49cd934ed698c8096d95855bcf69e1f9d))
+* attempt at graceful closure of servers + now default memory to notruncation strat for safety ([fa97a70](https://github.com/nguyenv217/callai-agentic_core/commit/fa97a7035ceac4b19767357acb3e3a937c664d77))
+* bugs: engine unexpected `tc`, anthropic and ollama custom tool adapter ([6c2d12c](https://github.com/nguyenv217/callai-agentic_core/commit/6c2d12cd707ff69fcd0a2c320fff04dbf3610170))
+* dag engine to reraise error to be captured with gather. tool manager increase default max chars ([5284504](https://github.com/nguyenv217/callai-agentic_core/commit/5284504258c920ed6ff5073f166290025b113fde))
+* **engine:** streaming accumulateed tools now so simply assign tool lists ([86a1e07](https://github.com/nguyenv217/callai-agentic_core/commit/86a1e07d6a1ceffeb5a1829993793c7863dd044e))
+* importing stale types ([fe36a39](https://github.com/nguyenv217/callai-agentic_core/commit/fe36a39afef1b65ab3d39e2ef834781ab17f9b74))
+* in openai getattr must provide defaults and more robust error handling in anthropic ([87dd837](https://github.com/nguyenv217/callai-agentic_core/commit/87dd837d0ea81f7a259d442700ec61b3109fca52))
+* inconsistency in typing base class ([4059590](https://github.com/nguyenv217/callai-agentic_core/commit/4059590aeff379109d63d334235bdd22cf54cbff))
+* **mcp:** if an env var is set, we now attempt to isolate true servers subprocesses by diffing pid with psutil and recursively kills them. atexit fallback for event loop closing unexpectedly ([a0a0cd3](https://github.com/nguyenv217/callai-agentic_core/commit/a0a0cd30ff436235d0c07f6390b1d1893f13b7cc))
+* untransparent error message from subagent tool ([f2f2708](https://github.com/nguyenv217/callai-agentic_core/commit/f2f2708abed4d423a34634df420ca07800d47c3e))
+
+
+### Features
+
+* memory manager can now export and load states ([4ec6dec](https://github.com/nguyenv217/callai-agentic_core/commit/4ec6dec80125885b0377025725dac1a7fcab3cc3))
