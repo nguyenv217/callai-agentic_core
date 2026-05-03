@@ -22,7 +22,6 @@ class MemoryManager:
         self.strategy = strategy or NoTruncationStrategy()
         self._hash_obj = hashlib.sha256()
         self._current_hash = None
-        # self.truncate_by_pop = False
 
     def system_prompt_exists(self):
         return self.system_prompt is not None
@@ -56,10 +55,7 @@ class MemoryManager:
 
     def enforce_context_limits(self):
         """Delegates complexity to the pluggable strategy."""
-        
-        # Use the strategy for content-level truncation
         self.messages = self.strategy.truncate(self.messages, self.max_chars)
-        
         self._update_hash()
 
     def _update_hash(self):
@@ -67,7 +63,6 @@ class MemoryManager:
         if self.system_prompt:
             self._hash_obj.update(json.dumps(self.system_prompt, sort_keys=True).encode())
         for msg in self.messages:
-            # We strip out non-hashable/volatile internal data if needed here
             self._hash_obj.update(json.dumps(msg, sort_keys=True).encode())
         self._current_hash = self._hash_obj.hexdigest()
 
@@ -77,3 +72,18 @@ class MemoryManager:
     
     def is_new_session(self):
         return len(self.messages) == 0
+
+    def export_state(self) -> dict:
+        """Exports the current state of memory for snapshotting."""
+        return {
+            "system_prompt": self.system_prompt,
+            "messages": list(self.messages),
+            "max_chars": self.max_chars
+        }
+
+    def import_state(self, state: dict):
+        """Restores the memory state from a provided state dictionary."""
+        self.system_prompt = state.get("system_prompt")
+        self.messages = list(state.get("messages", []))
+        self.max_chars = state.get("max_chars", self.max_chars)
+        self._update_hash()
