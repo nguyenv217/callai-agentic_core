@@ -7,7 +7,7 @@ packages = ["agentic_core"]
 
 [project]
 name = "callai-agentic_core"
-version = "0.6.1"
+version = "0.6.2"
 description = "A lightweight, modular execution engine and routing framework for LLM agents."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -40,12 +40,14 @@ rag-sqlite = [
 rag-chroma = ["chromadb"]
 rag-transformers = ["sentence-transformers"]
 rag-openai = ["openai>=2.24.0"]
+rag-ollama = ["ollama>=0.6.1"]
 
 rag-all = [
     "callai-agentic_core[rag-sqlite]",
     "callai-agentic_core[rag-chroma]",
     "callai-agentic_core[rag-transformers]",
     "callai-agentic_core[rag-openai]"
+    "callai-agentic_core[rag-ollama]"
 ]
 
 all = [

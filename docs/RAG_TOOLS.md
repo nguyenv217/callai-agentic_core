@@ -18,6 +18,7 @@ pip install "callai-agentic_core[rag-sqlite]"
 | `[rag-sqllite]` | Uses `sqlalchemy` for SQLite. **Note**: SQLite doesn't natively support vector indexing. |
 | `[rag-openai]` | Enables OpenAI-compatible async embedder endpoints. |
 | `[rag-transformer]` | Includes `SentenceTransformers` for local embedder usage. |
+| `[rag-ollama]` | For local `Ollama` embedders. |
 | `[rag-all]` | All of the above. |
 
 ## Components
@@ -27,8 +28,8 @@ pip install "callai-agentic_core[rag-sqlite]"
    - `LocalEmbedder`: Runs locally using \`sentence-transformers\`.
    - `OllamaEmbedder`: Uses local Ollama embedding models.
 2. **Stores**: Store and retrieve vectors.
-   - `SQLiteVectorStore`: Lightweight, file-based storage (Recommended for most cases).
-   - `ChromaDBStore`: High-performance vector database.
+   - `SQLiteVectorStore`: Lightweight, file-based storage.
+   - `ChromaDBStore`: High-performance vector database. (Recommended for most cases).
 
 Or import your own backends by implementing `IEmbeddingProvider` and `IVectorStore`.
 
