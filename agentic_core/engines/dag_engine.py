@@ -223,6 +223,7 @@ class DAGAgentRunner:
                             case NodeFailureDecision.CASCADE():
                                 await self._cascade_failure(node_id)
                                 self.observer.on_node_complete(node_id, NodeState.FAILED, error_msg)
+                                raise e
 
                             case NodeFailureDecision.IGNORE():
                                 node.result = AgentResponse(text=f"IGNORED: Node {node_id} failed permanently: {convert_exception_to_message(e)}.")
@@ -258,7 +259,7 @@ class DAGAgentRunner:
         try:
             self.compile()
         except RuntimeError as e:
-            return DAGResponse(error=RuntimeError(str(e)))
+            return DAGResponse(error=RuntimeError(f"DAG compilation failed: {str(e)}"))
             
         for node_id, node in self.nodes.items():
             if node.state == NodeState.SUCCESS:

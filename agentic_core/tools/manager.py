@@ -384,11 +384,11 @@ class ToolManager:
     # ===================================
 
     async def execute(
-            self, tool_name: str, args: dict, 
-            controller: ToolExecutionController | None = None, 
-            max_chars: int | None = 10000,
-            extra_context: dict[str, Any] | None = None
-            ) -> str:
+        self, tool_name: str, args: dict, 
+        controller: ToolExecutionController | None = None, 
+        max_chars: int | None = 30000,
+        extra_context: dict[str, Any] | None = None
+        ) -> str:
         """Routes execution to the registered plugin (Standard or MCP). Executes asynchronously."""
         if tool_name not in self._plugins:
             return f"Error: Tool '{tool_name}' not found or not registered."
