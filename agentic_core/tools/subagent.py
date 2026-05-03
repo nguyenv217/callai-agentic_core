@@ -166,4 +166,4 @@ class SpawnSubAgentsTool(BaseTool):
 
         except Exception as e:
             logger.exception("Failed to execute sub-agent plan")
-            return f"Unexpected error during sub-agent orchestration: {str(e)}"
+            return f"Unexpected error during sub-agent orchestration: {convert_exception_to_message(e)}"
