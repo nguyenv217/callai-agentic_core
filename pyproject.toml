@@ -46,7 +46,7 @@ rag-all = [
     "callai-agentic_core[rag-sqlite]",
     "callai-agentic_core[rag-chroma]",
     "callai-agentic_core[rag-transformers]",
-    "callai-agentic_core[rag-openai]"
+    "callai-agentic_core[rag-openai]",
     "callai-agentic_core[rag-ollama]"
 ]
 
