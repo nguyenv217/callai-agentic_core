@@ -14,6 +14,50 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
+# =================================
+# Custom Process Management
+# =================================
+import os
+import atexit
+
+_MCP_CLEANUP_WITH_PSUTIL = os.getenv("MCP_CLEANUP_WITH_PSUTIL", False)
+
+def kill_process_tree(pid: int, expected_create_time: float = None):
+    """Gracefully terminates a process and all its descendants with PID-recycle protection."""
+    import psutil
+    import contextlib
+    with contextlib.suppress(psutil.NoSuchProcess):
+        parent = psutil.Process(pid)
+        
+        # If birth times don't match, this is a recycled PID
+        if expected_create_time and parent.create_time() != expected_create_time:
+            logger.debug(f"PID {pid} was recycled. Skipping tree termination.")
+            return 
+            
+        children = parent.children(recursive=True)
+        
+        for child in children:
+            with contextlib.suppress(psutil.NoSuchProcess):
+                child.kill()
+        
+        parent.kill()
+
+_ACTIVE_MCP_PIDS: set[tuple[int, float]] = set()
+
+def _emergency_cleanup():
+    """Fallback to when event loop is abruptly closed and context is never switched back to `server_tasks` to perform recursive cleanup"""
+    for pid, birth_time in list(_ACTIVE_MCP_PIDS):
+        logger.debug(f"Emergency cleanup for PID {pid}")
+        kill_process_tree(pid, expected_create_time=birth_time)
+
+atexit.register(_emergency_cleanup)
+
+
+# =============================
+# MCP implementations
+# =============================
+
 class MCPTimeoutError(Exception):
     """Exception raised when an MCP operation times out."""
     pass
@@ -65,7 +109,7 @@ class GlobalMCPRegistry:
         if cls._instance is None:
             cls._instance = super(GlobalMCPRegistry, cls).__new__(cls)
         return cls._instance
-
+    
     @staticmethod
     def _get_identity_key(server_config: dict[str, Any], tenant_id: str = "default") -> Tuple:
         """Identity key hash from (command, args, eng) and a tenant_id to prevent cross-tenant poisoning"""
@@ -147,8 +191,6 @@ class GlobalMCPRegistry:
             async def server_task():
                 err_stream = None
                 try:
-                    import os
-
                     log_file = server_config.get("log_file")
                     if log_file:
                         os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
@@ -160,30 +202,56 @@ class GlobalMCPRegistry:
                     server_params = StdioServerParameters(command=command, args=args, env=env)
                     
                     async with stdio_client(server_params, errlog=err_stream) as (read_stream, write_stream):
-                        async with ClientSession(read_stream, write_stream) as session:
-                            await session.initialize()
-                            init_event.set()
+                        try:   
+                            if _MCP_CLEANUP_WITH_PSUTIL: # hack: we snapshot before and after initalizing mcp client, then can grab the PID of the server subprocess
+                                import psutil
+                                current_process = psutil.Process(os.getpid())
+                                children_before = set(current_process.children(recursive=False)) 
 
-                            logger.info(f"[{server_name}] ACTOR: Background task ready and polling queue.")
-                            while not shutdown_event.is_set():
-                                try:
-                                    action, payload, fut = await asyncio.wait_for(request_queue.get(), timeout=0.5)
+                            async with ClientSession(read_stream, write_stream) as session:
+                                if _MCP_CLEANUP_WITH_PSUTIL:
+                                    children_after = set(current_process.children(recursive=False))
+                                    new_children = list(children_after - children_before)
+
+                                    if new_children:
+                                        wrapper_proc = new_children[0]
+                                        session_ref["pid"] = wrapper_proc.pid
+                                        session_ref["create_time"] = wrapper_proc.create_time() # record this time to prevents PID from being recycled to innocent tasks and the shutdown event being scheduled 
+                                        _ACTIVE_MCP_PIDS.add((session_ref["pid"], session_ref["create_time"]))
+                                        logger.debug(f"[{server_name}] Captured wrapper PID: {session_ref['pid']}")
+
+                                await session.initialize()
+                                init_event.set()
+
+                                logger.info(f"[{server_name}] ACTOR: Background task ready and polling queue.")
+                                while not shutdown_event.is_set():
                                     try:
-                                        if action == "list_tools":
-                                            res = await session.list_tools()
-                                            if not fut.done(): fut.set_result(res)
-                                        elif action == "call_tool":
-                                            res = await session.call_tool(payload["name"], arguments=payload.get("arguments"))
-                                            logger.info(f"[{server_name}] ACTOR: Successfully executed '{payload['name']}'")
-                                            if not fut.done(): fut.set_result(res)
-                                    except Exception as e:
-                                        logger.exception(f"[{server_name}] ACTOR ERROR: {type(e).__name__} - {e}")
-                                        if not fut.done(): fut.set_exception(e)
-                                    finally:
-                                        request_queue.task_done()
-                                except asyncio.TimeoutError: 
-                                    # Normal heartbeat
-                                    pass
+                                        action, payload, fut = await asyncio.wait_for(request_queue.get(), timeout=0.5)
+                                        try:
+                                            if action == "list_tools":
+                                                res = await session.list_tools()
+                                                if not fut.done(): fut.set_result(res)
+                                            elif action == "call_tool":
+                                                res = await session.call_tool(payload["name"], arguments=payload.get("arguments"))
+                                                logger.info(f"[{server_name}] ACTOR: Successfully executed '{payload['name']}'")
+                                                if not fut.done(): fut.set_result(res)
+                                        except Exception as e:
+                                            logger.exception(f"[{server_name}] ACTOR ERROR: {type(e).__name__} - {e}")
+                                            if not fut.done(): fut.set_exception(e)
+                                        finally:
+                                            request_queue.task_done()
+                                    except asyncio.TimeoutError: 
+                                        # Normal heartbeat
+                                        pass
+                        finally:
+                            if _MCP_CLEANUP_WITH_PSUTIL:
+                                pid_to_kill = session_ref.get("pid")
+                                birth_time = session_ref.get("create_time")
+                                if pid_to_kill:
+                                    logger.debug(f"[{server_name}] Executing tree-killer on PID {pid_to_kill}")
+                                    kill_process_tree(pid_to_kill, expected_create_time=birth_time)
+                                    _ACTIVE_MCP_PIDS.discard((pid_to_kill, birth_time)) # cancellation happened, so no need for sync cleanup hook
+
                 except Exception as e:
                     logger.exception(f"[{server_name}] Server task died unexpectedly: {e}")
                     if on_server_death: 
@@ -191,6 +259,7 @@ class GlobalMCPRegistry:
                     session_ref["error"] = e
                     if not init_event.is_set():
                         init_event.set()
+
                 finally:
                     if err_stream:
                         try:
