@@ -4,7 +4,7 @@ from typing import Any, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 
 from agentic_core.interfaces import IterationLimitReachedError
-from agentic_core.utils import convert_exception_to_message
+from agentic_core.utils import clean_context_for_downstream, convert_exception_to_message
 
 if TYPE_CHECKING:
     from agentic_core.observers import DAGEventObserver
@@ -158,7 +158,13 @@ class SpawnSubAgentsTool(BaseTool):
             
             for node_id, node in dag_runner.nodes.items():
                 if node.state.name == "SUCCESS" and node.result:
-                    res_text = node.result.text if hasattr(node.result, 'text') else str(node.result)
+                    res_text_raw = node.result.text if hasattr(node.result, 'text') else str(node.result)
+                    try:    
+                        res_text = clean_context_for_downstream(res_text_raw)
+                    except Exception: 
+                        logger.warning(f"Subagent spawning tool: Failed to clean context at node {node_id}")
+                        res_text = res_text_raw
+                    if len(res_text.strip()) == 0: res_text = "NO OUTPUT."
                 else:
                     res_text = f"Execution halted: {node.error}"
                     if isinstance(node.error, IterationLimitReachedError):
