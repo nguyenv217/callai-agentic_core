@@ -6,7 +6,7 @@ import inspect
 
 from .base import AgentEventObserver
 from ..decisions import ToolStartAction, ToolStartDecision, DecisionEvent
-from ..tools import ToolExecutionController
+from ..tools.protocols import ToolExecutionController
 
 class SilentObserver(AgentEventObserver):
     """A no-op observer that prints nothing. Use this if you don't care about events."""

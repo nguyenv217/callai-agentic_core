@@ -11,11 +11,9 @@ if TYPE_CHECKING:
     from agentic_core.tools import ToolManager
     from agentic_core.llm_providers import ILLMClient
 
-from agentic_core.engines.dag_engine import DAGAgentRunner
-from agentic_core.engines.engine import AgentRunner, RunnerConfig
+from agentic_core.config import RunnerConfig
 from agentic_core.memory.manager import MemoryManager
 from agentic_core.tools.base import BaseTool
-
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -85,8 +83,8 @@ class SpawnSubAgentsTool(BaseTool):
         }
     }
     
-    
     async def execute(self, args: dict, context: dict) -> str:
+        from agentic_core.engines import AgentRunner, DAGAgentRunner
         # Resolve dependencies from context
         llm_client: ILLMClient = context.get("llm_client")
         tools_manager: ToolManager = context.get("tools_manager")
@@ -158,7 +156,6 @@ class SpawnSubAgentsTool(BaseTool):
                 
             summary.append("\nDetailed Outputs:")
             
-            
             for node_id, node in dag_runner.nodes.items():
                 if node.state.name == "SUCCESS" and node.result:
                     res_text = node.result.text if hasattr(node.result, 'text') else str(node.result)
@@ -178,3 +175,4 @@ class SpawnSubAgentsTool(BaseTool):
         except Exception as e:
             logger.exception("Failed to execute sub-agent plan")
             return f"Unexpected error during sub-agent orchestration: {convert_exception_to_message(e)}"
+

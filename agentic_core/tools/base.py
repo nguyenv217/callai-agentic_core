@@ -13,7 +13,7 @@ class BaseTool(ABC):
         return self._name
     
     @abstractmethod
-    def execute(self, args: dict, context: dict) -> str:
+    async def execute(self, args: dict, context: dict) -> str:
         """Executes the tool logic and returns a string result."""
         pass
      

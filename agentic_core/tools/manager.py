@@ -5,17 +5,18 @@ import asyncio
 import atexit
 import inspect
 import logging
-import json
 
 from agentic_core.constants import MCP_INITLIAZE_TIMEOUT
 
 from ..config import ConfigurationError
-from ..decisions import DecisionEvent, ToolOnPromptDecision
-from ..interfaces import ToolSchema
+from .protocols import ToolExecutionController
 
 if TYPE_CHECKING:
+    from ..interfaces import ToolSchema
+    from ..decisions import DecisionEvent, ToolOnPromptDecision
     from .base import BaseTool
-    from ..engines.engine import RunnerConfig
+
+    from ..config import RunnerConfig
     from .mcp.tools import MCPToolAdapter
 
 logger = logging.getLogger(__name__)
@@ -108,7 +109,6 @@ class ToolManager:
         # Ensure cleanup of background threads on exit
         atexit.register(self.cleanup)
 
-
     def _register_discovery_tools(self):
         from .mcp.tools import ListMCPTools, LoadMCPTool
         self.register_tool(ListMCPTools(self))
@@ -132,6 +132,7 @@ class ToolManager:
     
     async def initialize_mcp(self, allowed_servers: list[str] | None = None, extra_env: dict[str, str] | None = None) -> int:
         """Connects to MCP servers and pre-loads tool definitions into standby.
+
         Args:
             allowed_servers: 
                 List of server names to connect to instead of connecting to all 
@@ -140,6 +141,7 @@ class ToolManager:
                 Dictionary of extra environment variables to be used when 
                 creating the connection to the MCP server. Defaults to None
         """
+
         # Dynamic import prevents crashing if user doesn't have MCP dependencies installed
         from .mcp.manager import MCPClientManager
         from .mcp.tools import MCPToolAdapter
@@ -476,3 +478,4 @@ class ToolManager:
 
             if config.mcp_enable_discovery and not self._loaded_discovery_tools:
                 self._register_discovery_tools()
+
