@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Callable, Set, Protocol, TYPE_CHECKING, Any
+from typing import Awaitable, Callable, Set, Protocol, TYPE_CHECKING, Any
 from pathlib import Path
 import asyncio
 import atexit
@@ -22,9 +22,9 @@ logger = logging.getLogger(__name__)
 
 class ToolExecutionController(Protocol):
     """Protocol for tool execution control."""
-    on_chat_notified: Callable[[str], None] | None = None
-    on_prompt_respond: Callable[[Any], str] | None = None
-    on_prompt_confirmation: Callable[[Any], DecisionEvent[ToolOnPromptDecision]] | None = None
+    on_chat_notified: Callable[[str], Awaitable[None]] | None = None
+    on_prompt_respond: Callable[[Any], Awaitable[str]] | None = None
+    on_prompt_confirmation: Callable[[Any], Awaitable[DecisionEvent[ToolOnPromptDecision]]] | None = None
 
 class ToolManager:
     """

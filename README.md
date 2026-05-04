@@ -383,7 +383,7 @@ print(result.text)
 
 ### Memory Management & Context Truncation
 
-To prevent token overflow in long conversations, `MemoryManager` supports configurable truncation. By default, it uses a `DefaultTruncationStrategy` that uses intelligently prunes tool outputs and long text before deleting entire messages.
+To prevent token overflow in long conversations, `MemoryManager` supports configurable truncation. By default, it uses `NoTruncationStrategy` that does not multiliate the message array to preserve prompt (as most providers now supports prompt caching which makes truncation even more expensive). However, you can use `DefaultTruncationStrategy` that intelligently prunes tool outputs and long text before deleting entire messages while still maintaining structure integrity if the context windows is bordering on the limit.
 
 ```python
 from agentic_core.memory.manager import MemoryManager
@@ -397,7 +397,7 @@ memory = MemoryManager(
     strategy=strategy
 )
 ```
-You can also implement your own truncation logic by inheriting from the `TruncationStrategy` interface.
+You can also implement your own truncation logic for your domain-specific workflows by inheriting from the `TruncationStrategy` interface.
 
 ### Available LLM Adapters
 
@@ -474,6 +474,7 @@ tools = ToolManager(
  │   └── strategies.py        # Truncation strategies
  ├── observers/               # Event logging and observation
  │   ├── base.py              # Base Observer
+ │   ├── dag.py               # `DAGEventObserver` for `DAGAgentRunner`-specific event hooks
  │   └── standard.py          # Default/Print observers
  ├── tools/                   # Tooling system
  │   ├── base.py              # `BaseTool`, schemas, etc.

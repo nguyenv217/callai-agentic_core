@@ -1,25 +1,21 @@
+from __future__ import annotations
+from typing import Tuple, TYPE_CHECKING
 import asyncio
 import traceback
 from enum import Enum, auto
-from typing import Tuple
 from dataclasses import dataclass
 import logging
 
-from agentic_core.decisions import DecisionEvent, NodeFailureAction, NodeFailureDecision
-
-from agentic_core.config import ConfigurationError
-from agentic_core.interfaces import AgentResponse, DAGNodeResponse, DAGResponse, ProviderRateLimitError, ProviderTimeoutError
+from agentic_core.decisions import NodeFailureDecision
+from agentic_core.observers import DAGEventObserver
+from agentic_core.config import ConfigurationError, RunnerConfig
+from agentic_core.interfaces import AgentResponse, DAGNodeResponse, DAGResponse, ProviderRateLimitError, ProviderTimeoutError, NodeExecutionError
 from agentic_core.utils import clean_context_for_downstream, convert_exception_to_message
-from .engine import AgentRunner, RunnerConfig
-from ..observers import AgentEventObserver
+
+if TYPE_CHECKING:
+    from agentic_core.engines import AgentRunner
 
 logger = logging.getLogger(__name__)
-
-class NodeExecutionError(Exception):
-    def __init__(self, node_id: str, message: str, original_exception: Exception | None = None):
-        self.node_id = node_id
-        self.original_exception = original_exception
-        super().__init__(f"Node {node_id} failed: {message}")
 
 class NodeState(Enum):
     PENDING = auto()
@@ -46,21 +42,6 @@ class DAGNode:
     error_details: str | None = None
     failed_by: str | None = None
 
-
-class DAGEventObserver(AgentEventObserver):
-    def on_node_queued(self, node_id: str, priority: int):
-        logger.info(f"[DAG] Node {node_id} queued with priority {priority}")
-    def on_node_start(self, node_id: str, worker_id: int):
-        logger.info(f"[DAG] Worker {worker_id} starting node {node_id}")
-    def on_node_complete(self, node_id: str, status: NodeState, result: AgentResponse):
-        logger.info(f"[DAG] Node {node_id} completed with status {status}")
-    def on_node_retry(self, node_id: str, retry_count: int, max_retries: int):
-        logger.info(f"[DAG] Node {node_id} failed. Retrying ({retry_count}/{max_retries})...")
-    def on_graph_complete(self, diagnostics: DAGResponse):
-        logger.info(f"[DAG] Graph execution complete. Diagnostics: {diagnostics.to_dict()}")
-    
-    def on_node_permanent_failure(self, node_id: str, error: Exception) -> DecisionEvent[NodeFailureAction]:
-        return DecisionEvent(action=NodeFailureDecision.CASCADE())
 
 class DAGAgentRunner:
     def __init__(
@@ -162,7 +143,7 @@ class DAGAgentRunner:
                     self.queue.task_done()
                     continue
 
-                self.observer.on_node_start(node_id, worker_id)
+                await self.observer.on_node_start(node_id, worker_id)
                 node.state = NodeState.RUNNING
 
                 try:
@@ -184,7 +165,7 @@ class DAGAgentRunner:
 
                     node.result = result
                     node.state = NodeState.SUCCESS
-                    self.observer.on_node_complete(node_id, NodeState.SUCCESS, result)
+                    await self.observer.on_node_complete(node_id, NodeState.SUCCESS, result)
 
                     for child_id in self.out_edges[node_id]:
                         child = self.nodes[child_id]
@@ -194,7 +175,7 @@ class DAGAgentRunner:
                         if child.in_degree == 0:
                             child.state = NodeState.READY
                             await self.queue.put((-child.priority, child_id))
-                            self.observer.on_node_queued(child_id, child.priority)
+                            await self.observer.on_node_queued(child_id, child.priority)
 
                 except Exception as e:
                     tb_str = traceback.format_exc()
@@ -207,7 +188,7 @@ class DAGAgentRunner:
                     if is_retryable and node.current_retries < node.max_retries:
                         node.current_retries += 1
                         node.state = NodeState.RETRYING
-                        self.observer.on_node_retry(node_id, node.current_retries, node.max_retries)
+                        await self.observer.on_node_retry(node_id, node.current_retries, node.max_retries)
 
                         backoff = 2 ** node.current_retries
                         asyncio.create_task(self._schedule_retry(node_id, node.priority, backoff))
@@ -218,11 +199,11 @@ class DAGAgentRunner:
                         node.error = e
                         node.error_details = tb_str
 
-                        decision_event = self.observer.on_node_permanent_failure(node_id, e)
+                        decision_event = await self.observer.on_node_permanent_failure(node_id, e)
                         match decision_event.action:
                             case NodeFailureDecision.CASCADE():
                                 await self._cascade_failure(node_id)
-                                self.observer.on_node_complete(node_id, NodeState.FAILED, error_msg)
+                                await self.observer.on_node_complete(node_id, NodeState.FAILED, error_msg)
                                 raise e
 
                             case NodeFailureDecision.IGNORE():
@@ -252,7 +233,7 @@ class DAGAgentRunner:
                 node.failed_by = failed_node_id
                 fail_msg = f"Upstream failure caused by node: {failed_node_id}"
                 node.result = fail_msg
-                self.observer.on_node_complete(node_id, NodeState.FAILED_UPSTREAM, fail_msg)
+                await self.observer.on_node_complete(node_id, NodeState.FAILED_UPSTREAM, fail_msg)
                 stack.extend(self.out_edges[node_id])
 
     async def execute(self) -> DAGResponse:
@@ -268,7 +249,7 @@ class DAGAgentRunner:
             if node.in_degree == 0:
                 node.state = NodeState.READY
                 await self.queue.put((-node.priority, node_id))
-                self.observer.on_node_queued(node_id, node.priority)
+                await self.observer.on_node_queued(node_id, node.priority)
 
         workers = [asyncio.create_task(self._worker(i)) for i in range(self.max_concurrency)]
 
@@ -290,5 +271,5 @@ class DAGAgentRunner:
             )
 
         response = DAGResponse(nodes=nodes_resp)
-        self.observer.on_graph_complete(response)
+        await self.observer.on_graph_complete(response)
         return response

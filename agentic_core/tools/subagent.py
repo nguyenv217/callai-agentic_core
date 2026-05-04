@@ -7,7 +7,7 @@ from agentic_core.interfaces import IterationLimitReachedError
 from agentic_core.utils import convert_exception_to_message
 
 if TYPE_CHECKING:
-    from agentic_core.engines import DAGEventObserver
+    from agentic_core.observers import DAGEventObserver
     from agentic_core.tools import ToolManager
     from agentic_core.llm_providers import ILLMClient
 

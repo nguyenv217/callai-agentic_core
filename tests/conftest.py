@@ -93,14 +93,14 @@ class ControlObserver(SilentObserver):
         self.tool_decision = tool_decision
         self.last_decision = last_decision
 
-    def on_tool_start(self, tool_name, tool_id, tool_args):
+    async def on_tool_start(self, tool_name, tool_id, tool_args):
         if self.tool_decision:
             action = self.tool_decision[0]
             msg = self.tool_decision[1] if len(self.tool_decision) > 1 else None
             return DecisionEvent(action=(action() if not msg else action(msg)))
         return super().on_tool_start(tool_name, tool_id, tool_args)
 
-    def on_final_iteration(self):
+    async def on_final_iteration(self):
         if self.last_decision:
             action = self.last_decision[0]
             msg = self.last_decision[1] if len(self.last_decision) > 1 else None

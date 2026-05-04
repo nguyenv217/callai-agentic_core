@@ -72,6 +72,14 @@ class IterationLimitReachedError(Exception):
     """Raised when the agent exceeds the maximum number"""
     pass
 
+class NodeExecutionError(Exception):
+    """Raised when a node fails to execute"""
+    def __init__(self, node_id: str, message: str, original_exception: Exception | None = None):
+        self.node_id = node_id
+        self.original_exception = original_exception
+        super().__init__(f"Node {node_id} failed: {message}")
+
+
 # ===================================================
 # Structured Responses
 # ===================================================

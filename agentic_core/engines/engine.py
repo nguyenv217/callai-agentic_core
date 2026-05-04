@@ -82,8 +82,8 @@ class AgentRunner:
     #  Helpers 
     # ================
 
-    def _add_error_tool_result(self, tool_name: str, tool_id: str, msg: str, observer: AgentEventObserver):
-        observer.on_tool_complete(tool_name, tool_id, False, msg)
+    async def _add_error_tool_result(self, tool_name: str, tool_id: str, msg: str, observer: AgentEventObserver):
+        await observer.on_tool_complete(tool_name, tool_id, False, msg)
         self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=msg)
 
     async def _handle_setup(self, user_input: str | list[dict], config: RunnerConfig, observer: AgentEventObserver):
@@ -112,7 +112,7 @@ class AgentRunner:
         for message in messages:
             self.memory.add_message(message)
 
-        observer.on_turn_start()
+        await observer.on_turn_start()
         await self.tools.prepare_turn(config)
 
     def _get_active_tools(self, config: RunnerConfig):
@@ -171,7 +171,7 @@ class AgentRunner:
 
         try:
             while iteration <= max_iterations and iteration <= AGENTIC_ITERATION_MAXIMUM:
-                observer.on_iteration_start(iteration, max_iterations)
+                await observer.on_iteration_start(iteration, max_iterations)
                 conversation = self.memory.get_history()
                 logger.info(f"Tools turn {iteration}: {[t['function']['name'] for t in active_tools]}")
 
@@ -195,19 +195,19 @@ class AgentRunner:
 
                 except ProviderRateLimitError as e:
                     error_msg = f"Rate Limit Exceeded: {str(e)}"
-                    observer.on_error(error_msg)
+                    await observer.on_error(error_msg)
                     yield StreamEvent(StreamEventType.ERROR, error_msg, error=e)
                     final_response.error = error_msg
                     return
                 except ProviderAuthenticationError as e:
                     error_msg = f"Authentication Failed: {str(e)}"
-                    observer.on_error(error_msg)
+                    await observer.on_error(error_msg)
                     yield StreamEvent(StreamEventType.ERROR, error_msg, error=e)
                     final_response.error = error_msg
                     return
                 except ProviderTimeoutError as e:
                     error_msg = f"Timeout: {str(e)}"
-                    observer.on_error(error_msg)
+                    await observer.on_error(error_msg)
                     yield StreamEvent(StreamEventType.ERROR, error_msg, error=e)
                     final_response.error = error_msg
 
@@ -231,7 +231,7 @@ class AgentRunner:
                 })
 
                 reasoning_text = turn_response.get("reasoning") or turn_response.get("text")
-                observer.on_tool_call_session_start(
+                await observer.on_tool_call_session_start(
                     reasoning_text=reasoning_text,
                     tool_calls=turn_response["tool_calls"],
                     iteration=iteration,
@@ -248,18 +248,18 @@ class AgentRunner:
                     tool_args = tc['function'].get("arguments", {})
                     tool_id = tc.get("id", "")
 
-                    decision_event = observer.on_tool_start(tool_name, tool_id, tool_args)
+                    decision_event = await observer.on_tool_start(tool_name, tool_id, tool_args)
                     match decision_event.action:
                         case ToolStartDecision.SKIP():
                             continue
                         case ToolStartDecision.SKIP_WITH_MSG(msg):
-                            self._add_error_tool_result(tool_name, tool_id, msg, observer)
+                            await self._add_error_tool_result(tool_name, tool_id, msg, observer)
                             continue
                         case ToolStartDecision.ABANDON():
                             iteration = max_iterations + 1
                             break
                         case ToolStartDecision.BREAK_WITH_MSG(msg):
-                            self._add_error_tool_result(tool_name, tool_id, msg, observer)
+                            await self._add_error_tool_result(tool_name, tool_id, msg, observer)
                             break
                         case ToolStartDecision.CONTINUE():
                             try:
@@ -268,7 +268,7 @@ class AgentRunner:
                                 parsed_args = parser(tool_args) if isinstance(tool_args, str) else tool_args
                             except HeuristicFailedToParse as e:
                                 error_msg = f"Error: Invalid JSON arguments provided. Please fix the syntax and try again. Details: {str(e)}"
-                                observer.on_tool_complete(tool_name, tool_id, False, error_msg)
+                                await observer.on_tool_complete(tool_name, tool_id, False, error_msg)
                                 self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=error_msg)
                                 continue
 
@@ -292,7 +292,7 @@ class AgentRunner:
                     for i, tool_result in enumerate(tool_results):
                         tc_id, tool_name = tc_meta[i]
                         success = not isinstance(tool_result, Exception)
-                        observer.on_tool_complete(tool_name, tc_id, success, tool_result)
+                        await observer.on_tool_complete(tool_name, tc_id, success, tool_result)
                         self.memory.add_tool_result(
                             tool_call_id=tc_id,
                             name=tool_name,
@@ -302,7 +302,7 @@ class AgentRunner:
 
                 iteration += 1
                 if iteration == max_iterations:
-                    decision_event: DecisionEvent[LastIterationAction] = observer.on_final_iteration()
+                    decision_event: DecisionEvent[LastIterationAction] = await observer.on_final_iteration()
 
                     match decision_event.action:
                         case LastIterationDecision.CONTINUE():
@@ -321,7 +321,7 @@ class AgentRunner:
 
             if iteration > max_iterations:
                 error_msg = f"Agent failed to provide a final answer after {max_iterations} iterations."
-                observer.on_error(error_msg)
+                await observer.on_error(error_msg)
                 limit_error = IterationLimitReachedError(error_msg)
                 final_response.error = limit_error
                 yield StreamEvent(StreamEventType.ERROR, error_msg, error=limit_error)
@@ -330,12 +330,12 @@ class AgentRunner:
             # If we reached here, they are unexpected crashes
             logger.exception("Unexpected error during stream_turn")
             error_msg = f"Engine execution error: {str(e)}"
-            observer.on_error(error_msg)
+            await observer.on_error(error_msg)
             yield StreamEvent(StreamEventType.ERROR, error_msg, error=e)
             final_response.error = error_msg
 
         finally:
-            observer.on_turn_complete(final_response)
+            await observer.on_turn_complete(final_response)
             yield StreamEvent(StreamEventType.FINAL_RESPONSE, final_response)
 
     async def run_turn(self, user_input: str | list[dict], observer: AgentEventObserver | None = None, config: RunnerConfig | None = None) -> AgentResponse:
