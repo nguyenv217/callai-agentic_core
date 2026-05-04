@@ -27,6 +27,8 @@ class SpawnSubAgentsTool(BaseTool):
     """
     Tool that provides agent with subagent spawning capability.
     It uses a SubAgentCoordinator to manage the lifecycle of the sub-agent swarm.
+
+    Pass context field `subagent_max_chars` to limit the number of characters per each sub-agent to be submitted to the orchestrator agent.
     """
     name = "spawn_subagents"
 
@@ -149,9 +151,14 @@ class SpawnSubAgentsTool(BaseTool):
 
             if result.error:
                 return f"DAG Execution Error: {convert_exception_to_message(result.error)}"
-
-            # Summarize results for the parent agent
-            summary = []
+            
+            summary = ["Sub-agent execution summary:"]
+            for node_id, resp in result.nodes.items():
+                summary.append(f" - Task {node_id}: {resp.state}")
+                
+            summary.append("\nDetailed Outputs:")
+            
+            
             for node_id, node in dag_runner.nodes.items():
                 if node.state.name == "SUCCESS" and node.result:
                     res_text = node.result.text if hasattr(node.result, 'text') else str(node.result)
@@ -159,6 +166,10 @@ class SpawnSubAgentsTool(BaseTool):
                     res_text = f"Execution halted: {node.error}"
                     if isinstance(node.error, IterationLimitReachedError):
                         res_text += " (Hint: You can retry spawning this subagent by providing a higher 'max_iterations' in the node config)"
+
+                max_chars = context.get("subagent_max_chars") or 5000
+                if len(res_text) > max_chars:
+                    res_text = res_text[:max_chars] + "\n... [Truncated to preserve context limit]"
                 status = node.state.name
                 summary.append(f"[{status}] Task {node_id}: {res_text}")
 
