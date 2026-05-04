@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from agentic_core.tools import ToolManager
     from agentic_core.llm_providers import ILLMClient
 
-from agentic_core.config import RunnerConfig
+from agentic_core.config import ConfigurationError, RunnerConfig
 from agentic_core.memory.manager import MemoryManager
 from agentic_core.tools.base import BaseTool
 logger = logging.getLogger(__name__)
@@ -91,7 +91,7 @@ class SpawnSubAgentsTool(BaseTool):
         observer: DAGEventObserver = context.get("subagent_observer")
 
         if not llm_client or not tools_manager:
-            return "Error: Sub-agent spawning requires 'llm_client' and 'tools_manager' in the context."
+            raise ConfigurationError("Sub-agent spawning requires 'llm_client' and 'tools_manager' in the context.")
 
         plan_data = args.get("plan", {})
 

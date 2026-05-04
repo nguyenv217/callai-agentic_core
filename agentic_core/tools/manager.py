@@ -289,6 +289,9 @@ class ToolManager:
     def get_discovery_tools(self) -> list[ToolSchema]:
         """Get discovery tools."""
         return [t for t in self.tool_schemas if t['function']['name'] in self._discovery_tools]
+    
+    def get_mcp_loaded_tools(self) -> list[ToolSchema]:
+        return [t.schema for t in self._mcp_loaded_tools]
 
     def get_registered_tools(self) -> list[str]:
         """
@@ -347,9 +350,6 @@ class ToolManager:
         
         logger.warning(f"MCP tool '{name}' not found in loaded tools.")
         return False
-
-    def get_mcp_loaded_tools(self) -> list[ToolSchema]:
-        return [t.schema for t in self._mcp_loaded_tools]
     
     def clear_loaded_tools(self):
         """Clears the list of loaded MCP tools."""

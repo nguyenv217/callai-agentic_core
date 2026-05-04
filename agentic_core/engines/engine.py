@@ -1,5 +1,4 @@
 from typing import Any, AsyncGenerator, Callable
-import json
 import asyncio
 
 from agentic_core.utils import HeuristicFailedToParse, heuristic_json_parse
@@ -337,6 +336,7 @@ class AgentRunner:
         finally:
             await observer.on_turn_complete(final_response)
             yield StreamEvent(StreamEventType.FINAL_RESPONSE, final_response)
+
 
     async def run_turn(self, user_input: str | list[dict], observer: AgentEventObserver | None = None, config: RunnerConfig | None = None) -> AgentResponse:
         """
