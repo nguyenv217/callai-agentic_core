@@ -70,8 +70,8 @@ class OpenAILLM(ILLMClient):
                 req_kwargs["tools"] = tools
 
             accumulated_tools = {}
-
-            # Handle streaming mode for compatibility with stream_engine.py
+            active_index_map = {}
+            
             if stream:
                 stream_response = await self.client.chat.completions.create(stream=True, **req_kwargs)
             
@@ -82,11 +82,22 @@ class OpenAILLM(ILLMClient):
                     choice = chunk.choices[0]
                     delta = choice.delta
 
-                    # Collect tool calls as they appear
                     if delta.tool_calls:
                         for tc_delta in delta.tool_calls:
-                            idx = tc_delta.index
-                            
+                            api_idx = tc_delta.index if tc_delta.index else 0
+
+                            if api_idx not in active_index_map:
+                                active_index_map[api_idx] = len(accumulated_tools)
+                            else:
+                                virtual_idx = active_index_map[api_idx]
+                                existing_tool = accumulated_tools[virtual_idx]
+                                
+                                # if API reused the index for a new tool
+                                if tc_delta.id and existing_tool["id"] and tc_delta.id != existing_tool["id"]:
+                                    active_index_map[api_idx] = len(accumulated_tools)
+
+                            idx = active_index_map[api_idx]
+
                             # If this is a new tool call index, initialize it
                             if idx not in accumulated_tools:
                                 accumulated_tools[idx] = {
@@ -101,7 +112,6 @@ class OpenAILLM(ILLMClient):
                             if tc_delta.id:
                                 target["id"] = tc_delta.id
                             
-                            # Update Function details
                             if tc_delta.function:
                                 if tc_delta.function.name:
                                     target["function"]["name"] += tc_delta.function.name
