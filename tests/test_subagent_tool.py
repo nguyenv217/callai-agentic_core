@@ -1,6 +1,7 @@
 import asyncio
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
+from agentic_core.config import ConfigurationError
 from agentic_core.tools.subagent import SpawnSubAgentsTool
 
 class MockLLMResponse:
@@ -95,12 +96,13 @@ async def test_spawn_subagents_granular_tools(subagent_tool, mock_llm, mock_tm):
         assert config.tools is not None 
         assert {"type":"function", "function":{"name":"search_tool"}} in config.tools
 
+
 @pytest.mark.asyncio
 async def test_spawn_subagents_missing_context(subagent_tool):
     context = {} # Missing llm and tm
     args = {"plan": {"nodes": {"n1": {"prompt": "X"}}, "edges": []}}
-    result = await subagent_tool.execute(args, context)
-    assert "Error: Sub-agent spawning requires 'llm_client' and 'tools_manager' in the context" in result
+    with pytest.raises(ConfigurationError):
+        result = await subagent_tool.execute(args, context)
 
 @pytest.mark.asyncio
 async def test_spawn_subagents_invalid_plan(subagent_tool):
