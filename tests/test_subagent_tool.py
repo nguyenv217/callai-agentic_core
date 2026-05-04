@@ -2,9 +2,6 @@ import asyncio
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from agentic_core.tools.subagent import SpawnSubAgentsTool
-from agentic_core.engines.engine import AgentRunner, RunnerConfig
-from agentic_core.memory.manager import MemoryManager
-from agentic_core.interfaces import AgentResponse
 
 class MockLLMResponse:
     def __init__(self, text="Mocked response"):
@@ -72,7 +69,7 @@ async def test_spawn_subagents_granular_tools(subagent_tool, mock_llm, mock_tm):
         "tools_manager": mock_tm
     }
 
-    with patch('agentic_core.tools.subagent.DAGAgentRunner') as MockDAG:
+    with patch('agentic_core.engines.DAGAgentRunner') as MockDAG:
         MockDAG.return_value.execute = AsyncMock(return_value=MagicMock(error=None))
         # To make it return something that doesn't crash the summary loop
         MockDAG.return_value.nodes = {
