@@ -9,7 +9,7 @@ import logging
 from agentic_core.decisions import NodeFailureDecision
 from agentic_core.observers import DAGEventObserver
 from agentic_core.config import ConfigurationError, RunnerConfig
-from agentic_core.interfaces import AgentResponse, DAGNodeResponse, DAGResponse, ProviderRateLimitError, ProviderTimeoutError, NodeExecutionError
+from agentic_core.interfaces import AgentResponse, DAGNodeResponse, DAGResponse, NodeValidationError, ProviderRateLimitError, ProviderTimeoutError, NodeExecutionError
 from agentic_core.utils import clean_context_for_downstream, convert_exception_to_message
 
 if TYPE_CHECKING:
@@ -73,7 +73,7 @@ class DAGAgentRunner:
 
         for parent, child in edges:
             if parent not in self.nodes or child not in self.nodes:
-                raise ConfigurationError(f"Edge {parent} -> {child} contains undefined nodes")
+                raise NodeValidationError(f"Edge {parent} -> {child} contains undefined nodes")
             self.out_edges[parent].append(child)
             self.in_edges[child].append(parent)
             self.in_degree[child] += 1
@@ -116,7 +116,7 @@ class DAGAgentRunner:
                 f"Cycle detected in DAG. Unprocessed nodes: {unvisited_nodes}. "
                 f"Total nodes: {len(self.nodes)}, Visited nodes: {len(visited_nodes)}."
             )
-            raise RuntimeError(cycle_message)
+            raise NodeValidationError(cycle_message)
 
         priorities = {}
         for u in reversed(topo_order):

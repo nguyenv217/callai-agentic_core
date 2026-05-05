@@ -72,6 +72,10 @@ class IterationLimitReachedError(Exception):
     """Raised when the agent exceeds the maximum number"""
     pass
 
+class NodeValidationError(Exception):
+    """Raised when a node in the DAG is not properly configured"""
+    pass
+
 class NodeExecutionError(Exception):
     """Raised when a node fails to execute"""
     def __init__(self, node_id: str, message: str, original_exception: Exception | None = None):
