@@ -158,3 +158,19 @@
 ### Features
 
 * memory manager can now export and load states ([4ec6dec](https://github.com/nguyenv217/callai-agentic_core/commit/4ec6dec80125885b0377025725dac1a7fcab3cc3))
+# [](https://github.com/nguyenv217/callai-agentic_core/compare/v0.6.0...v) (2026-05-05)
+
+
+### Bug Fixes
+
+* care only about content of nodes for swarms ([01670d9](https://github.com/nguyenv217/callai-agentic_core/commit/01670d979f73e16d055f031080f78f3bee1619e6))
+* handle buggy api endpoints where delta.index is unreliable ([52ec7dc](https://github.com/nguyenv217/callai-agentic_core/commit/52ec7dc7bc241de68375f11de73a4443cbe0b0f4))
+* move toolexec protocol to another file and import engine inside function to prevent circular import ([77faaff](https://github.com/nguyenv217/callai-agentic_core/commit/77faaff8a27457c87d5bcb5ab8fe78bfde2eda55))
+* **observer:** observers defaults to all async to support concurrent UIs ([dea7f71](https://github.com/nguyenv217/callai-agentic_core/commit/dea7f719ea972eae294614d900b6cd45ac51a16d))
+* test to raise ConfigurationError instead of error msg ([7773fe5](https://github.com/nguyenv217/callai-agentic_core/commit/7773fe592b8961776adf64184652374ded309c67))
+* **tests:** moved import inside execute() patch ([e4a2835](https://github.com/nguyenv217/callai-agentic_core/commit/e4a28359d6f75149db3d209e48dac75aa15f4d46))
+
+
+### Features
+
+* subagent enforce per-agent char limit ([cc0ca7f](https://github.com/nguyenv217/callai-agentic_core/commit/cc0ca7f5631c84cbee6c6d14a61f82c1029ad8d7))
