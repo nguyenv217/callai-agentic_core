@@ -176,7 +176,38 @@ As a safety net, `ToolManager` registers a synchronous `cleanup()` method with P
 
 ---
 
-## 7. Real usage Example: static, stateful tool, and registration with custom toolsets
+## 7. ShellExecTool quickstart (allowlist/blocklist + optional isolation)
+
+`ShellExecTool` is configured at instantiation time using `ShellExecConfig`.
+
+```python
+from agentic_core.tools import ShellExecTool, ShellExecConfig
+
+# Security: allow only specific executables
+cfg = ShellExecConfig(
+    allowlist_commands=["python", "echo", "dir"],
+    blocklist_commands=["rm", "del"],
+
+    # Optional: enforce OS where this tool is allowed to run
+    os_support="auto",  # or "windows" / "linux" / "darwin"
+
+    # Optional: run inside an isolation backend (currently: docker)
+    # Requires docker to be installed and reachable on PATH.
+    # isolation={"type": "docker", "disable_network": True, "mount_cwd": False},
+)
+
+shell_tool = ShellExecTool(cfg)
+```
+
+Per-call overrides exposed to the model:
+- `timeout_s` (seconds)
+- `cwd` (working directory)
+- `env` (extra environment variables)
+
+---
+
+## 8. Real usage Example: static, stateful tool, and registration with custom toolsets
+
 ```python
 from agentic_core.tools.manager import ToolManager
 from agentic_core.tools.base import BaseTool
