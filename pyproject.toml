@@ -5,6 +5,12 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["agentic_core"]
 
+[tool.pytest.ini_options]
+# Core tests only. Plugin package tests must be run from their
+# respective package directories (e.g., packages/rag && pytest).
+testpaths = ["tests"]
+
+
 [project]
 name = "callai-agentic_core"
 version = "0.6.5"
@@ -45,5 +51,4 @@ dev = [
     "ruff>=0.3.0"
 ]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
+
