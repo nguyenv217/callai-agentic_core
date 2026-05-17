@@ -31,35 +31,19 @@ anthropic = ["anthropic"]
 ollama = ["ollama>=0.6.1"]
 mcp = ["mcp>=1.27.0"]
 
-rag-sqlite = [
-    "sqlalchemy", 
-    "aiosqlite",
-    "numpy>=1.24.0"
-]
-
-rag-chroma = ["chromadb"]
-rag-transformers = ["sentence-transformers"]
-rag-openai = ["openai>=2.24.0"]
-rag-ollama = ["ollama>=0.6.1"]
-
-rag-all = [
-    "callai-agentic_core[rag-sqlite]",
-    "callai-agentic_core[rag-chroma]",
-    "callai-agentic_core[rag-transformers]",
-    "callai-agentic_core[rag-openai]",
-    "callai-agentic_core[rag-ollama]"
-]
-
 all = [
     "callai-agentic_core[openai]",
     "callai-agentic_core[anthropic]",
     "callai-agentic_core[ollama]",
-    "callai-agentic_core[mcp]",
-    "callai-agentic_core[rag-sqlite]"
+    "callai-agentic_core[mcp]"
 ]
+
 
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "ruff>=0.3.0"
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

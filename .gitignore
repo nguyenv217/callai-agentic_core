@@ -173,3 +173,4 @@ prefill.py
 venv_run.bat
 query_db.py
 .callai
+.blackboxrules

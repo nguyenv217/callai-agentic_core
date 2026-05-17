@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "callai-agentic_core-rag"
+version = "0.1.0"
+description = "RAG plugin for callai-agentic_core"
+requires-python = ">=3.10"
+dependencies = [
+    "callai-agentic_core>=0.6.5",
+    "sqlalchemy", 
+    "aiosqlite",
+    "numpy>=1.24.0"
+]
+
+[project.optional-dependencies]
+chroma = ["chromadb"]
+transformers = ["sentence-transformers"]
+openai = ["openai>=2.24.0"]
+ollama = ["ollama>=0.6.1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
