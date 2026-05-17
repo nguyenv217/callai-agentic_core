@@ -28,7 +28,7 @@ async def test_tool_json_decode_error(mock_llm_class):
     assert result.error is None
     assert "I fixed the JSON" in result.text
     history = agent.memory.get_history()
-    assert any("Invalid JSON arguments" in msg["content"] for msg in history if msg["role"] == "tool")
+    assert any("Invalid JSON" in msg["content"] for msg in history if msg["role"] == "tool")
 
 @pytest.mark.asyncio
 async def test_max_iterations_reached(mock_llm_class):

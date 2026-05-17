@@ -1,6 +1,7 @@
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock
+from agentic_core.handlers.dag import DAGSmartRetryHandler
 from agentic_core.engines.engine import AgentRunner, RunnerConfig
 from agentic_core.engines.dag_engine import DAGAgentRunner, NodeState, DAGEventHandler
 from agentic_core.llm_providers.base import ILLMClient, LLMResponse
@@ -71,7 +72,7 @@ async def test_retry_success():
     }
     edges = []
 
-    dag = DAGAgentRunner(nodes_def, edges)
+    dag = DAGAgentRunner(nodes_def, edges, handler=DAGSmartRetryHandler())
     results = await dag.execute()
 
     assert results.nodes["A"].state == "SUCCESS"
@@ -90,7 +91,7 @@ async def test_retry_exhaustion():
     }
     edges = []
 
-    dag = DAGAgentRunner(nodes_def, edges)
+    dag = DAGAgentRunner(nodes_def, edges, handler=DAGSmartRetryHandler(fallback_on_permanent_failure=False))
     results = await dag.execute()
 
     assert results.nodes["A"].state == "FAILED"

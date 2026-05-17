@@ -1,5 +1,10 @@
-from typing import Generic, TypeVar, Union
+from __future__ import annotations
+
+from typing import Generic, TypeVar, Union, TYPE_CHECKING
 from dataclasses import dataclass
+
+if TYPE_CHECKING:
+    from agentic_core.engines import AgentRunner
 
 # ===================================================
 # Decision Events
@@ -58,6 +63,56 @@ ToolStartAction = Union[
    ToolStartDecision.SKIP_WITH_MSG, 
    ToolStartDecision.ABANDON, 
    ToolStartDecision.BREAK_WITH_MSG
+]
+
+# ===================================================
+# On Error Handling
+# ===================================================
+
+@dataclass
+class ErrorContext:
+    error: BaseException
+    tool_name: str | None = None
+    retry_count: int = 0
+    max_retries: int = 0
+    # Additional state can be bundled to avoid a 10-argument constructor
+    engine_state: dict | None = None
+
+
+class ErrorDecision:
+
+    @dataclass(frozen=True)
+    class RETRY:
+        """Handles both immediate and backoff retries."""
+        delay: float = 0.0                # 0.0 means immediate retry
+        exponential_base: float = 1.0     # 1.0 means flat delay, >1.0 means backoff
+        name: str = "RETRY"
+    
+    @dataclass(frozen=True)
+    class SKIP:
+        """Skip current operation and continue."""
+        name: str = "SKIP"
+    
+    @dataclass(frozen=True)
+    class ABANDON:
+        """Stop execution and bubble up the failure."""
+        name: str = "ABANDON"
+    
+    @dataclass(frozen=True)
+    class RESOLVE_WITH:
+        """
+        Unifies FALLBACK, DECAY, ESCALATE, and CUSTOM.
+        Injects a specific message or result back into the agent's context 
+        to gracefully recover or pivot.
+        """
+        msg: str                          
+        name: str = "RESOLVE_WITH"
+
+ErrorAction = Union[
+    ErrorDecision.RETRY,
+    ErrorDecision.SKIP,
+    ErrorDecision.ABANDON,
+    ErrorDecision.RESOLVE_WITH
 ]
 
 # ===================================================
@@ -135,29 +190,28 @@ ToolOnPromptAction = Union[
 # During DAG engine node failure (after retrying)
 # ===================================================      
 
-class NodeFailureDecision:
+class GraphRoutingDecision:
     """
-    Decision to make when a node fails permanently (after retries)
-    Options:
-        CASCADE: Fail all downstream nodes
-        IGNORE: Ignore the failure and continue execution
-        FALLBACK: Use a fallback `AgentRunner` instance passed along context to replace the failed node 
+    Decision for graph topology when a node fails permanently (all retries exhausted).
     """
     @dataclass(frozen=True)
     class CASCADE:
+        """Standard behavior: Fail all downstream nodes that depend on this one."""
         name: str = "CASCADE"
     
     @dataclass(frozen=True)
     class IGNORE:
+        """Continue execution: Allow downstream nodes to run (they must handle missing inputs)."""
         name: str = "IGNORE"
     
     @dataclass(frozen=True)
     class FALLBACK:
-        msg: str
+        """Dynamic replacement: Inject a new AgentRunner/Node to take its place."""
+        fallback_runner: AgentRunner # Pass the actual runner/logic here
         name: str = "FALLBACK"
 
-NodeFailureAction = Union[
-    NodeFailureDecision.CASCADE,
-    NodeFailureDecision.IGNORE,
-    NodeFailureDecision.FALLBACK
+GraphRoutingAction = Union[
+    GraphRoutingDecision.CASCADE,
+    GraphRoutingDecision.IGNORE,
+    GraphRoutingDecision.FALLBACK
 ]
