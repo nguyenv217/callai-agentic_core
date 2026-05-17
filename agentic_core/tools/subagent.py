@@ -7,7 +7,7 @@ from agentic_core.interfaces import IterationLimitReachedError
 from agentic_core.utils import clean_context_for_downstream, convert_exception_to_message
 
 if TYPE_CHECKING:
-    from agentic_core.observers import DAGEventObserver
+    from agentic_core.handlers import DAGEventHandler
     from agentic_core.tools import ToolManager
     from agentic_core.llm_providers import ILLMClient
 
@@ -88,7 +88,7 @@ class SpawnSubAgentsTool(BaseTool):
         # Resolve dependencies from context
         llm_client: ILLMClient = context.get("llm_client")
         tools_manager: ToolManager = context.get("tools_manager")
-        observer: DAGEventObserver = context.get("subagent_observer")
+        handler: DAGEventHandler = context.get("subagent_handler")
 
         if not llm_client or not tools_manager:
             raise ConfigurationError("Sub-agent spawning requires 'llm_client' and 'tools_manager' in the context.")
@@ -144,7 +144,7 @@ class SpawnSubAgentsTool(BaseTool):
             nodes_def[node_id] = (runner, config, prompt, max_retries)
 
         try:
-            dag_runner = DAGAgentRunner(nodes_def, edges, observer=observer)
+            dag_runner = DAGAgentRunner(nodes_def, edges, handler=handler)
             result = await dag_runner.execute()
 
             if result.error:

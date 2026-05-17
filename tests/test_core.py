@@ -3,10 +3,10 @@ from agentic_core.agents.builder import create_openai_agent
 from agentic_core.config import RunnerConfig
 from agentic_core.interfaces import IterationLimitReachedError
 from agentic_core.llm_providers.base import ILLMClient, LLMResponse
-from agentic_core.observers.standard import SilentObserver
+from agentic_core.handlers.standard import SilentHandler
 from agentic_core.tools.base import BaseTool
 from agentic_core.decisions import DecisionEvent, ToolStartDecision, LastIterationDecision
-from tests.conftest import ControlObserver
+from tests.conftest import ControlHandler
 
 # --- TESTS ---
 
@@ -23,7 +23,7 @@ async def test_tool_json_decode_error(mock_llm_class):
     agent = create_openai_agent(api_key="mock_key")
     agent.llm = mock_llm
 
-    result = await agent.run_turn("Test JSON error", SilentObserver())
+    result = await agent.run_turn("Test JSON error", SilentHandler())
 
     assert result.error is None
     assert "I fixed the JSON" in result.text
@@ -53,7 +53,7 @@ async def test_max_iterations_reached(mock_llm_class):
     agent.tools.register_tool(LoopTool())
 
     config = RunnerConfig(max_iterations=3)
-    result = await agent.run_turn("Loop me", SilentObserver(), config=config)
+    result = await agent.run_turn("Loop me", SilentHandler(), config=config)
 
     assert isinstance(result.error, IterationLimitReachedError)
     assert mock_llm.call_count == 3
@@ -73,7 +73,7 @@ async def test_tool_exception_handling(mock_llm_class, error_tool_factory):
     agent.llm = mock_llm
     agent.tools.register_tool(error_tool_factory(should_fail=True))
 
-    result = await agent.run_turn("Fail me", SilentObserver())
+    result = await agent.run_turn("Fail me", SilentHandler())
 
     assert result.error is None
     assert "The tool failed" in result.text
@@ -92,14 +92,14 @@ async def test_system_prompt_combination(mock_llm_class):
     config = RunnerConfig(toolset="my_set", system_prompt="USER SYSTEM PROMPT")
     agent.llm = mock_llm_class([LLMResponse(text="Hi", tool_calls=[], usage={}, )])
 
-    await agent.run_turn("Hello", SilentObserver(), config=config)
+    await agent.run_turn("Hello", SilentHandler(), config=config)
 
     assert "TOOLSET PROMPT" in agent.memory.system_prompt['content']
     assert "USER SYSTEM PROMPT" in agent.memory.system_prompt['content']
 
 @pytest.mark.asyncio
-async def test_observer_skip_tool(mock_llm_class, error_tool_factory):
-    """Test that the observer can skip a tool call."""
+async def test_handler_skip_tool(mock_llm_class, error_tool_factory):
+    """Test that the handler can skip a tool call."""
     resp1 = LLMResponse(
         text="", usage={},
         tool_calls=[{"id": "skip_1", "function": {"name": "error_tool", "arguments": "{}"}}],
@@ -112,9 +112,9 @@ async def test_observer_skip_tool(mock_llm_class, error_tool_factory):
     agent.llm = mock_llm
     agent.tools.register_tool(error_tool_factory())
 
-    observer = ControlObserver(tool_decision=(ToolStartDecision.SKIP,))
+    handler = ControlHandler(tool_decision=(ToolStartDecision.SKIP,))
 
-    result = await agent.run_turn("Skip me", observer)
+    result = await agent.run_turn("Skip me", handler)
 
     assert result.error is None
     assert "Tool was skipped" in result.text
@@ -122,8 +122,8 @@ async def test_observer_skip_tool(mock_llm_class, error_tool_factory):
     assert not any(msg["role"] == "tool" for msg in history)
 
 @pytest.mark.asyncio
-async def test_observer_abandon_turn(mock_llm_class, error_tool_factory):
-    """Test that the observer can abandon the turn entirely."""
+async def test_handler_abandon_turn(mock_llm_class, error_tool_factory):
+    """Test that the handler can abandon the turn entirely."""
     resp1 = LLMResponse(
         text="", usage={},
         tool_calls=[{"id": "abandon_1", "function": {"name": "error_tool", "arguments": "{}"}}],
@@ -135,9 +135,9 @@ async def test_observer_abandon_turn(mock_llm_class, error_tool_factory):
     agent.llm = mock_llm
     agent.tools.register_tool(error_tool_factory())
 
-    observer = ControlObserver(tool_decision=(ToolStartDecision.ABANDON,))
+    handler = ControlHandler(tool_decision=(ToolStartDecision.ABANDON,))
 
-    result = await agent.run_turn("Abandon me", observer)
+    result = await agent.run_turn("Abandon me", handler)
 
     assert isinstance(result.error, IterationLimitReachedError)
     assert result.text == ""

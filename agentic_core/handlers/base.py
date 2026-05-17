@@ -1,10 +1,10 @@
 """
-Observer base interface.
+Handler base interface.
 """
 from abc import ABC
 from ..decisions import DecisionEvent, LastIterationAction, LastIterationDecision, ToolStartAction, ToolStartDecision
 
-class AgentEventObserver(ABC):
+class AgentEventHandler(ABC):
     """Base class for observing agent events."""
     
     async def on_turn_start(self) -> None: 

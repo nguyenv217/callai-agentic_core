@@ -1,5 +1,5 @@
 """Example usage of `AgentStreamRunner` to stream agent events in real-time."""
-from agentic_core.observers import SilentObserver
+from agentic_core.handlers import SilentHandler
 from dotenv import load_dotenv
 
 from agentic_core.config import RunnerConfig
@@ -71,7 +71,7 @@ async def main():
             tools=tools, 
             memory=memory, 
             config=RunnerConfig(tools=[CalculatorTool().schema]),
-            observer=SilentObserver())
+            handler=SilentHandler())
 
         user_input = input(">>>")
         print(f"User: {user_input}\n")

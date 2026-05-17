@@ -3,7 +3,7 @@ import json
 from typing import AsyncIterator, Iterator
 from agentic_core.llm_providers.base import ILLMClient, LLMResponse
 from agentic_core.tools.base import BaseTool
-from agentic_core.observers.standard import SilentObserver
+from agentic_core.handlers.standard import SilentHandler
 from agentic_core.decisions import DecisionEvent, ToolStartDecision
 
 # --- SHARED MOCKS ---
@@ -87,7 +87,7 @@ class SlowTool(BaseTool):
         await asyncio.sleep(0.2)
         return json.dumps({"status": "completed", "time": time.time()})
 
-class ControlObserver(SilentObserver):
+class ControlHandler(SilentHandler):
     def __init__(self, tool_decision=None, last_decision=None):
         super().__init__()
         self.tool_decision = tool_decision

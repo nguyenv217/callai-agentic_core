@@ -1,15 +1,15 @@
 """
-Standard observer implementations.
+Standard handler implementations.
 """
 import asyncio
 import inspect
 
-from .base import AgentEventObserver
+from .base import AgentEventHandler
 from ..decisions import ToolStartAction, ToolStartDecision, DecisionEvent
 from ..tools.protocols import ToolExecutionController
 
-class SilentObserver(AgentEventObserver):
-    """A no-op observer that prints nothing. Use this if you don't care about events."""
+class SilentHandler(AgentEventHandler):
+    """A no-op handler that prints nothing. Use this if you don't care about events."""
     
     async def on_turn_start(self) -> None: pass
     async def on_iteration_start(self, iteration: int, max_iterations: int) -> None: pass
@@ -20,8 +20,8 @@ class SilentObserver(AgentEventObserver):
     async def on_error(self, error: str) -> None: pass
 
 
-class PrintObserver(AgentEventObserver, ToolExecutionController):
-    """An observer that prints everything - great for debugging."""
+class PrintHandler(AgentEventHandler, ToolExecutionController):
+    """An handler that prints everything - great for debugging."""
     
     async def on_turn_start(self) -> None:
         print("📍 [TURN START]")

@@ -6,7 +6,7 @@ from agentic_core.utils import HeuristicFailedToParse, heuristic_json_parse
 from ..llm_providers import ILLMClient 
 from ..tools import ToolManager
 from ..memory.manager import MemoryManager
-from ..observers import AgentEventObserver
+from ..handlers import AgentEventHandler
 from ..decisions import DecisionEvent, LastIterationAction, LastIterationDecision, ToolStartDecision
 from ..config import ConfigurationError, RunnerConfig
 from ..interfaces import (
@@ -42,7 +42,7 @@ class AgentRunner:
         tools: ToolManager,
         memory: MemoryManager,
         config: RunnerConfig | None = None,
-        observer: AgentEventObserver | None = None,
+        handler: AgentEventHandler | None = None,
         tool_args_parser: Callable[[str], dict[str, Any]] | None = None
     ):
         """
@@ -53,7 +53,7 @@ class AgentRunner:
             tools (ToolManager): Manages the tools available to the agent.
             memory (MemoryManager): Handles the agent's memory operations.
             config (RunnerConfig): Configuration settings for the agent runner. Can be overwritten at runtime.
-            observer (AgentEventObserver): Observer for agent events. Can be overwritten at runtime.
+            handler (AgentEventHandler): Handler for agent events. Can be overwritten at runtime.
             tool_args_parser (Callable[[str], dict[str,Any]): 
                 Custom runtime tool argument parser for LLM `tool_call` whenever the argument is a string and need manual parsing. 
                 Defaults to `heuristic_json_parse()` which attemps to extract and parse the string heuristically with regex and ast.
@@ -63,7 +63,7 @@ class AgentRunner:
         self.memory = memory
         self.last_usage_meta: None | Any = None
         self.config = config or RunnerConfig()
-        self.observer = observer
+        self.handler = handler
         self._toolset_prompt_loaded = False
         self.tool_args_parser = tool_args_parser or heuristic_json_parse
 
@@ -81,11 +81,11 @@ class AgentRunner:
     #  Helpers 
     # ================
 
-    async def _add_error_tool_result(self, tool_name: str, tool_id: str, msg: str, observer: AgentEventObserver):
-        await observer.on_tool_complete(tool_name, tool_id, False, msg)
+    async def _add_error_tool_result(self, tool_name: str, tool_id: str, msg: str, handler: AgentEventHandler):
+        await handler.on_tool_complete(tool_name, tool_id, False, msg)
         self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=msg)
 
-    async def _handle_setup(self, user_input: str | list[dict], config: RunnerConfig, observer: AgentEventObserver):
+    async def _handle_setup(self, user_input: str | list[dict], config: RunnerConfig, handler: AgentEventHandler):
         """Handles the setup of the agent runner for a new turn."""
 
         if config.system_prompt:
@@ -111,7 +111,7 @@ class AgentRunner:
         for message in messages:
             self.memory.add_message(message)
 
-        await observer.on_turn_start()
+        await handler.on_turn_start()
         await self.tools.prepare_turn(config)
 
     def _get_active_tools(self, config: RunnerConfig):
@@ -132,7 +132,7 @@ class AgentRunner:
     async def stream_turn(
         self, 
         user_input: str | list[dict], 
-        observer: AgentEventObserver | None = None, 
+        handler: AgentEventHandler | None = None, 
         config: RunnerConfig | None = None,
         tool_args_parser: Callable[[str], dict[str, Any]] | None = None
         ) -> AsyncGenerator[StreamEvent, None]:
@@ -141,7 +141,7 @@ class AgentRunner:
 
         Args:
             user_input: The user's input, either as a string or a list of message dictionaries.
-            observer: An optional observer to receive events during the agent's execution.
+            handler: An optional handler to receive events during the agent's execution.
             config: Optional configuration that overrides the default runner configuration.
 
         Yields:
@@ -151,15 +151,15 @@ class AgentRunner:
                 Access original errors via `StreamEvent.error`: `BaseException` | `None`
         """
 
-        if not observer:
-            if not self.observer:
-                raise ConfigurationError("`observer`: `AgentEventObserver` must be provided either during initialization or at runtime.")
+        if not handler:
+            if not self.handler:
+                raise ConfigurationError("`handler`: `AgentEventHandler` must be provided either during initialization or at runtime.")
             else:
-                observer = self.observer
+                handler = self.handler
 
         config = config or self.config
 
-        await self._handle_setup(user_input, config, observer)
+        await self._handle_setup(user_input, config, handler)
 
         active_tools = self._get_active_tools(config)
         logger.info(f"Active tools: {[t['function']['name'] for t in active_tools]}")
@@ -170,7 +170,7 @@ class AgentRunner:
 
         try:
             while iteration <= max_iterations and iteration <= AGENTIC_ITERATION_MAXIMUM:
-                await observer.on_iteration_start(iteration, max_iterations)
+                await handler.on_iteration_start(iteration, max_iterations)
                 conversation = self.memory.get_history()
                 logger.info(f"Tools turn {iteration}: {[t['function']['name'] for t in active_tools]}")
 
@@ -194,19 +194,19 @@ class AgentRunner:
 
                 except ProviderRateLimitError as e:
                     error_msg = f"Rate Limit Exceeded: {str(e)}"
-                    await observer.on_error(error_msg)
+                    await handler.on_error(error_msg)
                     yield StreamEvent(StreamEventType.ERROR, error_msg, error=e)
                     final_response.error = error_msg
                     return
                 except ProviderAuthenticationError as e:
                     error_msg = f"Authentication Failed: {str(e)}"
-                    await observer.on_error(error_msg)
+                    await handler.on_error(error_msg)
                     yield StreamEvent(StreamEventType.ERROR, error_msg, error=e)
                     final_response.error = error_msg
                     return
                 except ProviderTimeoutError as e:
                     error_msg = f"Timeout: {str(e)}"
-                    await observer.on_error(error_msg)
+                    await handler.on_error(error_msg)
                     yield StreamEvent(StreamEventType.ERROR, error_msg, error=e)
                     final_response.error = error_msg
 
@@ -230,7 +230,7 @@ class AgentRunner:
                 })
 
                 reasoning_text = turn_response.get("reasoning") or turn_response.get("text")
-                await observer.on_tool_call_session_start(
+                await handler.on_tool_call_session_start(
                     reasoning_text=reasoning_text,
                     tool_calls=turn_response["tool_calls"],
                     iteration=iteration,
@@ -247,18 +247,18 @@ class AgentRunner:
                     tool_args = tc['function'].get("arguments", {})
                     tool_id = tc.get("id", "")
 
-                    decision_event = await observer.on_tool_start(tool_name, tool_id, tool_args)
+                    decision_event = await handler.on_tool_start(tool_name, tool_id, tool_args)
                     match decision_event.action:
                         case ToolStartDecision.SKIP():
                             continue
                         case ToolStartDecision.SKIP_WITH_MSG(msg):
-                            await self._add_error_tool_result(tool_name, tool_id, msg, observer)
+                            await self._add_error_tool_result(tool_name, tool_id, msg, handler)
                             continue
                         case ToolStartDecision.ABANDON():
                             iteration = max_iterations + 1
                             break
                         case ToolStartDecision.BREAK_WITH_MSG(msg):
-                            await self._add_error_tool_result(tool_name, tool_id, msg, observer)
+                            await self._add_error_tool_result(tool_name, tool_id, msg, handler)
                             break
                         case ToolStartDecision.CONTINUE():
                             try:
@@ -267,13 +267,13 @@ class AgentRunner:
                                 parsed_args = parser(tool_args) if isinstance(tool_args, str) else tool_args
                             except HeuristicFailedToParse as e:
                                 error_msg = f"Error: Invalid JSON arguments provided. Please fix the syntax and try again. Details: {str(e)}"
-                                await observer.on_tool_complete(tool_name, tool_id, False, error_msg)
+                                await handler.on_tool_complete(tool_name, tool_id, False, error_msg)
                                 self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=error_msg)
                                 continue
 
                             tasks.append(
                                 self.tools.execute(
-                                    tool_name, parsed_args, controller=observer,
+                                    tool_name, parsed_args, controller=handler,
                                     max_chars=config.max_chars,
                                     extra_context={
                                         **(config.extra_context or {}),
@@ -291,7 +291,7 @@ class AgentRunner:
                     for i, tool_result in enumerate(tool_results):
                         tc_id, tool_name = tc_meta[i]
                         success = not isinstance(tool_result, Exception)
-                        await observer.on_tool_complete(tool_name, tc_id, success, tool_result)
+                        await handler.on_tool_complete(tool_name, tc_id, success, tool_result)
                         self.memory.add_tool_result(
                             tool_call_id=tc_id,
                             name=tool_name,
@@ -301,7 +301,7 @@ class AgentRunner:
 
                 iteration += 1
                 if iteration == max_iterations:
-                    decision_event: DecisionEvent[LastIterationAction] = await observer.on_final_iteration()
+                    decision_event: DecisionEvent[LastIterationAction] = await handler.on_final_iteration()
 
                     match decision_event.action:
                         case LastIterationDecision.CONTINUE():
@@ -320,7 +320,7 @@ class AgentRunner:
 
             if iteration > max_iterations:
                 error_msg = f"Agent failed to provide a final answer after {max_iterations} iterations."
-                await observer.on_error(error_msg)
+                await handler.on_error(error_msg)
                 limit_error = IterationLimitReachedError(error_msg)
                 final_response.error = limit_error
                 yield StreamEvent(StreamEventType.ERROR, error_msg, error=limit_error)
@@ -329,22 +329,22 @@ class AgentRunner:
             # If we reached here, they are unexpected crashes
             logger.exception("Unexpected error during stream_turn")
             error_msg = f"Engine execution error: {str(e)}"
-            await observer.on_error(error_msg)
+            await handler.on_error(error_msg)
             yield StreamEvent(StreamEventType.ERROR, error_msg, error=e)
             final_response.error = error_msg
 
         finally:
-            await observer.on_turn_complete(final_response)
+            await handler.on_turn_complete(final_response)
             yield StreamEvent(StreamEventType.FINAL_RESPONSE, final_response)
 
 
-    async def run_turn(self, user_input: str | list[dict], observer: AgentEventObserver | None = None, config: RunnerConfig | None = None) -> AgentResponse:
+    async def run_turn(self, user_input: str | list[dict], handler: AgentEventHandler | None = None, config: RunnerConfig | None = None) -> AgentResponse:
         """
         Standard method that wraps the `stream_turn` to return a single block response.
 
         Args:
             user_input: The user's input, either as a string or a list of message dictionaries.
-            observer: An optional observer to receive events during the agent's execution.
+            handler: An optional handler to receive events during the agent's execution.
             config: Optional configuration that overrides the default runner configuration.
 
         Returns:
@@ -359,7 +359,7 @@ class AgentRunner:
         cached_error = None
         cached_error_msg = None
 
-        async for event in self.stream_turn(user_input, observer, config):
+        async for event in self.stream_turn(user_input, handler, config):
             if event.type == StreamEventType.FINAL_RESPONSE:
                 final_response = event.content
             elif event.type == StreamEventType.TOOL_CALL:

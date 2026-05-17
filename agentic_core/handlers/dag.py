@@ -7,10 +7,10 @@ if TYPE_CHECKING:
     from ..interfaces import AgentResponse, DAGResponse
     from ..engines.dag_engine import NodeState
     
-from .base import AgentEventObserver
+from .base import AgentEventHandler
 from ..decisions import DecisionEvent, NodeFailureAction, NodeFailureDecision
 
-class DAGEventObserver(AgentEventObserver):
+class DAGEventHandler(AgentEventHandler):
     async def on_node_queued(self, node_id: str, priority: int):
         logger.info(f"[DAG] Node {node_id} queued with priority {priority}")
     async def on_node_start(self, node_id: str, worker_id: int):

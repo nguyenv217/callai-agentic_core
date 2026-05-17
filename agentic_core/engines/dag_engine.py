@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import logging
 
 from agentic_core.decisions import NodeFailureDecision
-from agentic_core.observers import DAGEventObserver
+from agentic_core.handlers import DAGEventHandler
 from agentic_core.config import ConfigurationError, RunnerConfig
 from agentic_core.interfaces import AgentResponse, DAGNodeResponse, DAGResponse, NodeValidationError, ProviderRateLimitError, ProviderTimeoutError, NodeExecutionError
 from agentic_core.utils import clean_context_for_downstream, convert_exception_to_message
@@ -49,7 +49,7 @@ class DAGAgentRunner:
         nodes_def: dict[str, Tuple[AgentRunner, RunnerConfig, str, int]] | None, 
         edges: list[Tuple[str, str]], 
         max_concurrency: int = 4,
-        observer: DAGEventObserver | None = None,
+        handler: DAGEventHandler | None = None,
         checkpoint_state: dict[str, AgentResponse] | None = None
     ):
         """
@@ -59,7 +59,7 @@ class DAGAgentRunner:
             nodes_def: {node_id: (runner, config, prompt, max_retries)}
             edges: [(parent_id, child_id)]
             max_concurrency: Maximum number of concurrent nodes to run at once.
-            observer: Optional observer for tracking execution events.
+            handler: Optional handler for tracking execution events.
         """
         self.nodes: dict[str, DAGNode] = {}
         self.out_edges: dict[str, list[str]] = {node_id: [] for node_id in nodes_def}
@@ -80,7 +80,7 @@ class DAGAgentRunner:
             self.nodes[child].in_degree = self.in_degree[child]
 
         self.max_concurrency = max_concurrency
-        self.observer = observer or DAGEventObserver()
+        self.handler = handler or DAGEventHandler()
         self.queue = asyncio.PriorityQueue()
         
         if checkpoint_state:
@@ -143,7 +143,7 @@ class DAGAgentRunner:
                     self.queue.task_done()
                     continue
 
-                await self.observer.on_node_start(node_id, worker_id)
+                await self.handler.on_node_start(node_id, worker_id)
                 node.state = NodeState.RUNNING
 
                 try:
@@ -156,7 +156,7 @@ class DAGAgentRunner:
 
                     result = await node.runner.run_turn(
                         user_input=full_prompt,
-                        observer=self.observer,
+                        handler=self.handler,
                         config=node.config
                     )
 
@@ -165,7 +165,7 @@ class DAGAgentRunner:
 
                     node.result = result
                     node.state = NodeState.SUCCESS
-                    await self.observer.on_node_complete(node_id, NodeState.SUCCESS, result)
+                    await self.handler.on_node_complete(node_id, NodeState.SUCCESS, result)
 
                     for child_id in self.out_edges[node_id]:
                         child = self.nodes[child_id]
@@ -175,7 +175,7 @@ class DAGAgentRunner:
                         if child.in_degree == 0:
                             child.state = NodeState.READY
                             await self.queue.put((-child.priority, child_id))
-                            await self.observer.on_node_queued(child_id, child.priority)
+                            await self.handler.on_node_queued(child_id, child.priority)
 
                 except Exception as e:
                     tb_str = traceback.format_exc()
@@ -188,7 +188,7 @@ class DAGAgentRunner:
                     if is_retryable and node.current_retries < node.max_retries:
                         node.current_retries += 1
                         node.state = NodeState.RETRYING
-                        await self.observer.on_node_retry(node_id, node.current_retries, node.max_retries)
+                        await self.handler.on_node_retry(node_id, node.current_retries, node.max_retries)
 
                         backoff = 2 ** node.current_retries
                         asyncio.create_task(self._schedule_retry(node_id, node.priority, backoff))
@@ -199,11 +199,11 @@ class DAGAgentRunner:
                         node.error = e
                         node.error_details = tb_str
 
-                        decision_event = await self.observer.on_node_permanent_failure(node_id, e)
+                        decision_event = await self.handler.on_node_permanent_failure(node_id, e)
                         match decision_event.action:
                             case NodeFailureDecision.CASCADE():
                                 await self._cascade_failure(node_id)
-                                await self.observer.on_node_complete(node_id, NodeState.FAILED, error_msg)
+                                await self.handler.on_node_complete(node_id, NodeState.FAILED, error_msg)
                                 raise e
 
                             case NodeFailureDecision.IGNORE():
@@ -233,7 +233,7 @@ class DAGAgentRunner:
                 node.failed_by = failed_node_id
                 fail_msg = f"Upstream failure caused by node: {failed_node_id}"
                 node.result = fail_msg
-                await self.observer.on_node_complete(node_id, NodeState.FAILED_UPSTREAM, fail_msg)
+                await self.handler.on_node_complete(node_id, NodeState.FAILED_UPSTREAM, fail_msg)
                 stack.extend(self.out_edges[node_id])
 
     async def execute(self) -> DAGResponse:
@@ -249,7 +249,7 @@ class DAGAgentRunner:
             if node.in_degree == 0:
                 node.state = NodeState.READY
                 await self.queue.put((-node.priority, node_id))
-                await self.observer.on_node_queued(node_id, node.priority)
+                await self.handler.on_node_queued(node_id, node.priority)
 
         workers = [asyncio.create_task(self._worker(i)) for i in range(self.max_concurrency)]
 
@@ -271,5 +271,5 @@ class DAGAgentRunner:
             )
 
         response = DAGResponse(nodes=nodes_resp)
-        await self.observer.on_graph_complete(response)
+        await self.handler.on_graph_complete(response)
         return response

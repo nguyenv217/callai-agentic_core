@@ -1,9 +1,9 @@
 from .dag_engine import DAGAgentRunner, DAGNode
-from .engine import AgentEventObserver, AgentRunner
+from .engine import AgentEventHandler, AgentRunner
 
 __all__ = [
     "DAGAgentRunner",
     "DAGNode",
-    "AgentEventObserver",
+    "AgentEventHandler",
     "AgentRunner"
 ]

@@ -107,14 +107,14 @@ The nodes_def dictionary is the heart of your graph. Each entry follows this tup
 | `prompt      `  | `str`           | The specific instruction for this node.                                                |
 | `max_retries `  | `int`           | How many times to retry on transient API errors (optional).                             |
 
-### Monitoring with `DAGEventObserver`
+### Monitoring with `DAGEventHandler`
 
-You can track the execution in real-time by implementing a custom observer:
+You can track the execution in real-time by implementing a custom handler:
 
 ```python
-from agentic_core.dag_engine import DAGEventObserver
+from agentic_core.dag_engine import DAGEventHandler
 
-class MyDAGObserver(DAGEventObserver):
+class MyDAGHandler(DAGEventHandler):
     def on_node_start(self, node_id, worker_id):
         print(f"Node {node_id} is now running on worker {worker_id}")
 
@@ -124,7 +124,7 @@ class MyDAGObserver(DAGEventObserver):
     def on_node_complete(self, node_id, status, result):
         print(f"Node {node_id} finished with status: {status}")
 
-engine = DAGAgentRunner(nodes_def, edges, observer=MyDAGObserver())
+engine = DAGAgentRunner(nodes_def, edges, handler=MyDAGHandler())
 ```
 
 ## Understanding Node States

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 from ..engines.engine import AgentRunner
 from ..memory.manager import MemoryManager
 from ..tools import ToolManager
-from ..observers.standard import SilentObserver, PrintObserver, AgentEventObserver
+from ..handlers.standard import SilentHandler, PrintHandler, AgentEventHandler
 from ..interfaces import AgentResponse
 from ..llm_providers import OpenAILLM, AnthropicLLM, OllamaLLM
 from ..config import RunnerConfig
@@ -24,7 +24,7 @@ def create_openai_agent(
     model: str = "gpt-4o",
     system_prompt: str = "You are a helpful assistant.",
     mcp_config_path: str | None = None,
-    observer: AgentEventObserver | None = None,
+    handler: AgentEventHandler | None = None,
     base_url: str | None = None,
     timeout: float = 30,
     client: OpenAI | None = None,
@@ -42,7 +42,7 @@ def create_openai_agent(
         model: Model name (defaults to provider's recommended)
         timeout: Timeout in seconds (defaults to 30s)
         mcp_config_path: Path to MCP config (optional)
-        observer: An AgentEventObserver instance.
+        handler: An AgentEventHandler instance.
         kwargs: Any additional arguments to pass to the agent creation function (will be passed as extra_body to client request).
     
     Example:
@@ -51,14 +51,14 @@ def create_openai_agent(
             model="gpt-4o",
             system_prompt="You are a helpful coding assistant."
         )
-        result = await agent.run_turn("Hello!", SilentObserver())
+        result = await agent.run_turn("Hello!", SilentHandler())
     """
     base_url = base_url or "https://api.openai.com/v1"
     llm = OpenAILLM(api_key=api_key, model=model, base_url=base_url, client=client, timeout=timeout, **kwargs)
     memory = MemoryManager()
     memory.set_system_prompt(system_prompt)
     tools = ToolManager(mcp_config_path=mcp_config_path, tenant_id=tenant_id)
-    observer = observer or SilentObserver()
+    handler = handler or SilentHandler()
     
     return AgentRunner(llm_client=llm, tools=tools, memory=memory)
 
@@ -67,7 +67,7 @@ def create_anthropic_agent(
     model: str = "claude-3-5-sonnet-20241022",
     system_prompt: str = "You are a helpful assistant.",
     mcp_config_path: str | None = None,
-    observer: AgentEventObserver | None = None,
+    handler: AgentEventHandler | None = None,
     tenant_id: str = "default",
     **kwargs
 ) -> AgentRunner:
@@ -76,7 +76,7 @@ def create_anthropic_agent(
     memory = MemoryManager()
     memory.set_system_prompt(system_prompt)
     tools = ToolManager(mcp_config_path=mcp_config_path, tenant_id=tenant_id)
-    observer = observer or SilentObserver()
+    handler = handler or SilentHandler()
     
     return AgentRunner(llm_client=llm, tools=tools, memory=memory)
 
@@ -85,7 +85,7 @@ def create_ollama_agent(
     system_prompt: str = "You are a helpful assistant.",
     base_url: str | None = None,
     mcp_config_path: str | None = None,
-    observer: AgentEventObserver | None = None,
+    handler: AgentEventHandler | None = None,
     tenant_id: str = "default",
     **kwargs
 ) -> AgentRunner:
@@ -95,7 +95,7 @@ def create_ollama_agent(
     memory = MemoryManager()
     memory.set_system_prompt(system_prompt)
     tools = ToolManager(mcp_config_path=mcp_config_path, tenant_id=tenant_id)
-    observer = observer or SilentObserver()
+    handler = handler or SilentHandler()
     
     return AgentRunner(llm_client=llm, tools=tools, memory=memory)
 
@@ -123,7 +123,7 @@ async def chat(
     """
     The absolute simplest way to start an agentic flow.
     """
-    observer = PrintObserver() if verbose else SilentObserver()
+    handler = PrintHandler() if verbose else SilentHandler()
 
     if runner: 
         agent = runner
@@ -134,18 +134,18 @@ async def chat(
                 return create_openai_agent(
                     api_key=api_key, model=model, base_url=base_url,
                     system_prompt=system_prompt, mcp_config_path=mcp_config_path,
-                    observer=observer, tenant_id=tenant_id, **kwargs
+                    handler=handler, tenant_id=tenant_id, **kwargs
                 )
             elif provider == "anthropic":
                 return create_anthropic_agent(
                     api_key=api_key, model=model, system_prompt=system_prompt,
-                    mcp_config_path=mcp_config_path, observer=observer, 
+                    mcp_config_path=mcp_config_path, handler=handler, 
                     tenant_id=tenant_id, **kwargs
                 )
             elif provider == "ollama":
                 return create_ollama_agent(
                     model=model, base_url=base_url, system_prompt=system_prompt,
-                    mcp_config_path=mcp_config_path, observer=observer, 
+                    mcp_config_path=mcp_config_path, handler=handler, 
                     tenant_id=tenant_id, **kwargs
                 )
             else:
@@ -164,7 +164,7 @@ async def chat(
             agent = await _create_agent()
 
     # Run the turn
-    result = await agent.run_turn(message, observer=observer, config=config)
+    result = await agent.run_turn(message, handler=handler, config=config)
 
     return ChatResult(
         response= result,

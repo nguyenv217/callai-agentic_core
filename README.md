@@ -362,7 +362,7 @@ from agentic_core.engines import AgentRunner
 from agentic_core.memory import MemoryManager
 from agentic_core.tools import ToolManager
 from agentic_core.llm_providers import OpenAILLM
-from agentic_core.observers import PrintObserver
+from agentic_core.handlers import PrintHandler
 
 # 1. Create components
 llm = OpenAILLM(api_key="sk-...", model="gpt-4o")
@@ -376,7 +376,7 @@ agent = AgentRunner(llm_client=llm, tools=tools, memory=memory)
 # 3. Run!
 result = await agent.run_turn(
     user_input="Hello!",
-    observer=PrintObserver()
+    handler=PrintHandler()
 )
 print(result.text)
 ```
@@ -409,12 +409,12 @@ from agentic_core.llm_providers import (
 )
 ```
 
-### Available Observers
+### Available Handlers
 
 ```python
-from agentic_core.observers import (
-    SilentObserver,  # Silent, does nothing
-    PrintObserver,    # Prints everything (great for debugging)
+from agentic_core.handlers import (
+    SilentHandler,  # Silent, does nothing
+    PrintHandler,    # Prints everything (great for debugging)
 )
 ```
 
@@ -472,10 +472,10 @@ tools = ToolManager(
  ├── memory/                  # Context and state management
  │   ├── manager.py           # MemoryManager
  │   └── strategies.py        # Truncation strategies
- ├── observers/               # Event logging and observation
- │   ├── base.py              # Base Observer
- │   ├── dag.py               # `DAGEventObserver` for `DAGAgentRunner`-specific event hooks
- │   └── standard.py          # Default/Print observers
+ ├── handlers/               # Event logging and observation
+ │   ├── base.py              # Base Handler
+ │   ├── dag.py               # `DAGEventHandler` for `DAGAgentRunner`-specific event hooks
+ │   └── standard.py          # Default/Print handlers
  ├── tools/                   # Tooling system
  │   ├── base.py              # `BaseTool`, schemas, etc.
  │   ├── mcp.py               # MCP server management
@@ -548,7 +548,7 @@ This tool is designed to be as lightweight and robust as possible. While `agenti
 The `mcp_config.json` dictates exactly which terminal commands your system will run (via the `command` and `args` fields). **Never allow end-users to upload, modify, or provide their own `mcp_config.json`.** This file must remain strictly server-side.
 
 ### 2. Prompt Injection to Tool Execution: 
-If an agent is given a tool that reads external data (like fetching a webpage or reading a user-submitted file), a malicious payload in that data can instruct the LLM to execute other available tools. The agent could be hijacked into executing destructive actions (e.g., via a GitHub or filesystem MCP) without human oversight. SO, do use `AgentEventObserver.on_tool_start()` method for granular control over agent's actions. 
+If an agent is given a tool that reads external data (like fetching a webpage or reading a user-submitted file), a malicious payload in that data can instruct the LLM to execute other available tools. The agent could be hijacked into executing destructive actions (e.g., via a GitHub or filesystem MCP) without human oversight. SO, do use `AgentEventHandler.on_tool_start()` method for granular control over agent's actions. 
 
 ### 3. Denial of Service via Payload Serialization:
 Agents interacting with APIs that return massive, deeply nested JSON payloads may experience performance degradation during the engine's double-serialization checks. To mitigate this, limit the scope of the data your tools are allowed to fetch.
@@ -556,6 +556,6 @@ Agents interacting with APIs that return massive, deeply nested JSON payloads ma
 **MITIGATIONS:**  
 * The tool strictly requires MCP configuration via `RunnerConfig` to be valid and well-formed to avoid malicious runtime tool injection.  
 * Utilize `ToolExecutionController.on_prompt_respond()` (blocks, prompt the user for feedback) and `ToolExecutionController.on_prompt_confirmation()` (blocks, prompt the user to confirm (y/n) with event hooks) for control **during tool execution**.
-* `AgentEventObserver` implementing `on_tool_start()` provides means to enforce human validation before assembling tool coroutine pool and executing, with different levels of control (use `ToolStartDecision`).
+* `AgentEventHandler` implementing `on_tool_start()` provides means to enforce human validation before assembling tool coroutine pool and executing, with different levels of control (use `ToolStartDecision`).
 * Heuristically detect and remove unsafe payloads from external data sources (brittle). Most importantly, write your system prompt carefully and choose your MCP servers wisely. Dry-run extensively on domain-specific vulnerable prompts and refine system prompt. This is perhaps the single most effective mitigation against prompt injection.
 * Finally, this tool is all about robustness - it's meant to be a lightweight engine for agentic applications. Hence, it is at the developer responsibility to enforce security measures against the above risks.

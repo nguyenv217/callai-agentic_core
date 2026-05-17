@@ -44,7 +44,6 @@ class ShellExecConfig:
     deny_network_env: bool = False
 
 
-
 def _normalize_command_name(cmd: str) -> str:
     cmd = cmd.strip()
     if not cmd:
