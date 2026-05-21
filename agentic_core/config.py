@@ -34,7 +34,7 @@ class RunnerConfig:
     system_prompt: str | None = None
     kwargs: dict[str, Any] | None = None
     # Tool settings
-    tools: list[ToolSchema] | None = None        
+    tools: list[ToolSchema] | list[str] | None = None        
     toolset: str | None = None                   
     extra_context: dict[str, Any] | None = None
     # MCP (Model Context Protocol) Settings
@@ -46,10 +46,9 @@ class RunnerConfig:
     def __post_init__(self):
         if self.max_iterations < 1: 
             raise ValueError("`max_iterations` must be >= 1")
-        if self.tools and self.toolset:
-            logger.warning("[RunnerConfig] Both tools and toolset were specified at the same time. Will prioritize `tools`.")
+        if self.tools is not None and self.toolset is not None:
+            logger.warning("[RunnerConfig] Both tools and toolset were specified. Prioritizing `tools`.")
 
-        self.toolset = self.toolset or "none"   
         mcp_preload_tools = self.mcp_preload_tools or []
         mcp_active_servers = self.mcp_active_servers or []
 

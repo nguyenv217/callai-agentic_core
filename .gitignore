@@ -1,4 +1,5 @@
 # Ignore common files and directories
+agentic_core-readonly
 %SystemDrive%
 *.DS_Store
 ._*

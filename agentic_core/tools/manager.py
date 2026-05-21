@@ -67,24 +67,7 @@ class ToolManager:
         self._plugins: dict[str, BaseTool] = {}
         
         self.tenant_id = tenant_id
-        
-        # --- MCP State ---
-        self.mcp_config_path = mcp_config_path
-        self.on_server_error = on_server_error
-        self._mcp_config_dict = {}
-        self._mcp_standby_registry: dict[str, MCPToolAdapter] = {}  
-        self._mcp_loaded_tools: Set[BaseTool] = set()
-        self._mcp_init_in_progress = False
-        self.extra_env = extra_env
-        self._mcp_manager = None
-        
-        # Discovery tools config
-        self._discovery_tools = ["list_mcp_catalog", "load_mcp_tool"]
-        self._loaded_discovery_tools = False
-        self.enable_mcp_discovery = enable_mcp_discovery
-        if enable_mcp_discovery:
-            self._register_discovery_tools()
-        
+
         # Toolsets initialization
         # Support optional prompts per toolset. `toolsets` can be a dict mapping toolset name to either a list of tool names
         # or a dict with keys 'tools' (list) and optional 'prompt' (str).
@@ -106,6 +89,24 @@ class ToolManager:
             self.toolsets['all'].extend(ts)
         self.toolsets['all'] = list(set(self.toolsets['all']))
         
+        # --- MCP State ---
+        self.mcp_config_path = mcp_config_path
+        self.on_server_error = on_server_error
+        self._mcp_config_dict = {}
+        self._mcp_standby_registry: dict[str, MCPToolAdapter] = {}  
+        self._mcp_loaded_tools: Set[BaseTool] = set()
+        self._mcp_init_in_progress = False
+        self.extra_env = extra_env
+        self._mcp_manager = None
+        
+        # Discovery tools config
+        self._discovery_tools = ["list_mcp_catalog", "load_mcp_tool"]
+        self._loaded_discovery_tools = False
+        self.enable_mcp_discovery = enable_mcp_discovery
+        if enable_mcp_discovery:
+            self._register_discovery_tools()
+        
+        
         # Ensure cleanup of background threads on exit
         atexit.register(self.cleanup)
 
@@ -121,10 +122,14 @@ class ToolManager:
         if tool_instance.name not in self._plugins:  # prevents hallucinates and registers the same tool multiple times
             self._plugins[tool_instance.name] = tool_instance
             self.tool_schemas.append(tool_instance.schema)
+
+            if 'all' not in self.toolsets:
+                self.toolsets['all'] = []
+            if tool_instance.name not in self.toolsets['all']:
+                self.toolsets['all'].append(tool_instance.name)
         
         if load_mcp:
             self._mcp_loaded_tools.add(tool_instance)
-        # return self
 
     # ==========================================
     # MCP Tool Management

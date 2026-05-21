@@ -106,11 +106,43 @@ class AgentRunner:
         await self.tools.prepare_turn(config)
 
     def _get_active_tools(self, config: RunnerConfig):
-        active_tools = list(config.tools) if config.tools else self.tools.get_tools_from_toolset(config.toolset)
+        active_tools = []
+        
+        if config.tools is not None:
+            # User explicitly passed a list (even if it's an empty list `[]` meaning no tools)
+            if config.tools: 
+                active_tools = config.tools
+
+                specified_by_tool_name = isinstance(config.tools[0], str)
+                try:
+                    if specified_by_tool_name:
+                        active_tools = [s for s in self.tools.tool_schemas if s['function']['name'] in config.tools]
+                except TypeError: 
+                    # User has intertwined ToolSchema and str
+                    raise ConfigurationError("RunnerConfig.tools can only contain either a list of `ToolSchema` or str")
+
+                missing = set(config.tools) - {s['function']['name'] for s in active_tools}
+                if missing:
+                    logger.warning(f"Requested tools not registered in ToolManager: {missing}")
+                
+        elif config.toolset is not None:
+            # User explicitly passed a string (e.g., "all", "none", or a custom toolset name)
+            active_tools = self.tools.get_tools_from_toolset(config.toolset)
+            
+        else:
+            # User passed NEITHER tools nor toolset. They are unspecified.
+            if self.tools.get_registered_tools():
+                logger.warning(
+                    "No tools were provided to RunnerConfig, but tools are registered in ToolManager. "
+                    "If you meant to use them all, pass `RunnerConfig(toolset='all')`. "
+                    "If you want NO tools, pass `RunnerConfig(toolset='none')` or `tools=[]`."
+                )
+
         if config.mcp_use_loaded_tools:
             active_tools.extend([t for t in self.tools.get_mcp_loaded_tools() if t not in active_tools])
         if config.mcp_enable_discovery:
             active_tools.extend([t for t in self.tools.get_discovery_tools() if t not in active_tools])
+            
         return active_tools
     
     async def _create_error_context(
