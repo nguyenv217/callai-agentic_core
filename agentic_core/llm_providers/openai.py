@@ -13,6 +13,9 @@ try:
 except ImportError:
     _OPENAI_IMPORTED=False
 
+import logging
+logger = logging.getLogger(__name__)
+
 class OpenAILLM(ILLMClient):
     """OpenAI GPT adapter."""
     
@@ -20,7 +23,7 @@ class OpenAILLM(ILLMClient):
         self, 
         model: str,
         api_key: str | None = None, 
-        base_url: str = "https://api.openai.com/v1",
+        base_url: str | None = None,
         client: AsyncOpenAI | None = None,
         timeout: float = 30,
         **kwargs
@@ -148,3 +151,6 @@ class OpenAILLM(ILLMClient):
             raise ProviderRateLimitError(f"openai client: Rate limit exceeded for {self.model}")
         except APITimeoutError:
             raise ProviderTimeoutError(f"openai client: Request timed out for {self.model}")
+        except Exception as e:
+            logger.exception("Exception at openai client")
+            raise e

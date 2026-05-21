@@ -2,6 +2,8 @@
 Handler base interface.
 """
 from abc import ABC
+
+from agentic_core.interfaces import AgentResponse
 from ..decisions import (
     DecisionEvent, 
     LastIterationAction, 
@@ -34,7 +36,7 @@ class AgentEventHandler(ABC):
     async def on_tool_complete(self, tool_name: str, tool_id: str, success: bool, result: str) -> None: 
         pass
 
-    async def on_turn_complete(self, response: dict) -> None: 
+    async def on_turn_complete(self, response: AgentResponse) -> None: 
         pass
 
     async def on_error(self, error_context: ErrorContext) -> DecisionEvent[ErrorAction]:
