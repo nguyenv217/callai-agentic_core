@@ -10,9 +10,7 @@ from typing import Any
 from .isolation.backends import DockerIsolationBackend, DockerIsolationConfig
 
 
-from ..base import BaseTool
-
-
+from agentic_core.tools import BaseTool
 
 
 @dataclass

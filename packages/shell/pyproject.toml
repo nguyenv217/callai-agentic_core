@@ -11,5 +11,8 @@ dependencies = [
     "callai-agentic_core>=0.6.5"
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentic_core_shell"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

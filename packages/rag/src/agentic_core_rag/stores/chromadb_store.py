@@ -1,7 +1,7 @@
 from typing import Any
 import uuid
 
-from ....config import ConfigurationError
+from agentic_core.config import ConfigurationError
 from ..core import IVectorStore
 
 try:

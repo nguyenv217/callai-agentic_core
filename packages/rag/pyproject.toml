@@ -14,6 +14,9 @@ dependencies = [
     "numpy>=1.24.0"
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentic_core_rag"]
+
 [project.optional-dependencies]
 chroma = ["chromadb"]
 transformers = ["sentence-transformers"]

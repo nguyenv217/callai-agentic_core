@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from .stores.chromadb_store import ChromaDBVectorStore
     from .providers.embedders import LocalEmbedder, MockEmbedder, OllamaEmbedder, OpenAIEmbedder
 
-from ..manager import ToolManager
+from agentic_core.tools.manager import ToolManager
 from .core import RAGConfig, IVectorStore, IEmbeddingProvider
 from .tools import RAGConfig, SearchKnowledgeTool, IngestKnowledgeTool
 
