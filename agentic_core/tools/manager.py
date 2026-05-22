@@ -426,7 +426,7 @@ class ToolManager:
             # Context limit enforcement
             result_str = str(result)
             if max_chars:
-                logger.info(f"Tool result: {result_str}")
+                logger.info(f"Tool name: {tool_name} | Tool result: {result_str}")
                 if len(result_str) > max_chars:
                     result_str = (
                         result_str[:max_chars] +

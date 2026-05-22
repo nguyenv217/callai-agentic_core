@@ -6,10 +6,8 @@ build-backend = "hatchling.build"
 packages = ["agentic_core"]
 
 [tool.pytest.ini_options]
-# Core tests only. Plugin package tests must be run from their
-# respective package directories (e.g., packages/rag && pytest).
-testpaths = ["tests"]
-
+testpaths = ["tests", "packages"]
+addopts = "-n 8"
 
 [project]
 name = "callai-agentic_core"
@@ -48,7 +46,8 @@ all = [
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
-    "ruff>=0.3.0"
+    "ruff>=0.3.0",
+    "pytest-xdist>=3.8.0",
 ]
 
 

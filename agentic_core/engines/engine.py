@@ -111,17 +111,19 @@ class AgentRunner:
         if config.tools is not None:
             # User explicitly passed a list (even if it's an empty list `[]` meaning no tools)
             if config.tools: 
-                active_tools = config.tools
-
+                missing = None
                 specified_by_tool_name = isinstance(config.tools[0], str)
-                try:
-                    if specified_by_tool_name:
+                if specified_by_tool_name:
+                    try:
                         active_tools = [s for s in self.tools.tool_schemas if s['function']['name'] in config.tools]
-                except TypeError: 
-                    # User has intertwined ToolSchema and str
-                    raise ConfigurationError("RunnerConfig.tools can only contain either a list of `ToolSchema` or str")
+                        missing = set(config.tools) - {s['function']['name'] for s in active_tools}
+                    except TypeError: 
+                        # User has intertwined ToolSchema and str
+                        raise ConfigurationError("RunnerConfig.tools can only contain either a list of `ToolSchema` or str")
+                else:
+                    active_tools = config.tools
+                    missing = set([t['function']['name'] for t in config.tools if t not in self.tools.tool_schemas])
 
-                missing = set(config.tools) - {s['function']['name'] for s in active_tools}
                 if missing:
                     logger.warning(f"Requested tools not registered in ToolManager: {missing}")
                 

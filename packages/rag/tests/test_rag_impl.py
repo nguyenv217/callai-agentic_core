@@ -5,7 +5,7 @@ import pytest
 import shutil
 
 from agentic_core.tools.manager import ToolManager
-from packages.rag.src.agentic_core_rag import (
+from agentic_core_rag import (
     RAGConfig,
     SQLiteVectorStore,
     ChromaDBVectorStore,

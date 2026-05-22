@@ -1,7 +1,7 @@
 
 import pytest
 from agentic_core.tools.manager import ToolManager
-from packages.rag.src.agentic_core_rag import RAGConfig, IEmbeddingProvider, IVectorStore, register_rag_suite
+from agentic_core_rag import RAGConfig, IEmbeddingProvider, IVectorStore, register_rag_suite
 
 # --- Mock Implementations ---
 
