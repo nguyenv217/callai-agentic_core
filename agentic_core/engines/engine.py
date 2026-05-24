@@ -222,7 +222,10 @@ class AgentRunner:
                 await handler.on_iteration_start(iteration, max_iterations)
                 conversation = self.memory.get_history()
                 kwargs = config.kwargs or {}
-                response_iterator = self.llm.ask(conversation, active_tools, stream=True, **kwargs)
+                
+                # Default to True, but allow overriding via config.kwargs
+                do_stream = kwargs.pop("stream", True)
+                response_iterator = self.llm.ask(conversation, active_tools, stream=do_stream, **kwargs)
 
                 turn_response = {"text": "", "reasoning": "", "tool_calls": []}
                 
