@@ -135,14 +135,16 @@ class OpenAILLM(ILLMClient):
             response = await self.client.chat.completions.create(stream=False,**req_kwargs)
 
             msg = response.choices[0].message
+            usage = {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens
+            } if response.usage else None
+
             yield LLMResponse(
                 text=msg.content or "",
                 reasoning=getattr(msg, "reasoning_content", None) or getattr(msg, "reasoning", None) or getattr(msg, "thinking", None) or "",
                 tool_calls=[tc.model_dump() for tc in msg.tool_calls] if msg.tool_calls else [],
-                usage={
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens
-                }
+                usage=usage
             )
 
         except AuthenticationError:

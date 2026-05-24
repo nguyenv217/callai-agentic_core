@@ -1,10 +1,14 @@
 """
 LLM Provider base interfaces.
 """
-from typing import Protocol, AsyncIterator
+from typing import Protocol, AsyncIterator, TypedDict
 from dataclasses import dataclass
 
 from agentic_core.interfaces import ToolResponse, Message, ToolSchema
+
+class CompletionUsage(TypedDict):
+    prompt_tokens: int 
+    completion_tokens: int 
 
 @dataclass
 class LLMResponse:
@@ -19,7 +23,7 @@ class LLMResponse:
     """
     text: str | None = None
     tool_calls: list[ToolResponse] | None = None
-    usage: dict | None = None
+    usage: CompletionUsage | None = None
     reasoning: str | None = None
 
 class ILLMClient(Protocol):
