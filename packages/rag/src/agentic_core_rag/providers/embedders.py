@@ -3,7 +3,8 @@ from ..core import IEmbeddingProvider
 class OpenAIEmbedder(IEmbeddingProvider):
     def __init__(
         self,
-        api_key: str = None,
+        api_key: str | None = None,
+        base_url: str | None = None, 
         model: str = 'text-embedding-3-small',
         dimensions: int = 1536
     ):
@@ -13,6 +14,7 @@ class OpenAIEmbedder(IEmbeddingProvider):
             raise ImportError('openai package required. Install with: `pip install openai`')
 
         self._api_key = api_key
+        self._base_url = base_url
         self._model = model
         self._dimensions = dimensions
         self._client = None
@@ -21,7 +23,7 @@ class OpenAIEmbedder(IEmbeddingProvider):
     def client(self):
         from openai import AsyncOpenAI
         if self._client is None:
-            self._client = AsyncOpenAI(api_key=self._api_key)
+            self._client = AsyncOpenAI(api_key=self._api_key, base_url=self._base_url)
         return self._client
     
     async def embed(self, texts: list[str]) -> list[list[float]]:
@@ -61,7 +63,7 @@ class LocalEmbedder(IEmbeddingProvider):
         device: str = 'cpu'
     ):
         try:
-            from sentence_transformers import SentenceTransformer
+            from sentence_transformers import SentenceTransformer # type: ignore
         except ImportError:
             raise ImportError('sentence-transformers required. Install with: `pip install sentence-transformers`')
     
@@ -72,7 +74,7 @@ class LocalEmbedder(IEmbeddingProvider):
     
     def _load_model(self):
         if self._model is None:
-            from sentence_transformers import SentenceTransformer
+            from sentence_transformers import SentenceTransformer # type: ignore
             
             self._model = SentenceTransformer(self._model_name, device=self._device)
     
@@ -94,3 +96,41 @@ class MockEmbedder(IEmbeddingProvider):
                 vec = [x / norm for x in vec]
             embeddings.append(vec)
         return embeddings
+
+class GeminiEmbedder(IEmbeddingProvider):
+    def __init__(
+        self,
+        api_key: str = None,
+        model: str = 'gemini-embedding-001',
+        config = None # types.EmbedContentConfig
+    ):
+        try:
+            from google import genai
+        except ImportError:
+            raise ImportError('google-genai package required. Install with: `pip install google-genai`')
+
+        self._api_key = api_key
+        self._model = model
+        self._client = None
+        self._config = config
+    
+    @property
+    def client(self):
+        from google import genai
+        if self._client is None:
+            self._client = genai.Client(api_key=self._api_key)
+        return self._client
+    
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        import asyncio
+        def _do_embed():
+            response = self.client.models.embed_content(
+                model=self._model,
+                contents=texts,
+                config=self._config
+            )
+            return [emb.values for emb in response.embeddings]
+            
+        return await asyncio.to_thread(_do_embed)
+    
+

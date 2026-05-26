@@ -22,6 +22,7 @@ chroma = ["chromadb"]
 transformers = ["sentence-transformers"]
 openai = ["openai>=2.24.0"]
 ollama = ["ollama>=0.6.1"]
+gemini = ["google-genai>=0.1.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

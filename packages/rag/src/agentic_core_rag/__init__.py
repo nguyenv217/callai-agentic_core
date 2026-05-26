@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .stores.sqlite_store import SQLiteVectorStore
     from .stores.chromadb_store import ChromaDBVectorStore
-    from .providers.embedders import LocalEmbedder, MockEmbedder, OllamaEmbedder, OpenAIEmbedder
 
+from .providers.embedders import LocalEmbedder, MockEmbedder, OllamaEmbedder, OpenAIEmbedder, GeminiEmbedder
 from agentic_core.tools.manager import ToolManager
 from .core import RAGConfig, IVectorStore, IEmbeddingProvider
 from .tools import RAGConfig, SearchKnowledgeTool, IngestKnowledgeTool
@@ -13,10 +13,6 @@ from .tools import RAGConfig, SearchKnowledgeTool, IngestKnowledgeTool
 _LOOKUP = {
     "SQLiteVectorStore": ".stores.sqlite_store",
     "ChromaDBVectorStore": ".stores.chromadb_store",
-    "OpenAIEmbedder": ".providers.embedders",
-    "OllamaEmbedder": ".providers.embedders",
-    "LocalEmbedder": ".providers.embedders",
-    "MockEmbedder": ".providers.embedders"
 }
 
 def __getattr__(name):
@@ -69,5 +65,6 @@ __all__ = [
     'OllamaEmbedder',
     'LocalEmbedder',
     'MockEmbedder',
+    'GeminiEmbedder',
     'register_rag_suite',
 ]
