@@ -46,10 +46,13 @@ class SQLiteVectorStore(IVectorStore):
             expire_on_commit=False
         )
         
-        self._init_lock = asyncio.Lock()
+        self._init_lock = None
         self._initialized = False
     
     async def _ensure_initialized(self):
+        if self._init_lock is None:
+            self._init_lock = asyncio.Lock()
+            
         if not self._initialized:
             async with self._init_lock:
                 if not self._initialized:

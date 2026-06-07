@@ -124,13 +124,19 @@ class GeminiEmbedder(IEmbeddingProvider):
     async def embed(self, texts: list[str]) -> list[list[float]]:
         import asyncio
         def _do_embed():
-            response = self.client.models.embed_content(
-                model=self._model,
-                contents=texts,
-                config=self._config
-            )
-            return [emb.values for emb in response.embeddings]
-            
+            embeddings = []
+            # Architecturally sound batching: Explicitly iterate over texts.
+            # Passing a list[str] to contents causes the SDK to coerce it into a single multi-part document,
+            # resulting in identical duplicated embeddings.
+            for text in texts:
+                response = self.client.models.embed_content(
+                    model=self._model,
+                    contents=text,
+                    config=self._config
+                )
+                embeddings.append(response.embeddings[0].values)
+            return embeddings
+
         return await asyncio.to_thread(_do_embed)
     
 
