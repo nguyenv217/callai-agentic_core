@@ -193,7 +193,14 @@ cfg = ShellExecConfig(
 
     # Optional: run inside an isolation backend (currently: docker)
     # Requires docker to be installed and reachable on PATH.
-    # isolation={"type": "docker", "disable_network": True, "mount_cwd": False},
+    # Persistent containers are used by default to share state across steps.
+    # isolation={
+    #     "type": "docker", 
+    #     "image": "ubuntu:latest", 
+    #     "disable_network": False, 
+    #     "mount_cwd": True,
+    #     "persistent_container": True
+    # },
 )
 
 shell_tool = ShellExecTool(cfg)
@@ -201,7 +208,7 @@ shell_tool = ShellExecTool(cfg)
 
 Per-call overrides exposed to the model:
 - `timeout_s` (seconds)
-- `cwd` (working directory)
+- `cwd` (working directory). When using Docker with `mount_cwd=True`, path transitions requested by the LLM automatically translate to relative container filesystem mounts.
 - `env` (extra environment variables)
 
 ---

@@ -359,7 +359,9 @@ class AgentRunner:
                 final_response.error = e
         finally:
             await handler.on_turn_complete(final_response)
-            yield StreamEvent(StreamEventType.FINAL_RESPONSE, final_response)
+            import sys
+            if sys.exc_info()[0] is not GeneratorExit:
+                yield StreamEvent(StreamEventType.FINAL_RESPONSE, final_response)
 
     async def run_turn(self, user_input: str | list[dict], handler: AgentEventHandler | None = None, config: RunnerConfig | None = None) -> AgentResponse:
         """

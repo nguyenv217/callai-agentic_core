@@ -74,7 +74,7 @@ class ShellExecTool(BaseTool):
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "Shell command to execute. Example: 'python -V' or 'dir'. The executable token (first word) is validated against allowlist/blocklist.",
+                        "description": "Shell command to execute. If isolated, files created in the workspace persist and sync with host. First word validated against allowlist.",
                     },
                     "timeout_s": {
                         "type": "number",
@@ -101,6 +101,23 @@ class ShellExecTool(BaseTool):
         config: ShellExecConfig | None = None,
     ):
         self._config = config or ShellExecConfig()
+        self._backend = None
+        self._backend_error = None
+        
+        iso_cfg = self._config.isolation
+        if iso_cfg and str(iso_cfg.get("type", "")).lower() == "docker":
+            try:
+                docker_cfg = DockerIsolationConfig(
+                    image=iso_cfg.get("image", "ubuntu:latest"),
+                    workdir=iso_cfg.get("workdir", "/workspace"),
+                    mount_cwd=bool(iso_cfg.get("mount_cwd", False)),
+                    disable_network=bool(iso_cfg.get("disable_network", False)),
+                    persistent_container=bool(iso_cfg.get("persistent_container", True)),
+                )
+                self._backend = DockerIsolationBackend(docker_cfg)
+            except Exception as e:
+                self._backend_error = str(e)
+                self._backend = None
 
     async def execute(self, args: dict, context: dict) -> str:
         cmd = str(args.get("command", "")).strip()
@@ -118,7 +135,6 @@ class ShellExecTool(BaseTool):
                 return f"Error: ShellExecConfig.os_support='{self._config.os_support}' not supported on this OS (current: {current_os})."
 
         exe_name = _normalize_command_name(cmd)
-
 
         if self._config.allowlist_commands is not None:
             allow = {c.lower() for c in self._config.allowlist_commands}
@@ -141,43 +157,25 @@ class ShellExecTool(BaseTool):
             env.update({str(k): str(v) for k, v in extra_env.items()})
 
         if self._config.deny_network_env:
-            # Best-effort: set common env vars to discourage SDKs; doesn't sandbox.
             env.setdefault("NO_PROXY", "*")
             env.setdefault("no_proxy", "*")
 
-        isolation_cfg = self._config.isolation
+        if getattr(self, "_backend_error", None):
+            return f"Error: Failed to initialize docker isolation backend: {self._backend_error}. If you don't have Docker installed, please change the isolation type to 'None (Local)' in the TUI Settings."
 
-        # True isolation backend (e.g., docker)
-        if isolation_cfg is not None:
-            isolation_type = str(isolation_cfg.get("type", "")).lower()
-
-            if isolation_type == "docker":
-                # If os_support is set, enforcement already happened above.
-                try:
-                    docker_cfg = DockerIsolationConfig(
-                        image=isolation_cfg.get("image", "alpine:3.20"),
-                        workdir=isolation_cfg.get("workdir", "/workspace"),
-                        mount_cwd=bool(isolation_cfg.get("mount_cwd", False)),
-                        disable_network=bool(isolation_cfg.get("disable_network", True)),
-                    )
-                    backend = DockerIsolationBackend(docker_cfg)
-                except Exception as e:
-                    return f"Error: Failed to initialize docker isolation backend: {type(e).__name__}: {e}"
-
-                try:
-                    rc, out = await backend.run(
-                        command=cmd,
-                        timeout_s=timeout_s,
-                        cwd=cwd,
-                        env=env if env else None,
-                    )
-                    if rc is None:
-                        return out or "Error: Unknown docker timeout failure."
-                    return out or f"(Command exited with code {rc} with no output.)"
-                except Exception as e:
-                    return f"Error: {type(e).__name__}: {e}"
-
-            return f"Error: Unsupported isolation backend type '{isolation_type}'."
+        if self._backend:
+            try:
+                rc, out = await self._backend.run(
+                    command=cmd,
+                    timeout_s=timeout_s,
+                    cwd=cwd,
+                    env=env if env else None,
+                )
+                if rc is None:
+                    return out or "Error: Unknown docker timeout failure."
+                return out or f"(Command exited with code {rc} with no output.)"
+            except Exception as e:
+                return f"Error: {type(e).__name__}: {e}"
 
         # Local execution path (best-effort)
         # Cross-platform shell execution

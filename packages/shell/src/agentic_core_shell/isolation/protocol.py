@@ -9,6 +9,7 @@ class IsolationDockerConfig(TypedDict, total=False):
     workdir: NotRequired[str]
     mount_cwd: NotRequired[bool]
     disable_network: NotRequired[bool]
+    persistent_container: NotRequired[bool]
 
 
 class IsolationConfig(TypedDict, total=False):

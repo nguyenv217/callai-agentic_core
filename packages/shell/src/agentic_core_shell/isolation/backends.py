@@ -43,20 +43,73 @@ class LocalIsolationBackend(IsolationBackend):
 
 @dataclass
 class DockerIsolationConfig:
-    image: str = "alpine:3.20"
+    image: str = "ubuntu:latest"
     workdir: str = "/workspace"
-    # If True, mounts cwd into container. Host-path is provided by ShellExecTool via cwd.
-    mount_cwd: bool = False
-    # Network
-    disable_network: bool = True
-
+    mount_cwd: bool = True
+    disable_network: bool = False
+    persistent_container: bool = True
+    container_name: str | None = None
 
 class DockerIsolationBackend(IsolationBackend):
     def __init__(self, config: DockerIsolationConfig | None = None):
         self.config = config or DockerIsolationConfig()
-
         if shutil.which("docker") is None:
             raise RuntimeError("Docker is not installed or not on PATH.")
+        self._container_started = False
+        self._container_name = self.config.container_name or f"callai_sandbox_{os.getpid()}_{id(self)}"
+        self._cleaned_up = False
+        
+        if self.config.persistent_container:
+            import atexit
+            atexit.register(self._sync_cleanup)
+
+    def _sync_cleanup(self):
+        if self._container_started and not self._cleaned_up:
+            import subprocess
+            subprocess.run(["docker", "rm", "-f", self._container_name], capture_output=True)
+            self._cleaned_up = True
+
+    def __del__(self):
+        self._sync_cleanup()
+        
+    async def _ensure_container(self, cwd: str | None = None):
+        if self._container_started:
+            return
+        
+        cfg = self.config
+        mount_args = []
+        self._mounted_cwd = None
+        if cfg.mount_cwd and cwd:
+            self._mounted_cwd = os.path.abspath(cwd)
+            mount_args = ["-v", f"{self._mounted_cwd}:{cfg.workdir}"]
+            
+        net_args = ["--network", "none"] if cfg.disable_network else []
+        
+        cmd = [
+            "docker", "run", "-d", "--rm",
+            "--name", self._container_name,
+            "-w", cfg.workdir,
+            *net_args,
+            *mount_args,
+            cfg.image,
+            "tail", "-f", "/dev/null"
+        ]
+        
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        try:
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=600.0)
+        except asyncio.TimeoutError:
+            proc.kill()
+            raise RuntimeError("Timeout while pulling docker image or starting container.")
+            
+        if proc.returncode != 0:
+            raise RuntimeError(f"Failed to start persistent docker container: {out.decode('utf-8', errors='replace')}")
+        
+        self._container_started = True
 
     async def run(
         self,
@@ -66,45 +119,46 @@ class DockerIsolationBackend(IsolationBackend):
         cwd: str | None,
         env: dict[str, str] | None,
     ) -> tuple[int | None, str]:
-        # We run inside Docker using `sh -lc` to interpret the user command.
-        # For portability, we avoid relying on host shell.
         cfg = self.config
-
-        # Prepare env args
         env_args: list[str] = []
         if env:
-            # Keep it safe: docker -e only accepts KEY=VAL
             for k, v in env.items():
                 env_args.extend(["-e", f"{k}={v}"])
 
-        mount_args: list[str] = []
-        workdir = cfg.workdir
-        if cfg.mount_cwd and cwd:
-            # Docker Desktop on Windows uses special mounting semantics; user must configure.
-            # We'll still attempt a bind mount.
-            mount_args = ["-v", f"{cwd}:{workdir}"]
-
-        # Disable network if requested
-        net_args: list[str] = []
-        if cfg.disable_network:
-            net_args = ["--network", "none"]
-
-        # Command execution inside container
-        # Use `sh -lc` so that typical shell syntax works.
-        docker_cmd = [
-            "docker",
-            "run",
-            "--rm",
-            "-w",
-            workdir,
-            *net_args,
-            *env_args,
-            *mount_args,
-            cfg.image,
-            "sh",
-            "-lc",
-            command,
-        ]
+        if cfg.persistent_container:
+            await self._ensure_container(cwd)
+            
+            container_cwd = cfg.workdir
+            if cfg.mount_cwd and cwd and self._mounted_cwd:
+                abs_cwd = os.path.abspath(cwd)
+                if abs_cwd.startswith(self._mounted_cwd):
+                    rel_path = os.path.relpath(abs_cwd, self._mounted_cwd)
+                    if rel_path != ".":
+                        container_cwd = os.path.join(cfg.workdir, rel_path).replace("\\", "/")
+                        
+            docker_cmd = [
+                "docker", "exec",
+                "-w", container_cwd,
+                *env_args,
+                self._container_name,
+                "sh", "-lc", command
+            ]
+        else:
+            mount_args: list[str] = []
+            container_cwd = cfg.workdir
+            if cfg.mount_cwd and cwd:
+                abs_cwd = os.path.abspath(cwd)
+                mount_args = ["-v", f"{abs_cwd}:{cfg.workdir}"]
+            net_args: list[str] = ["--network", "none"] if cfg.disable_network else []
+            docker_cmd = [
+                "docker", "run", "--rm",
+                "-w", container_cwd,
+                *net_args,
+                *env_args,
+                *mount_args,
+                cfg.image,
+                "sh", "-lc", command
+            ]
 
         proc = await asyncio.create_subprocess_exec(
             *docker_cmd,
@@ -115,8 +169,11 @@ class DockerIsolationBackend(IsolationBackend):
         try:
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
         except asyncio.TimeoutError:
-            proc.kill()
-            await proc.communicate()
+            try:
+                proc.kill()
+                await proc.communicate()
+            except Exception:
+                pass
             return None, f"Error: Timeout after {timeout_s}s while executing command in docker."
 
         out = (stdout or b"").decode(errors="replace")
