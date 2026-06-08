@@ -70,7 +70,13 @@ class DockerIsolationBackend(IsolationBackend):
     def _sync_cleanup(self):
         if self._container_started and not self._cleaned_up:
             import subprocess
-            subprocess.run(["docker", "rm", "-f", self._container_name], capture_output=True)
+            # Execute asynchronously from the GC thread's perspective via Popen 
+            # to prevent hanging the interpreter shutdown phase
+            subprocess.Popen(
+                ["docker", "rm", "-f", self._container_name],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
             self._cleaned_up = True
 
     def __del__(self):

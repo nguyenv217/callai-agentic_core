@@ -30,7 +30,6 @@ class ShellExecConfig:
     # When None, the tool runs locally (best-effort isolation only).
     isolation: dict[str, Any] | None = None
 
-    # Best-effort isolation controls (universally available without extra OS-specific deps)
     chdir: str | None = None
     env: dict[str, str] | None = None
 
@@ -40,15 +39,37 @@ class ShellExecConfig:
 
 
 
-def _normalize_command_name(cmd: str) -> str:
-    cmd = cmd.strip()
-    if not cmd:
-        return ""
-    # Allow passing full command with args; we only validate executable part.
-    # Also handles quotes poorly but good enough for allow/block at first token.
-    # Examples: "python" -> python, "git status" -> git
-    first = cmd.split()[0]
-    return first.strip('"\'')
+import shlex
+
+def _extract_executables(cmd_str: str) -> list[str]:
+    """
+    Extracts all executable names from a shell command string, parsing through
+    pipes and logical operators to prevent command chaining bypasses.
+    """
+    cmd_str = cmd_str.strip()
+    if not cmd_str:
+        return []
+        
+    try:
+        # posix=True ensures quotes and escapes are handled correctly
+        tokens = shlex.split(cmd_str, posix=True)
+    except ValueError as e:
+        raise ValueError(f"Malformed shell command: {e}")
+        
+    executables = []
+    expect_exe = True
+    
+    for token in tokens:
+        if token in (";", "&", "|", "&&", "||"):
+            expect_exe = True
+        elif expect_exe:
+            # Skip environment variable assignments before a command
+            if "=" in token and not token.startswith("="):
+                continue
+            executables.append(token)
+            expect_exe = False
+            
+    return executables
 
 
 class ShellExecTool(BaseTool):
@@ -136,16 +157,24 @@ class ShellExecTool(BaseTool):
             elif os_support != current_os:
                 return f"Error: ShellExecConfig.os_support='{self._config.os_support}' not supported on this OS (current: {current_os})."
 
-        exe_name = _normalize_command_name(cmd)
+        try:
+            executables = _extract_executables(cmd)
+        except ValueError as e:
+            return f"Error: {e}"
 
-        if self._config.allowlist_commands is not None:
-            allow = {c.lower() for c in self._config.allowlist_commands}
-            if exe_name.lower() not in allow:
-                return f"Error: Command executable '{exe_name}' is not in allowlist."
+        if not executables:
+            return "Error: No executable command found in the input."
 
-        if self._config.blocklist_commands is not None:
-            block = {c.lower() for c in self._config.blocklist_commands}
-            if exe_name.lower() in block:
+        allowlist = {c.lower() for c in self._config.allowlist_commands} if self._config.allowlist_commands is not None else None
+        blocklist = {c.lower() for c in self._config.blocklist_commands} if self._config.blocklist_commands is not None else None
+
+        for exe in executables:
+            exe_name = os.path.basename(exe).lower()
+            
+            if allowlist is not None and exe_name not in allowlist:
+                return f"Error: Command executable '{exe_name}' is not in the allowlist. All chained commands must be allowed."
+                
+            if blocklist is not None and exe_name in blocklist:
                 return f"Error: Command executable '{exe_name}' is blocked."
 
         timeout_s = float(args.get("timeout_s", self._config.timeout_s))

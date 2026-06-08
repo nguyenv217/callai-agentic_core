@@ -45,7 +45,26 @@ async def test_shell_exec_allowlist_blocks_non_allowed_executable():
     )
 
     res = await tool.execute({"command": "echo hello"}, context={})
-    assert "not in allowlist" in res.lower()
+    assert "not in the allowlist" in res.lower()
+
+@pytest.mark.asyncio
+async def test_shell_exec_allowlist_blocks_chained_bypasses():
+    tool = ShellExecTool(
+        ShellExecConfig(
+            allowlist_commands=["echo"],
+            blocklist_commands=None,
+            timeout_s=5.0,
+        )
+    )
+
+    # The first command is allowed, but the chained one is not
+    res = await tool.execute({"command": "echo hello ; rm -rf /"}, context={})
+    assert "not in the allowlist" in res.lower()
+    assert "rm" in res.lower()
+
+    res2 = await tool.execute({"command": "echo hello | grep hello"}, context={})
+    assert "not in the allowlist" in res2.lower()
+    assert "grep" in res2.lower()
 
 
 @pytest.mark.asyncio
