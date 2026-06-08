@@ -37,9 +37,7 @@ class ShellExecConfig:
     # Execution limits
     timeout_s: float = 15.0
 
-    # Network controls (best-effort; not a true sandbox)
-    # If enabled, the tool attempts to discourage common network client libs via proxy env.
-    deny_network_env: bool = False
+
 
 
 def _normalize_command_name(cmd: str) -> str:
@@ -113,6 +111,10 @@ class ShellExecTool(BaseTool):
                     mount_cwd=bool(iso_cfg.get("mount_cwd", False)),
                     disable_network=bool(iso_cfg.get("disable_network", False)),
                     persistent_container=bool(iso_cfg.get("persistent_container", True)),
+                    setup_commands=iso_cfg.get("setup_commands", []),
+                    volumes=iso_cfg.get("volumes", []),
+                    user=iso_cfg.get("user", ""),
+                    env=iso_cfg.get("env", {}),
                 )
                 self._backend = DockerIsolationBackend(docker_cfg)
             except Exception as e:
@@ -155,10 +157,6 @@ class ShellExecTool(BaseTool):
         extra_env = args.get("env")
         if isinstance(extra_env, dict):
             env.update({str(k): str(v) for k, v in extra_env.items()})
-
-        if self._config.deny_network_env:
-            env.setdefault("NO_PROXY", "*")
-            env.setdefault("no_proxy", "*")
 
         if getattr(self, "_backend_error", None):
             return f"Error: Failed to initialize docker isolation backend: {self._backend_error}. If you don't have Docker installed, please change the isolation type to 'None (Local)' in the TUI Settings."

@@ -10,6 +10,10 @@ class IsolationDockerConfig(TypedDict, total=False):
     mount_cwd: NotRequired[bool]
     disable_network: NotRequired[bool]
     persistent_container: NotRequired[bool]
+    setup_commands: NotRequired[list[str]]
+    volumes: NotRequired[list[str]]
+    user: NotRequired[str]
+    env: NotRequired[dict[str, str]]
 
 
 class IsolationConfig(TypedDict, total=False):

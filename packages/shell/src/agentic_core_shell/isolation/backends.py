@@ -49,6 +49,10 @@ class DockerIsolationConfig:
     disable_network: bool = False
     persistent_container: bool = True
     container_name: str | None = None
+    setup_commands: list[str] | None = None
+    volumes: list[str] | None = None
+    user: str | None = None
+    env: dict[str, str] | None = None
 
 class DockerIsolationBackend(IsolationBackend):
     def __init__(self, config: DockerIsolationConfig | None = None):
@@ -85,11 +89,26 @@ class DockerIsolationBackend(IsolationBackend):
             
         net_args = ["--network", "none"] if cfg.disable_network else []
         
+        env_args = []
+        if cfg.env:
+            for k, v in cfg.env.items():
+                env_args.extend(["-e", f"{k}={v}"])
+                
+        vol_args = []
+        if cfg.volumes:
+            for v in cfg.volumes:
+                vol_args.extend(["-v", v])
+                
+        user_args = ["-u", cfg.user] if cfg.user else []
+
         cmd = [
             "docker", "run", "-d", "--rm",
             "--name", self._container_name,
             "-w", cfg.workdir,
             *net_args,
+            *user_args,
+            *env_args,
+            *vol_args,
             *mount_args,
             cfg.image,
             "tail", "-f", "/dev/null"
@@ -108,6 +127,16 @@ class DockerIsolationBackend(IsolationBackend):
             
         if proc.returncode != 0:
             raise RuntimeError(f"Failed to start persistent docker container: {out.decode('utf-8', errors='replace')}")
+            
+        if cfg.setup_commands:
+            for scmd in cfg.setup_commands:
+                setup_proc = await asyncio.create_subprocess_exec(
+                    "docker", "exec", "-w", cfg.workdir, self._container_name, "sh", "-lc", scmd,
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+                )
+                out, _ = await setup_proc.communicate()
+                if setup_proc.returncode != 0:
+                    raise RuntimeError(f"Setup command '{scmd}' failed: {out.decode('utf-8', errors='replace')}")
         
         self._container_started = True
 
@@ -150,14 +179,33 @@ class DockerIsolationBackend(IsolationBackend):
                 abs_cwd = os.path.abspath(cwd)
                 mount_args = ["-v", f"{abs_cwd}:{cfg.workdir}"]
             net_args: list[str] = ["--network", "none"] if cfg.disable_network else []
+            
+            vol_args = []
+            if cfg.volumes:
+                for v in cfg.volumes:
+                    vol_args.extend(["-v", v])
+            user_args = ["-u", cfg.user] if cfg.user else []
+            container_env_args = []
+            if cfg.env:
+                for k, v in cfg.env.items():
+                    container_env_args.extend(["-e", f"{k}={v}"])
+
+            full_command = command
+            if cfg.setup_commands:
+                chained_setup = " && ".join(cfg.setup_commands)
+                full_command = f"{chained_setup} && {command}"
+
             docker_cmd = [
                 "docker", "run", "--rm",
                 "-w", container_cwd,
                 *net_args,
+                *user_args,
+                *container_env_args,
                 *env_args,
+                *vol_args,
                 *mount_args,
                 cfg.image,
-                "sh", "-lc", command
+                "sh", "-lc", full_command
             ]
 
         proc = await asyncio.create_subprocess_exec(
