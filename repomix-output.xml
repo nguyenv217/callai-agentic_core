@@ -1344,341 +1344,6 @@ asyncio.run(main())
 | `suite_prompt` | (Default string) | The system prompt injected to tell the agent how to use the RAG tool. |
 </file>
 
-<file path="docs/TOOLS_GUIDE.md">
-# Tools Framework Documentation
-
-This document explains how the **tooling framework** in `agentic_core.tools` works, how to implement custom tools, register them, and interact with the Model Context Protocol (MCP) dynamic tools. It is complementary to the **MCP configuration guide** (`docs/MCP config.md`).
-
----
-
-## 1. Core Concepts
-
-| Concept | Description |
-|---------|-------------|
-| **BaseTool** | Abstract base class that all executable tools must inherit from. It defines the required `name`, `schema`, and `execute` members. |
-| **ToolManager** | Central registry that holds tool instances, builds the JSON‑schema list for the LLM, and coordinates execution. It also handles lazy loading of MCP tools. |
-| **MCPToolAdapter** | A thin wrapper that turns an external MCP JSON‑RPC tool definition into a `BaseTool`‑compatible object. |
-| **Discovery Tools** | Two built‑in tools – `list_mcp_catalog` and `load_mcp_tool` – that let an agent explore and load MCP tools at runtime. |
-
----
-
-## 2. Implementing a Custom Tool
-
-1. **Create a subclass of `BaseTool`** in `agentic_core/tools` (or any importable module).
-2. **Define the `name` property** – the identifier the LLM will call.
-3. **Provide a JSON schema** via the `schema` property. The schema follows the OpenAI function‑calling format:
-   ```python
-   @property
-   def schema(self) -> dict:
-       return {
-           "type": "function",
-           "function": {
-               "name": "my_tool",
-               "description": "Brief description for the LLM.",
-               "parameters": {
-                   "type": "object",
-                   "properties": {
-                       "path": {"type": "string", "description": "File path to read."}
-                   },
-                   "required": ["path"]
-               }
-           }
-       }
-   ```
-4. **Implement `execute(self, args: dict, context: dict) -> str`** – the business logic. `args` contains validated parameters from the LLM, and `context` holds any extra data supplied by the runner (e.g., user session, environment variables). This is super useful for stateful tools.
-5. **Optionally override `__init__`** to accept dependencies (database connections, API clients, etc.).
-
-### Example
-```python
-from agentic_core.tools.base import BaseTool
-
-class EchoTool(BaseTool):
-    def __init__(self, prefix: str = ""):
-        super().__init__()
-        # Setting _name and _schema automatically generates properties `name` and `schema`
-        self._name = "echo"
-        self._schema = {
-            "type": "function",
-            "function": {
-                "name": "echo",
-                "description": "Returns the supplied text unchanged.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "text": {"type": "string", "description": "Text to echo."}
-                    },
-                    "required": ["text"]
-                }
-            }
-        }
-        self._prefix = prefix
-
-    def execute(self, args: dict, context: dict) -> str:
-        return f"{self._prefix}{args['text']}"
-```
----
-
-## 3. Registering Tools with `ToolManager`
-
-### 3.1 Direct Registration (Static Tools)
-```python
-from agentic_core.tools.manager import ToolManager
-
-from my_tools import EchoTool
-
-manager = ToolManager()
-manager.register_tool(EchoTool(prefix="[Echo] "))
-```
-
-### 3.2 Registering MCP Tools (Dynamic)
-MCP tools are discovered lazily. The manager automatically registers the two discovery tools (`list_mcp_catalog` and `load_mcp_tool`). To load a specific MCP tool:
-```python
-# LLM calls the discovery tool first
-result = manager._plugins["list_mcp_catalog"].execute({}, {})
-# Then the LLM decides which tools to load and calls:
-load_result = manager._plugins["load_mcp_tool"].execute({"tool_names": ["github_create_issue"]}, {})
-```
-* Internally `load_mcp_tool` moves the selected `MCPToolAdapter` from the standby registry into the active plugin map.
-* After loading, the tool behaves exactly like a static `BaseTool`.
-
----
-
-## 4. Lifecycle Management
-
-Because `ToolManager` often manages connections to external Model Context Protocol (MCP) servers (which run as separate subprocesses), proper lifecycle management is critical. Failing to shut down these servers can lead to "zombie processes" that continue to consume CPU and memory, or cause port conflicts when you restart your application.
-
-### 4.1 The Recommended Approach: Async Context Manager
-
-The most robust way to use `ToolManager` is as an async context manager. This ensures that `shutdown_mcp()` is called automatically when the block is exited, regardless of whether the code finished successfully or raised an exception.
-
-```python
-from agentic_core.tools.manager import ToolManager
-
-async def main():
-    # The 'async with' statement handles both setup and teardown
-    async with ToolManager(mcp_config_path="mcp.json") as manager:
-        try:
-            # Your agent logic here (or could just pass this `manager` instance to a `AgentRunner`)
-            result = await manager.execute("some_tool", { "arg": "val"})
-            print(result)
-        except Exception as e:
-            print(f"An error occurred: {e}")
-            # The context manager will still ensure cleanup happens here
-
-    # At this point, all MCP subprocesses are gracefully terminated
-```
-
-**What happens under the hood?**
-
-*   `__aenter__`: Simply returns the manager instance for use.
-*   `__aexit__`: Triggers `shutdown_mcp()`, which iterates through all active MCP sessions, closes the JSON-RPC connections, and terminates the associated subprocesses. It also unregisters the `atexit` fallback to avoid redundant cleanup calls.
-
-### 4.2 Manual Lifecycle Management
-
-In some architectures (e.g., if the `ToolManager` is a long-lived singleton in a web server or a GUI application), you might not be able to wrap your entire app in a local `async with` block. In these cases, you must manually trigger the shutdown during your application's teardown phase.
-
-```python
-manager = ToolManager(mcp_config_path="mcp.json")
-
-# ... application runs ...
-
-# During app shutdown (e.g., FastAPI on_event("shutdown") or a SIGTERM handler)
-await manager.shutdown_mcp()
-```
-
-### 4.3 The `atexit` Fallback (Last Resort)
-
-As a safety net, `ToolManager` registers a synchronous `cleanup()` method with Python's `atexit` module during initialization. If the program terminates unexpectedly without `shutdown_mcp()` being called, `cleanup()` attempts to stop the servers.
-
-> **Warning:** `atexit` is less deterministic. Because it runs during the final stages of process exit, the asyncio event loop may already be closed or in a state where it cannot spawn new tasks. This can lead to "loop closed" warnings in your logs or slightly delayed process termination. This is why the context manager is strongly preferred.
-
-### 4.4 Lifecycle Strategy Comparison
-
-| Strategy | Deterministic? | Exception Safe? | Effort | Recommendation |
-| :--- | :---: | :---: | :---: | :--- |
-| Async Context Manager | ✅ Yes | ✅ Yes | Low | Gold Standard |
-| Manual `shutdown_mcp()` | ✅ Yes | ⚠️ Manual | Medium | Use for singletons / long-lived apps |
-| `atexit` Fallback | ❌ No | ⚠️ Partial | Zero | Emergency safety net only (enough for most simple apps) |
-
----
-
-## 5. Execution Flow
-
-1. **Runner creates a `ToolManager`** (optionally with `toolsets`, `mcp_config_path`, etc.).
-2. **Discovery tools are injected** if `enable_mcp_discovery` is `True`.
-3. **When the LLM decides to call a tool**, the runner looks up `manager._plugins[tool_name]` and invokes `execute(args, context)`.
-4. **Result string** is returned to the LLM and can be fed back into the conversation.
-5. **Background cleanup** – `ToolManager.cleanup` is registered with `atexit` to shut down any MCP client threads.
-
----
-
-## 6. Advanced Features
-
-### 6.1 Toolsets & Prompts
-* `ToolManager` accepts a `toolsets` mapping where each key is a logical group (e.g., `"file_ops"`) and the value is a list of tool names.
-* Optional `prompt` strings can be attached to a toolset; the runner can prepend them to the LLM prompt to give context about the available capabilities.
-
-### 6.2 Extra Context
-* `extra_context` passed to the manager is merged into the `context` argument of every tool's `execute` call. Use it to share session state, authentication tokens, or temporary variables.
-
----
-
-## 7. ShellExecTool quickstart (allowlist/blocklist + optional isolation)
-
-`ShellExecTool` is configured at instantiation time using `ShellExecConfig`.
-
-```python
-from agentic_core.tools import ShellExecTool, ShellExecConfig
-
-# Security: allow only specific executables
-cfg = ShellExecConfig(
-    allowlist_commands=["python", "echo", "dir"],
-    blocklist_commands=["rm", "del"],
-
-    # Optional: enforce OS where this tool is allowed to run
-    os_support="auto",  # or "windows" / "linux" / "darwin"
-
-    # Optional: run inside an isolation backend (currently: docker)
-    # Requires docker to be installed and reachable on PATH.
-    # isolation={"type": "docker", "disable_network": True, "mount_cwd": False},
-)
-
-shell_tool = ShellExecTool(cfg)
-```
-
-Per-call overrides exposed to the model:
-- `timeout_s` (seconds)
-- `cwd` (working directory)
-- `env` (extra environment variables)
-
----
-
-## 8. Real usage Example: static, stateful tool, and registration with custom toolsets
-
-```python
-from agentic_core.tools.manager import ToolManager
-from agentic_core.tools.base import BaseTool
-
-# ==== Tools ====
-# Simple plain tool
-class UpperCaseTool(BaseTool):
-    def __init__(self):
-        self._name = "uppercase"
-        self._schema = {
-            "type": "function",
-            "function": {
-                "name": "uppercase",
-                "description": "Converts text to upper case.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"text": {"type": "string"}},
-                    "required": ["text"]
-                }
-            }
-        }
-
-    def execute(self, args, context)
-        return args["text"].upper()
-
-# More complex tool
-class DocumentEditorTool(BaseTool):                                                                                                                         
-    total_global_edits = 0                                                                                                                                  
-                                                                                                                                                            
-    def __init__(self):                                                                                                                                     
-        self._name = "document_editor"                                                                                                                      
-        self.content = []                                                                                                                                   
-        self.cursor_line = 0                                                                                                                                
-                                                                                                                                                            
-        self._schema = {                                                                                                                                    
-            "type": "function",                                                                                                                             
-            "function": {                                                                                                                                   
-                "name": "document_editor",                                                                                                                  
-                "description": "Appends text to a document or reads it back.",                                                                              
-                "parameters": {                                                                                                                             
-                    "type": "object",                                                                                                                       
-                    "properties": {                                                                                                                         
-                        "action": {"type": "string", "enum": ["write", "read", "clear"]},                                                                   
-                        "text": {"type": "string", "description": "Text to write (required for 'write' action)"}                                            
-                    },                                                                                                                                      
-                    "required": ["action"]                                                                                                                  
-                }                                                                                                                                           
-            }                                                                                                                                               
-        }                                                                                                                                                   
-                                                                                                                                                            
-    def execute(self, args, context):                     
-        # access global context like this                                                                                                  
-        user_id = context.get("user_id", "anonymous")                                                                                                       
-        session_id = context.get("session_id", "unknown_session")                                                                                           
-                                                                                                                                                            
-        action = args.get("action")                                                                                                                         
-                                                                                                                                                            
-        if action == "write":                                                                                                                               
-            text = args.get("text", "")                                                                                                                     
-            # use stateful attributes
-            self.content.append(text)                                                                                                                       
-            self.cursor_line += 1                                                                                                                           
-                                                                                                                                                            
-            # class variables can also!
-            DocumentEditorTool.total_global_edits += 1                                                                                                      
-                                                                                                                                                            
-            return f"[User: {user_id}] Added text to line {self.cursor_line}. (Global edits: {DocumentEditorTool.total_global_edits})"                      
-                                                                                                                                                            
-        elif action == "read":                                                                                                                              
-            full_text = "\n".join(self.content) if self.content else "Document is empty."                                                                   
-            return f"Session {session_id} Document:\n{full_text}"                                                                                           
-                                                                                                                                                            
-        elif action == "clear":                                                                                                                             
-            self.content = []                                                                                                                               
-            self.cursor_line = 0                                                                                                                            
-            return "Document cleared."                                                                                                                      
-                                                                                                                                                            
-        return "Invalid action."
-
-# Initialise manager with discovery enabled and even a system prompt
-manager = ToolManager(
-    toolsets={
-        "simple_plain_toolset": ["uppercase"] # simple toolset
-        # you can specify a prompt to be dynamically injected for this toolset. This is perfect for toolset auto-routing systems.
-        "complicated_toolset": { 
-            "tools": ["uppercase", "document_editor"],
-            "prompt": "System to Agent. You can use `document_editor` to read into the secret of universe. Don't use `uppercase` unless you want to go BOOM!"
-        }
-    },
-    mcp_config_path="examples/mcp_config.json",
-    enable_mcp_discovery=True
-)
-
-# Register static tool
-manager.register_tool(UpperCaseTool())
-# For stateful tool, it is better to initalize the tool instance first then inject into necessary places to maintain internal states
-doc_edit_tool = DocumentEditorTool()
-manager.register_tool(doc_edit_tool)
-
-# If you forgot to register `toolset`, use `manager.add_toolset(name, tools, prompt)`
-manager.add_toolset("other_plain_toolset", ["some_random_tool1", "random_tool2"])
-```
----
-
-## 7. Reference API Summary
-
-| Class / Function | Key Methods / Attributes |
-|------------------|--------------------------|
-| `BaseTool` | `name`, `schema`, `execute(args, context)` |
-| `ToolManager` | `register_tool(tool_instance, load_mcp=False)`, `cleanup()`, `ensure_mcp_initialized()`, internal `_register_discovery_tools()` |
-| `ListMCPTools` (inherits `BaseTool`) | `execute(args, context)` – returns a human‑readable catalog |
-| `LoadMCPTool` (inherits `BaseTool`) | `execute(args, context)` – loads selected MCP tools |
-| `MCPToolAdapter` | Wraps external MCP definitions; implements `execute` by forwarding JSON‑RPC calls |
-
----
-
-## 8. Testing & Debugging
-* Unit tests located in `tests/test_mcp.py` and `tests/test_core.py` cover registration, discovery, and loading.
-* Use the `debug.log` file to inspect MCP initialization messages (`logger.info`/`debug`).
-* When developing a new tool, run `pytest -k <tool_name>` to ensure schema compliance.
-
----
-</file>
-
 <file path="examples/example_streaming.py">
 """Example usage of `AgentStreamRunner` to stream agent events in real-time."""
 from agentic_core.handlers import SilentHandler
@@ -1945,157 +1610,6 @@ __all__ = [
     "LocalIsolationBackend",
     "DockerIsolationBackend",
 ]
-</file>
-
-<file path="packages/shell/src/agentic_core_shell/isolation/backends.py">
-from __future__ import annotations
-
-import asyncio
-import os
-import shutil
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Any
-
-
-class IsolationBackend(ABC):
-    """Executes commands using an isolation mechanism.
-
-    Implementations must be OS-universal *in API shape*; actual isolation may be OS-specific.
-    """
-
-    @abstractmethod
-    async def run(
-        self,
-        *,
-        command: str,
-        timeout_s: float,
-        cwd: str | None,
-        env: dict[str, str] | None,
-        # lower-level shell selection is handled by the backend or tool
-    ) -> tuple[int | None, str]:
-        """Return (exit_code, combined_output)."""
-
-
-class LocalIsolationBackend(IsolationBackend):
-    async def run(
-        self,
-        *,
-        command: str,
-        timeout_s: float,
-        cwd: str | None,
-        env: dict[str, str] | None,
-    ) -> tuple[int | None, str]:
-        # Local is implemented by the tool (shell_cmd selection). This backend is a stub.
-        # The tool should bypass shell logic and call the tool's local execution path.
-        raise RuntimeError("LocalIsolationBackend.run should be handled by ShellExecTool.")
-
-
-@dataclass
-class DockerIsolationConfig:
-    image: str = "alpine:3.20"
-    workdir: str = "/workspace"
-    # If True, mounts cwd into container. Host-path is provided by ShellExecTool via cwd.
-    mount_cwd: bool = False
-    # Network
-    disable_network: bool = True
-
-
-class DockerIsolationBackend(IsolationBackend):
-    def __init__(self, config: DockerIsolationConfig | None = None):
-        self.config = config or DockerIsolationConfig()
-
-        if shutil.which("docker") is None:
-            raise RuntimeError("Docker is not installed or not on PATH.")
-
-    async def run(
-        self,
-        *,
-        command: str,
-        timeout_s: float,
-        cwd: str | None,
-        env: dict[str, str] | None,
-    ) -> tuple[int | None, str]:
-        # We run inside Docker using `sh -lc` to interpret the user command.
-        # For portability, we avoid relying on host shell.
-        cfg = self.config
-
-        # Prepare env args
-        env_args: list[str] = []
-        if env:
-            # Keep it safe: docker -e only accepts KEY=VAL
-            for k, v in env.items():
-                env_args.extend(["-e", f"{k}={v}"])
-
-        mount_args: list[str] = []
-        workdir = cfg.workdir
-        if cfg.mount_cwd and cwd:
-            # Docker Desktop on Windows uses special mounting semantics; user must configure.
-            # We'll still attempt a bind mount.
-            mount_args = ["-v", f"{cwd}:{workdir}"]
-
-        # Disable network if requested
-        net_args: list[str] = []
-        if cfg.disable_network:
-            net_args = ["--network", "none"]
-
-        # Command execution inside container
-        # Use `sh -lc` so that typical shell syntax works.
-        docker_cmd = [
-            "docker",
-            "run",
-            "--rm",
-            "-w",
-            workdir,
-            *net_args,
-            *env_args,
-            *mount_args,
-            cfg.image,
-            "sh",
-            "-lc",
-            command,
-        ]
-
-        proc = await asyncio.create_subprocess_exec(
-            *docker_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-
-        try:
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.communicate()
-            return None, f"Error: Timeout after {timeout_s}s while executing command in docker."
-
-        out = (stdout or b"").decode(errors="replace")
-        return proc.returncode, out.strip() if out.strip() else ""
-</file>
-
-<file path="packages/shell/src/agentic_core_shell/isolation/protocol.py">
-from __future__ import annotations
-
-from typing import TypedDict, Literal, NotRequired
-
-
-class IsolationDockerConfig(TypedDict, total=False):
-    type: Literal["docker"]
-    image: NotRequired[str]
-    workdir: NotRequired[str]
-    mount_cwd: NotRequired[bool]
-    disable_network: NotRequired[bool]
-
-
-class IsolationConfig(TypedDict, total=False):
-    """Tool-instance config for shell isolation."""
-
-    # None means no isolation backend; tool runs locally.
-    type: NotRequired[str]
-
-
-# Helper union shape; used for typing only.
-IsolationBackendConfig = IsolationDockerConfig
 </file>
 
 <file path="packages/shell/tests/test_shell_exec_tool.py">
@@ -3671,6 +3185,348 @@ class MCPToolAdapter(BaseTool):
             return f"Error: {str(e)}"
 </file>
 
+<file path="docs/TOOLS_GUIDE.md">
+# Tools Framework Documentation
+
+This document explains how the **tooling framework** in `agentic_core.tools` works, how to implement custom tools, register them, and interact with the Model Context Protocol (MCP) dynamic tools. It is complementary to the **MCP configuration guide** (`docs/MCP config.md`).
+
+---
+
+## 1. Core Concepts
+
+| Concept | Description |
+|---------|-------------|
+| **BaseTool** | Abstract base class that all executable tools must inherit from. It defines the required `name`, `schema`, and `execute` members. |
+| **ToolManager** | Central registry that holds tool instances, builds the JSON‑schema list for the LLM, and coordinates execution. It also handles lazy loading of MCP tools. |
+| **MCPToolAdapter** | A thin wrapper that turns an external MCP JSON‑RPC tool definition into a `BaseTool`‑compatible object. |
+| **Discovery Tools** | Two built‑in tools – `list_mcp_catalog` and `load_mcp_tool` – that let an agent explore and load MCP tools at runtime. |
+
+---
+
+## 2. Implementing a Custom Tool
+
+1. **Create a subclass of `BaseTool`** in `agentic_core/tools` (or any importable module).
+2. **Define the `name` property** – the identifier the LLM will call.
+3. **Provide a JSON schema** via the `schema` property. The schema follows the OpenAI function‑calling format:
+   ```python
+   @property
+   def schema(self) -> dict:
+       return {
+           "type": "function",
+           "function": {
+               "name": "my_tool",
+               "description": "Brief description for the LLM.",
+               "parameters": {
+                   "type": "object",
+                   "properties": {
+                       "path": {"type": "string", "description": "File path to read."}
+                   },
+                   "required": ["path"]
+               }
+           }
+       }
+   ```
+4. **Implement `execute(self, args: dict, context: dict) -> str`** – the business logic. `args` contains validated parameters from the LLM, and `context` holds any extra data supplied by the runner (e.g., user session, environment variables). This is super useful for stateful tools.
+5. **Optionally override `__init__`** to accept dependencies (database connections, API clients, etc.).
+
+### Example
+```python
+from agentic_core.tools.base import BaseTool
+
+class EchoTool(BaseTool):
+    def __init__(self, prefix: str = ""):
+        super().__init__()
+        # Setting _name and _schema automatically generates properties `name` and `schema`
+        self._name = "echo"
+        self._schema = {
+            "type": "function",
+            "function": {
+                "name": "echo",
+                "description": "Returns the supplied text unchanged.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string", "description": "Text to echo."}
+                    },
+                    "required": ["text"]
+                }
+            }
+        }
+        self._prefix = prefix
+
+    def execute(self, args: dict, context: dict) -> str:
+        return f"{self._prefix}{args['text']}"
+```
+---
+
+## 3. Registering Tools with `ToolManager`
+
+### 3.1 Direct Registration (Static Tools)
+```python
+from agentic_core.tools.manager import ToolManager
+
+from my_tools import EchoTool
+
+manager = ToolManager()
+manager.register_tool(EchoTool(prefix="[Echo] "))
+```
+
+### 3.2 Registering MCP Tools (Dynamic)
+MCP tools are discovered lazily. The manager automatically registers the two discovery tools (`list_mcp_catalog` and `load_mcp_tool`). To load a specific MCP tool:
+```python
+# LLM calls the discovery tool first
+result = manager._plugins["list_mcp_catalog"].execute({}, {})
+# Then the LLM decides which tools to load and calls:
+load_result = manager._plugins["load_mcp_tool"].execute({"tool_names": ["github_create_issue"]}, {})
+```
+* Internally `load_mcp_tool` moves the selected `MCPToolAdapter` from the standby registry into the active plugin map.
+* After loading, the tool behaves exactly like a static `BaseTool`.
+
+---
+
+## 4. Lifecycle Management
+
+Because `ToolManager` often manages connections to external Model Context Protocol (MCP) servers (which run as separate subprocesses), proper lifecycle management is critical. Failing to shut down these servers can lead to "zombie processes" that continue to consume CPU and memory, or cause port conflicts when you restart your application.
+
+### 4.1 The Recommended Approach: Async Context Manager
+
+The most robust way to use `ToolManager` is as an async context manager. This ensures that `shutdown_mcp()` is called automatically when the block is exited, regardless of whether the code finished successfully or raised an exception.
+
+```python
+from agentic_core.tools.manager import ToolManager
+
+async def main():
+    # The 'async with' statement handles both setup and teardown
+    async with ToolManager(mcp_config_path="mcp.json") as manager:
+        try:
+            # Your agent logic here (or could just pass this `manager` instance to a `AgentRunner`)
+            result = await manager.execute("some_tool", { "arg": "val"})
+            print(result)
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            # The context manager will still ensure cleanup happens here
+
+    # At this point, all MCP subprocesses are gracefully terminated
+```
+
+**What happens under the hood?**
+
+*   `__aenter__`: Simply returns the manager instance for use.
+*   `__aexit__`: Triggers `shutdown_mcp()`, which iterates through all active MCP sessions, closes the JSON-RPC connections, and terminates the associated subprocesses. It also unregisters the `atexit` fallback to avoid redundant cleanup calls.
+
+### 4.2 Manual Lifecycle Management
+
+In some architectures (e.g., if the `ToolManager` is a long-lived singleton in a web server or a GUI application), you might not be able to wrap your entire app in a local `async with` block. In these cases, you must manually trigger the shutdown during your application's teardown phase.
+
+```python
+manager = ToolManager(mcp_config_path="mcp.json")
+
+# ... application runs ...
+
+# During app shutdown (e.g., FastAPI on_event("shutdown") or a SIGTERM handler)
+await manager.shutdown_mcp()
+```
+
+### 4.3 The `atexit` Fallback (Last Resort)
+
+As a safety net, `ToolManager` registers a synchronous `cleanup()` method with Python's `atexit` module during initialization. If the program terminates unexpectedly without `shutdown_mcp()` being called, `cleanup()` attempts to stop the servers.
+
+> **Warning:** `atexit` is less deterministic. Because it runs during the final stages of process exit, the asyncio event loop may already be closed or in a state where it cannot spawn new tasks. This can lead to "loop closed" warnings in your logs or slightly delayed process termination. This is why the context manager is strongly preferred.
+
+### 4.4 Lifecycle Strategy Comparison
+
+| Strategy | Deterministic? | Exception Safe? | Effort | Recommendation |
+| :--- | :---: | :---: | :---: | :--- |
+| Async Context Manager | ✅ Yes | ✅ Yes | Low | Gold Standard |
+| Manual `shutdown_mcp()` | ✅ Yes | ⚠️ Manual | Medium | Use for singletons / long-lived apps |
+| `atexit` Fallback | ❌ No | ⚠️ Partial | Zero | Emergency safety net only (enough for most simple apps) |
+
+---
+
+## 5. Execution Flow
+
+1. **Runner creates a `ToolManager`** (optionally with `toolsets`, `mcp_config_path`, etc.).
+2. **Discovery tools are injected** if `enable_mcp_discovery` is `True`.
+3. **When the LLM decides to call a tool**, the runner looks up `manager._plugins[tool_name]` and invokes `execute(args, context)`.
+4. **Result string** is returned to the LLM and can be fed back into the conversation.
+5. **Background cleanup** – `ToolManager.cleanup` is registered with `atexit` to shut down any MCP client threads.
+
+---
+
+## 6. Advanced Features
+
+### 6.1 Toolsets & Prompts
+* `ToolManager` accepts a `toolsets` mapping where each key is a logical group (e.g., `"file_ops"`) and the value is a list of tool names.
+* Optional `prompt` strings can be attached to a toolset; the runner can prepend them to the LLM prompt to give context about the available capabilities.
+
+### 6.2 Extra Context
+* `extra_context` passed to the manager is merged into the `context` argument of every tool's `execute` call. Use it to share session state, authentication tokens, or temporary variables.
+
+---
+
+## 7. ShellExecTool quickstart (allowlist/blocklist + optional isolation)
+
+`ShellExecTool` is configured at instantiation time using `ShellExecConfig`.
+
+```python
+from agentic_core.tools import ShellExecTool, ShellExecConfig
+
+# Security: allow only specific executables
+cfg = ShellExecConfig(
+    allowlist_commands=["python", "echo", "dir"],
+    blocklist_commands=["rm", "del"],
+
+    # Optional: enforce OS where this tool is allowed to run
+    os_support="auto",  # or "windows" / "linux" / "darwin"
+
+    # Optional: run inside an isolation backend (currently: docker)
+    # Requires docker to be installed and reachable on PATH.
+    # Persistent containers are used by default to share state across steps.
+    # isolation={
+    #     "type": "docker", 
+    #     "image": "ubuntu:latest", 
+    #     "disable_network": False, 
+    #     "mount_cwd": True,
+    #     "persistent_container": True
+    # },
+)
+
+shell_tool = ShellExecTool(cfg)
+```
+
+Per-call overrides exposed to the model:
+- `timeout_s` (seconds)
+- `cwd` (working directory). When using Docker with `mount_cwd=True`, path transitions requested by the LLM automatically translate to relative container filesystem mounts.
+- `env` (extra environment variables)
+
+---
+
+## 8. Real usage Example: static, stateful tool, and registration with custom toolsets
+
+```python
+from agentic_core.tools.manager import ToolManager
+from agentic_core.tools.base import BaseTool
+
+# ==== Tools ====
+# Simple plain tool
+class UpperCaseTool(BaseTool):
+    def __init__(self):
+        self._name = "uppercase"
+        self._schema = {
+            "type": "function",
+            "function": {
+                "name": "uppercase",
+                "description": "Converts text to upper case.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"text": {"type": "string"}},
+                    "required": ["text"]
+                }
+            }
+        }
+
+    def execute(self, args, context)
+        return args["text"].upper()
+
+# More complex tool
+class DocumentEditorTool(BaseTool):                                                                                                                         
+    total_global_edits = 0                                                                                                                                  
+                                                                                                                                                            
+    def __init__(self):                                                                                                                                     
+        self._name = "document_editor"                                                                                                                      
+        self.content = []                                                                                                                                   
+        self.cursor_line = 0                                                                                                                                
+                                                                                                                                                            
+        self._schema = {                                                                                                                                    
+            "type": "function",                                                                                                                             
+            "function": {                                                                                                                                   
+                "name": "document_editor",                                                                                                                  
+                "description": "Appends text to a document or reads it back.",                                                                              
+                "parameters": {                                                                                                                             
+                    "type": "object",                                                                                                                       
+                    "properties": {                                                                                                                         
+                        "action": {"type": "string", "enum": ["write", "read", "clear"]},                                                                   
+                        "text": {"type": "string", "description": "Text to write (required for 'write' action)"}                                            
+                    },                                                                                                                                      
+                    "required": ["action"]                                                                                                                  
+                }                                                                                                                                           
+            }                                                                                                                                               
+        }                                                                                                                                                   
+                                                                                                                                                            
+    def execute(self, args, context):                     
+        # access global context like this                                                                                                  
+        user_id = context.get("user_id", "anonymous")                                                                                                       
+        session_id = context.get("session_id", "unknown_session")                                                                                           
+                                                                                                                                                            
+        action = args.get("action")                                                                                                                         
+                                                                                                                                                            
+        if action == "write":                                                                                                                               
+            text = args.get("text", "")                                                                                                                     
+            # use stateful attributes
+            self.content.append(text)                                                                                                                       
+            self.cursor_line += 1                                                                                                                           
+                                                                                                                                                            
+            # class variables can also!
+            DocumentEditorTool.total_global_edits += 1                                                                                                      
+                                                                                                                                                            
+            return f"[User: {user_id}] Added text to line {self.cursor_line}. (Global edits: {DocumentEditorTool.total_global_edits})"                      
+                                                                                                                                                            
+        elif action == "read":                                                                                                                              
+            full_text = "\n".join(self.content) if self.content else "Document is empty."                                                                   
+            return f"Session {session_id} Document:\n{full_text}"                                                                                           
+                                                                                                                                                            
+        elif action == "clear":                                                                                                                             
+            self.content = []                                                                                                                               
+            self.cursor_line = 0                                                                                                                            
+            return "Document cleared."                                                                                                                      
+                                                                                                                                                            
+        return "Invalid action."
+
+# Initialise manager with discovery enabled and even a system prompt
+manager = ToolManager(
+    toolsets={
+        "simple_plain_toolset": ["uppercase"] # simple toolset
+        # you can specify a prompt to be dynamically injected for this toolset. This is perfect for toolset auto-routing systems.
+        "complicated_toolset": { 
+            "tools": ["uppercase", "document_editor"],
+            "prompt": "System to Agent. You can use `document_editor` to read into the secret of universe. Don't use `uppercase` unless you want to go BOOM!"
+        }
+    },
+    mcp_config_path="examples/mcp_config.json",
+    enable_mcp_discovery=True
+)
+
+# Register static tool
+manager.register_tool(UpperCaseTool())
+# For stateful tool, it is better to initalize the tool instance first then inject into necessary places to maintain internal states
+doc_edit_tool = DocumentEditorTool()
+manager.register_tool(doc_edit_tool)
+
+# If you forgot to register `toolset`, use `manager.add_toolset(name, tools, prompt)`
+manager.add_toolset("other_plain_toolset", ["some_random_tool1", "random_tool2"])
+```
+---
+
+## 7. Reference API Summary
+
+| Class / Function | Key Methods / Attributes |
+|------------------|--------------------------|
+| `BaseTool` | `name`, `schema`, `execute(args, context)` |
+| `ToolManager` | `register_tool(tool_instance, load_mcp=False)`, `cleanup()`, `ensure_mcp_initialized()`, internal `_register_discovery_tools()` |
+| `ListMCPTools` (inherits `BaseTool`) | `execute(args, context)` – returns a human‑readable catalog |
+| `LoadMCPTool` (inherits `BaseTool`) | `execute(args, context)` – loads selected MCP tools |
+| `MCPToolAdapter` | Wraps external MCP definitions; implements `execute` by forwarding JSON‑RPC calls |
+
+---
+
+## 8. Testing & Debugging
+* Unit tests located in `tests/test_mcp.py` and `tests/test_core.py` cover registration, discovery, and loading.
+* Use the `debug.log` file to inspect MCP initialization messages (`logger.info`/`debug`).
+* When developing a new tool, run `pytest -k <tool_name>` to ensure schema compliance.
+
+---
+</file>
+
 <file path="packages/rag/src/agentic_core_rag/stores/chromadb_store.py">
 from typing import Any
 import uuid
@@ -4325,226 +4181,6 @@ packages = ["src/agentic_core_shell"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-</file>
-
-<file path="packages/shell/src/agentic_core_shell/exec_tool.py">
-from __future__ import annotations
-
-import asyncio
-import os
-import sys
-from dataclasses import dataclass
-
-from typing import Any
-
-from .isolation.backends import DockerIsolationBackend, DockerIsolationConfig
-
-
-from agentic_core.tools import BaseTool
-
-
-@dataclass
-class ShellExecConfig:
-    # Security
-    allowlist_commands: list[str] | None = None  # exact executable names allowed
-    blocklist_commands: list[str] | None = None  # exact executable names blocked
-
-    # Optional OS enforcement for this tool instance.
-    # - None: no explicit enforcement
-    # - "windows" / "linux" / "darwin": require that platform
-    # - "auto": accept current platform (default if you want to be explicit)
-    os_support: str | None = None
-
-    # True isolation (optional)
-    # When set to {"type": "docker", ...} the command is run inside a container.
-    # When None, the tool runs locally (best-effort isolation only).
-    isolation: dict[str, Any] | None = None
-
-    # Best-effort isolation controls (universally available without extra OS-specific deps)
-    chdir: str | None = None
-    env: dict[str, str] | None = None
-
-    # Execution limits
-    timeout_s: float = 15.0
-
-    # Network controls (best-effort; not a true sandbox)
-    # If enabled, the tool attempts to discourage common network client libs via proxy env.
-    deny_network_env: bool = False
-
-
-def _normalize_command_name(cmd: str) -> str:
-    cmd = cmd.strip()
-    if not cmd:
-        return ""
-    # Allow passing full command with args; we only validate executable part.
-    # Also handles quotes poorly but good enough for allow/block at first token.
-    # Examples: "python" -> python, "git status" -> git
-    first = cmd.split()[0]
-    return first.strip('"\'')
-
-
-class ShellExecTool(BaseTool):
-    """Configurable shell command execution tool.
-
-    Agent must only receive this tool name and its schema.
-    Configuration is provided at tool-instance creation time.
-
-    WARNING: This tool executes arbitrary commands and should be used with allowlists.
-    """
-
-    name = "shell_exec"
-
-    schema = {
-        "type": "function",
-        "function": {
-            "name": "shell_exec",
-            "description": "Execute a shell command and return combined stdout/stderr. Uses ShellExecConfig allow/block lists and optional isolation backend.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "Shell command to execute. Example: 'python -V' or 'dir'. The executable token (first word) is validated against allowlist/blocklist.",
-                    },
-                    "timeout_s": {
-                        "type": "number",
-                        "description": "Optional per-call timeout override in seconds (overrides ShellExecConfig.timeout_s).",
-                    },
-                    "cwd": {
-                        "type": "string",
-                        "description": "Optional per-call working directory (overrides ShellExecConfig.chdir).",
-                    },
-                    "env": {
-                        "type": "object",
-                        "description": "Optional per-call extra environment variables (merged with ShellExecConfig.env).",
-                        "additionalProperties": {"type": "string"},
-                    },
-                },
-                "required": ["command"],
-            },
-        },
-    }
-
-
-    def __init__(
-        self,
-        config: ShellExecConfig | None = None,
-    ):
-        self._config = config or ShellExecConfig()
-
-    async def execute(self, args: dict, context: dict) -> str:
-        cmd = str(args.get("command", "")).strip()
-        if not cmd:
-            return "Error: 'command' is required and must be a non-empty string."
-
-        # OS-support enforcement (tool-instance config)
-        if self._config.os_support:
-            os_support = self._config.os_support.lower()
-            current_os = "windows" if os.name == "nt" else ("darwin" if sys.platform == "darwin" else "linux")
-
-            if os_support == "auto":
-                pass
-            elif os_support != current_os:
-                return f"Error: ShellExecConfig.os_support='{self._config.os_support}' not supported on this OS (current: {current_os})."
-
-        exe_name = _normalize_command_name(cmd)
-
-
-        if self._config.allowlist_commands is not None:
-            allow = {c.lower() for c in self._config.allowlist_commands}
-            if exe_name.lower() not in allow:
-                return f"Error: Command executable '{exe_name}' is not in allowlist."
-
-        if self._config.blocklist_commands is not None:
-            block = {c.lower() for c in self._config.blocklist_commands}
-            if exe_name.lower() in block:
-                return f"Error: Command executable '{exe_name}' is blocked."
-
-        timeout_s = float(args.get("timeout_s", self._config.timeout_s))
-
-        cwd = args.get("cwd") or self._config.chdir
-        env = {}
-        if self._config.env:
-            env.update(self._config.env)
-        extra_env = args.get("env")
-        if isinstance(extra_env, dict):
-            env.update({str(k): str(v) for k, v in extra_env.items()})
-
-        if self._config.deny_network_env:
-            # Best-effort: set common env vars to discourage SDKs; doesn't sandbox.
-            env.setdefault("NO_PROXY", "*")
-            env.setdefault("no_proxy", "*")
-
-        isolation_cfg = self._config.isolation
-
-        # True isolation backend (e.g., docker)
-        if isolation_cfg is not None:
-            isolation_type = str(isolation_cfg.get("type", "")).lower()
-
-            if isolation_type == "docker":
-                # If os_support is set, enforcement already happened above.
-                try:
-                    docker_cfg = DockerIsolationConfig(
-                        image=isolation_cfg.get("image", "alpine:3.20"),
-                        workdir=isolation_cfg.get("workdir", "/workspace"),
-                        mount_cwd=bool(isolation_cfg.get("mount_cwd", False)),
-                        disable_network=bool(isolation_cfg.get("disable_network", True)),
-                    )
-                    backend = DockerIsolationBackend(docker_cfg)
-                except Exception as e:
-                    return f"Error: Failed to initialize docker isolation backend: {type(e).__name__}: {e}"
-
-                try:
-                    rc, out = await backend.run(
-                        command=cmd,
-                        timeout_s=timeout_s,
-                        cwd=cwd,
-                        env=env if env else None,
-                    )
-                    if rc is None:
-                        return out or "Error: Unknown docker timeout failure."
-                    return out or f"(Command exited with code {rc} with no output.)"
-                except Exception as e:
-                    return f"Error: {type(e).__name__}: {e}"
-
-            return f"Error: Unsupported isolation backend type '{isolation_type}'."
-
-        # Local execution path (best-effort)
-        # Cross-platform shell execution
-        # Windows: cmd.exe /c <command>
-        # Others: use platform default shell if available, otherwise fall back to /bin/sh.
-        if os.name == "nt":
-            shell_cmd = ["cmd.exe", "/c", cmd]
-        else:
-            shell = os.environ.get("SHELL")
-            if not shell:
-                # Common fallbacks on unix-like platforms
-                shell = "/bin/sh"
-            shell_cmd = [shell, "-c", cmd]
-
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *shell_cmd,
-                cwd=cwd,
-                env={**os.environ, **env} if env else None,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-            )
-
-            try:
-                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
-            except asyncio.TimeoutError:
-                proc.kill()
-                await proc.communicate()
-                return f"Error: Timeout after {timeout_s}s while executing command."
-
-            out = (stdout or b"").decode(errors="replace")
-            return out.strip() if out.strip() else (f"(Command exited with code {proc.returncode} with no output.)")
-
-        except FileNotFoundError:
-            return "Error: Shell executable not found on this system."
-        except Exception as e:
-            return f"Error: {type(e).__name__}: {e}"
 </file>
 
 <file path="tests/test_tool_manager_public_api.py">
@@ -5231,6 +4867,267 @@ class GeminiEmbedder(IEmbeddingProvider):
             return embeddings
 
         return await asyncio.to_thread(_do_embed)
+</file>
+
+<file path="packages/shell/src/agentic_core_shell/isolation/backends.py">
+from __future__ import annotations
+
+import asyncio
+import os
+import shutil
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any
+
+
+class IsolationBackend(ABC):
+    """Executes commands using an isolation mechanism.
+
+    Implementations must be OS-universal *in API shape*; actual isolation may be OS-specific.
+    """
+
+    @abstractmethod
+    async def run(
+        self,
+        *,
+        command: str,
+        timeout_s: float,
+        cwd: str | None,
+        env: dict[str, str] | None,
+        # lower-level shell selection is handled by the backend or tool
+    ) -> tuple[int | None, str]:
+        """Return (exit_code, combined_output)."""
+
+
+class LocalIsolationBackend(IsolationBackend):
+    async def run(
+        self,
+        *,
+        command: str,
+        timeout_s: float,
+        cwd: str | None,
+        env: dict[str, str] | None,
+    ) -> tuple[int | None, str]:
+        # Local is implemented by the tool (shell_cmd selection). This backend is a stub.
+        # The tool should bypass shell logic and call the tool's local execution path.
+        raise RuntimeError("LocalIsolationBackend.run should be handled by ShellExecTool.")
+
+
+@dataclass
+class DockerIsolationConfig:
+    image: str = "ubuntu:latest"
+    workdir: str = "/workspace"
+    mount_cwd: bool = True
+    disable_network: bool = False
+    persistent_container: bool = True
+    container_name: str | None = None
+    setup_commands: list[str] | None = None
+    volumes: list[str] | None = None
+    user: str | None = None
+    env: dict[str, str] | None = None
+
+class DockerIsolationBackend(IsolationBackend):
+    def __init__(self, config: DockerIsolationConfig | None = None):
+        self.config = config or DockerIsolationConfig()
+        if shutil.which("docker") is None:
+            raise RuntimeError("Docker is not installed or not on PATH.")
+        self._container_started = False
+        self._container_name = self.config.container_name or f"callai_sandbox_{os.getpid()}_{id(self)}"
+        self._cleaned_up = False
+        
+        if self.config.persistent_container:
+            import atexit
+            atexit.register(self._sync_cleanup)
+
+    def _sync_cleanup(self):
+        if self._container_started and not self._cleaned_up:
+            import subprocess
+            subprocess.run(["docker", "rm", "-f", self._container_name], capture_output=True)
+            self._cleaned_up = True
+
+    def __del__(self):
+        self._sync_cleanup()
+        
+    async def _ensure_container(self, cwd: str | None = None):
+        if self._container_started:
+            return
+        
+        cfg = self.config
+        mount_args = []
+        self._mounted_cwd = None
+        if cfg.mount_cwd and cwd:
+            self._mounted_cwd = os.path.abspath(cwd)
+            mount_args = ["-v", f"{self._mounted_cwd}:{cfg.workdir}"]
+            
+        net_args = ["--network", "none"] if cfg.disable_network else []
+        
+        env_args = []
+        if cfg.env:
+            for k, v in cfg.env.items():
+                env_args.extend(["-e", f"{k}={v}"])
+                
+        vol_args = []
+        if cfg.volumes:
+            for v in cfg.volumes:
+                vol_args.extend(["-v", v])
+                
+        user_args = ["-u", cfg.user] if cfg.user else []
+
+        cmd = [
+            "docker", "run", "-d", "--rm",
+            "--name", self._container_name,
+            "-w", cfg.workdir,
+            *net_args,
+            *user_args,
+            *env_args,
+            *vol_args,
+            *mount_args,
+            cfg.image,
+            "tail", "-f", "/dev/null"
+        ]
+        
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        try:
+            out, _ = await asyncio.wait_for(proc.communicate(), timeout=600.0)
+        except asyncio.TimeoutError:
+            proc.kill()
+            raise RuntimeError("Timeout while pulling docker image or starting container.")
+            
+        if proc.returncode != 0:
+            raise RuntimeError(f"Failed to start persistent docker container: {out.decode('utf-8', errors='replace')}")
+            
+        if cfg.setup_commands:
+            for scmd in cfg.setup_commands:
+                setup_proc = await asyncio.create_subprocess_exec(
+                    "docker", "exec", "-w", cfg.workdir, self._container_name, "sh", "-lc", scmd,
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+                )
+                out, _ = await setup_proc.communicate()
+                if setup_proc.returncode != 0:
+                    raise RuntimeError(f"Setup command '{scmd}' failed: {out.decode('utf-8', errors='replace')}")
+        
+        self._container_started = True
+
+    async def run(
+        self,
+        *,
+        command: str,
+        timeout_s: float,
+        cwd: str | None,
+        env: dict[str, str] | None,
+    ) -> tuple[int | None, str]:
+        cfg = self.config
+        env_args: list[str] = []
+        if env:
+            for k, v in env.items():
+                env_args.extend(["-e", f"{k}={v}"])
+
+        if cfg.persistent_container:
+            await self._ensure_container(cwd)
+            
+            container_cwd = cfg.workdir
+            if cfg.mount_cwd and cwd and self._mounted_cwd:
+                abs_cwd = os.path.abspath(cwd)
+                if abs_cwd.startswith(self._mounted_cwd):
+                    rel_path = os.path.relpath(abs_cwd, self._mounted_cwd)
+                    if rel_path != ".":
+                        container_cwd = os.path.join(cfg.workdir, rel_path).replace("\\", "/")
+                        
+            docker_cmd = [
+                "docker", "exec",
+                "-w", container_cwd,
+                *env_args,
+                self._container_name,
+                "sh", "-lc", command
+            ]
+        else:
+            mount_args: list[str] = []
+            container_cwd = cfg.workdir
+            if cfg.mount_cwd and cwd:
+                abs_cwd = os.path.abspath(cwd)
+                mount_args = ["-v", f"{abs_cwd}:{cfg.workdir}"]
+            net_args: list[str] = ["--network", "none"] if cfg.disable_network else []
+            
+            vol_args = []
+            if cfg.volumes:
+                for v in cfg.volumes:
+                    vol_args.extend(["-v", v])
+            user_args = ["-u", cfg.user] if cfg.user else []
+            container_env_args = []
+            if cfg.env:
+                for k, v in cfg.env.items():
+                    container_env_args.extend(["-e", f"{k}={v}"])
+
+            full_command = command
+            if cfg.setup_commands:
+                chained_setup = " && ".join(cfg.setup_commands)
+                full_command = f"{chained_setup} && {command}"
+
+            docker_cmd = [
+                "docker", "run", "--rm",
+                "-w", container_cwd,
+                *net_args,
+                *user_args,
+                *container_env_args,
+                *env_args,
+                *vol_args,
+                *mount_args,
+                cfg.image,
+                "sh", "-lc", full_command
+            ]
+
+        proc = await asyncio.create_subprocess_exec(
+            *docker_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+                await proc.communicate()
+            except Exception:
+                pass
+            return None, f"Error: Timeout after {timeout_s}s while executing command in docker."
+
+        out = (stdout or b"").decode(errors="replace")
+        return proc.returncode, out.strip() if out.strip() else ""
+</file>
+
+<file path="packages/shell/src/agentic_core_shell/isolation/protocol.py">
+from __future__ import annotations
+
+from typing import TypedDict, Literal, NotRequired
+
+
+class IsolationDockerConfig(TypedDict, total=False):
+    type: Literal["docker"]
+    image: NotRequired[str]
+    workdir: NotRequired[str]
+    mount_cwd: NotRequired[bool]
+    disable_network: NotRequired[bool]
+    persistent_container: NotRequired[bool]
+    setup_commands: NotRequired[list[str]]
+    volumes: NotRequired[list[str]]
+    user: NotRequired[str]
+    env: NotRequired[dict[str, str]]
+
+
+class IsolationConfig(TypedDict, total=False):
+    """Tool-instance config for shell isolation."""
+
+    # None means no isolation backend; tool runs locally.
+    type: NotRequired[str]
+
+
+# Helper union shape; used for typing only.
+IsolationBackendConfig = IsolationDockerConfig
 </file>
 
 <file path="tests/conftest.py">
@@ -6082,325 +5979,219 @@ def heuristic_json_parse(raw_text: str) -> dict[str, Any]:
     raise HeuristicFailedToParse(f"Could not parse arguments into JSON. Raw text: {raw_text[:100]}...")
 </file>
 
-<file path="agentic_core/llm_providers/anthropic.py">
-"""
-Anthropic LLM Provider.
-"""
-from typing import AsyncIterator, Any
+<file path="packages/shell/src/agentic_core_shell/exec_tool.py">
+from __future__ import annotations
 
-from .base import ILLMClient, LLMResponse
-from ..interfaces import Message, ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError, ToolSchema
+import asyncio
+import os
+import sys
+from dataclasses import dataclass
 
-class AnthropicLLM(ILLMClient):
-    """Anthropic Claude adapter."""
-    
-    def __init__(
-        self, 
-        api_key: str, 
-        model: str,
-        **kwargs
-    ):
-        try:
-            from anthropic import AsyncAnthropic
-        except ImportError:
-            raise ImportError("Please install anthropic: pip install anthropic")
-        
-        self.client = AsyncAnthropic(api_key=api_key)
-        self.model = model
-        self.extra_kwargs = kwargs
-    
-    async def ask(
-        self, 
-        messages: list[Message], 
-        tools: list[ToolSchema] | None = None, 
-        stream: bool = False,
-        **kwargs
-    ) -> AsyncIterator[LLMResponse]:
-        """
-        Send a message request to Anthropic.
-        
-        Args:
-            messages: Conversation history.
-            tools: A list of JSON schemas for tools (NOT the `ToolManager` object).
-        """
-        from anthropic.types import RateLimitError, AuthenticationError, GatewayTimeoutError
+from typing import Any
 
-        system = None
-        anthropic_messages = []
-        
-        for msg in messages:
-            role = msg.get("role")
-            content = msg.get("content")
-            
-            if role == "system":
-                system = content
-            elif role == "tool":
-                # Anthropic requires tool results to be role: "user" with a `tool_result` content block.
-                anthropic_messages.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": msg.get("tool_call_id"),
-                        "content": str(content)
-                    }]
-                })
-            else:
-                anthropic_messages.append({"role": role, "content": content})
+from .isolation.backends import DockerIsolationBackend, DockerIsolationConfig
 
-        req_kwargs = {
-            "model": self.model,
-            "messages": anthropic_messages,
-            "max_tokens": kwargs.get("max_tokens", 4096),
-            **self.extra_kwargs,
-            **kwargs
-        }
-        
-        if system:
-            req_kwargs["system"] = system
-        
-        if tools:
-            req_kwargs["tools"] = [
-                {
-                    "name": t["function"]["name"],
-                    "description": t["function"]["description"],
-                    "input_schema": t["function"]["parameters"]
-                }
-                for t in tools
-            ]
-        
-        try:
-            if stream:
-                async with self.client.messages.stream(**req_kwargs) as event_stream:
-                    async for event in event_stream:
-                        if event.type == "text":
-                            yield LLMResponse(text=event.text)
 
-                        if event.type == "thinking":
-                            yield LLMResponse(reasoning=event.thinking)
-                        
-                        elif event.type == "content_block_stop":
-                            block = event.content_block
-                            if block.type == "tool_use":
-                                yield LLMResponse(
-                                    tool_calls=[{
-                                        "id": block.id,
-                                        "type": "function",
-                                        "function": {
-                                            "name": block.name,
-                                            "arguments": block.input
-                                        }
-                                    }]
-                                )
-                return
-            
-            response = await self.client.messages.create(**req_kwargs)
-            text_content = ""
-            tool_calls = []
-            
-            for block in response.content:
-                if block.type == "text":
-                    text_content += block.text
-                elif block.type == "tool_use":
-                    tool_calls.append({
-                        "name": block.name,
-                        "id": block.id,
-                        "arguments": block.input
-                    })
-            
-            yield LLMResponse(
-                text=text_content,
-                tool_calls=tool_calls,
-                usage={
-                    "prompt_tokens": response.usage.input_tokens, 
-                    "completion_tokens": response.usage.output_tokens
+from agentic_core.tools import BaseTool
+
+
+@dataclass
+class ShellExecConfig:
+    # Security
+    allowlist_commands: list[str] | None = None  # exact executable names allowed
+    blocklist_commands: list[str] | None = None  # exact executable names blocked
+
+    # Optional OS enforcement for this tool instance.
+    # - None: no explicit enforcement
+    # - "windows" / "linux" / "darwin": require that platform
+    # - "auto": accept current platform (default if you want to be explicit)
+    os_support: str | None = None
+
+    # True isolation (optional)
+    # When set to {"type": "docker", ...} the command is run inside a container.
+    # When None, the tool runs locally (best-effort isolation only).
+    isolation: dict[str, Any] | None = None
+
+    chdir: str | None = None
+    env: dict[str, str] | None = None
+
+    # Execution limits
+    timeout_s: float = 15.0
+
+
+
+
+def _normalize_command_name(cmd: str) -> str:
+    cmd = cmd.strip()
+    if not cmd:
+        return ""
+    # Allow passing full command with args; we only validate executable part.
+    # Also handles quotes poorly but good enough for allow/block at first token.
+    # Examples: "python" -> python, "git status" -> git
+    first = cmd.split()[0]
+    return first.strip('"\'')
+
+
+class ShellExecTool(BaseTool):
+    """Configurable shell command execution tool.
+
+    Agent must only receive this tool name and its schema.
+    Configuration is provided at tool-instance creation time.
+
+    WARNING: This tool executes arbitrary commands and should be used with allowlists.
+    """
+
+    name = "shell_exec"
+
+    schema = {
+        "type": "function",
+        "function": {
+            "name": "shell_exec",
+            "description": "Execute a shell command and return combined stdout/stderr. Uses ShellExecConfig allow/block lists and optional isolation backend.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "Shell command to execute. If isolated, files created in the workspace persist and sync with host. First word validated against allowlist.",
+                    },
+                    "timeout_s": {
+                        "type": "number",
+                        "description": "Optional per-call timeout override in seconds (overrides ShellExecConfig.timeout_s).",
+                    },
+                    "cwd": {
+                        "type": "string",
+                        "description": "Optional per-call working directory (overrides ShellExecConfig.chdir).",
+                    },
+                    "env": {
+                        "type": "object",
+                        "description": "Optional per-call extra environment variables (merged with ShellExecConfig.env).",
+                        "additionalProperties": {"type": "string"},
+                    },
                 },
+                "required": ["command"],
+            },
+        },
+    }
+
+
+    def __init__(
+        self,
+        config: ShellExecConfig | None = None,
+    ):
+        self._config = config or ShellExecConfig()
+        self._backend = None
+        self._backend_error = None
+        
+        iso_cfg = self._config.isolation
+        if iso_cfg and str(iso_cfg.get("type", "")).lower() == "docker":
+            try:
+                docker_cfg = DockerIsolationConfig(
+                    image=iso_cfg.get("image", "ubuntu:latest"),
+                    workdir=iso_cfg.get("workdir", "/workspace"),
+                    mount_cwd=bool(iso_cfg.get("mount_cwd", False)),
+                    disable_network=bool(iso_cfg.get("disable_network", False)),
+                    persistent_container=bool(iso_cfg.get("persistent_container", True)),
+                    setup_commands=iso_cfg.get("setup_commands", []),
+                    volumes=iso_cfg.get("volumes", []),
+                    user=iso_cfg.get("user", ""),
+                    env=iso_cfg.get("env", {}),
+                )
+                self._backend = DockerIsolationBackend(docker_cfg)
+            except Exception as e:
+                self._backend_error = str(e)
+                self._backend = None
+
+    async def execute(self, args: dict, context: dict) -> str:
+        cmd = str(args.get("command", "")).strip()
+        if not cmd:
+            return "Error: 'command' is required and must be a non-empty string."
+
+        # OS-support enforcement (tool-instance config)
+        if self._config.os_support:
+            os_support = self._config.os_support.lower()
+            current_os = "windows" if os.name == "nt" else ("darwin" if sys.platform == "darwin" else "linux")
+
+            if os_support == "auto":
+                pass
+            elif os_support != current_os:
+                return f"Error: ShellExecConfig.os_support='{self._config.os_support}' not supported on this OS (current: {current_os})."
+
+        exe_name = _normalize_command_name(cmd)
+
+        if self._config.allowlist_commands is not None:
+            allow = {c.lower() for c in self._config.allowlist_commands}
+            if exe_name.lower() not in allow:
+                return f"Error: Command executable '{exe_name}' is not in allowlist."
+
+        if self._config.blocklist_commands is not None:
+            block = {c.lower() for c in self._config.blocklist_commands}
+            if exe_name.lower() in block:
+                return f"Error: Command executable '{exe_name}' is blocked."
+
+        timeout_s = float(args.get("timeout_s", self._config.timeout_s))
+
+        cwd = args.get("cwd") or self._config.chdir
+        env = {}
+        if self._config.env:
+            env.update(self._config.env)
+        extra_env = args.get("env")
+        if isinstance(extra_env, dict):
+            env.update({str(k): str(v) for k, v in extra_env.items()})
+
+        if getattr(self, "_backend_error", None):
+            return f"Error: Failed to initialize docker isolation backend: {self._backend_error}. If you don't have Docker installed, please change the isolation type to 'None (Local)' in the TUI Settings."
+
+        if self._backend:
+            try:
+                rc, out = await self._backend.run(
+                    command=cmd,
+                    timeout_s=timeout_s,
+                    cwd=cwd,
+                    env=env if env else None,
+                )
+                if rc is None:
+                    return out or "Error: Unknown docker timeout failure."
+                return out or f"(Command exited with code {rc} with no output.)"
+            except Exception as e:
+                return f"Error: {type(e).__name__}: {e}"
+
+        # Local execution path (best-effort)
+        # Cross-platform shell execution
+        # Windows: cmd.exe /c <command>
+        # Others: use platform default shell if available, otherwise fall back to /bin/sh.
+        if os.name == "nt":
+            shell_cmd = ["cmd.exe", "/c", cmd]
+        else:
+            shell = os.environ.get("SHELL")
+            if not shell:
+                # Common fallbacks on unix-like platforms
+                shell = "/bin/sh"
+            shell_cmd = [shell, "-c", cmd]
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *shell_cmd,
+                cwd=cwd,
+                env={**os.environ, **env} if env else None,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
             )
-    
-        except AuthenticationError:
-            raise ProviderAuthenticationError(f"openai client: Invalid API key for {self.model}")
-        except RateLimitError:
-            raise ProviderRateLimitError(f"openai client: Rate limit exceeded for {self.model}")
-        except GatewayTimeoutError:
-            raise ProviderTimeoutError(f"openai client: Request timed out for {self.model}")
-</file>
 
-<file path="CHANGELOG.md">
-#  (2026-04-25)
+            try:
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.communicate()
+                return f"Error: Timeout after {timeout_s}s while executing command."
 
+            out = (stdout or b"").decode(errors="replace")
+            return out.strip() if out.strip() else (f"(Command exited with code {proc.returncode} with no output.)")
 
-### Bug Fixes
-
-* [no ci] old test branch pruned ([b9d6abe](https://github.com/nguyenv217/callai-agentic_core/commit/b9d6abe797aa7022c927da7e05d07be07da07013))
-* better configuratoin error handling. can still import placeholders for convenience ([466ea40](https://github.com/nguyenv217/callai-agentic_core/commit/466ea406b5bbb1e76f2f918a5b04f6fb3bb0223b))
-* cleaner seperation between runtime loaded tools and user configured ([272a88a](https://github.com/nguyenv217/callai-agentic_core/commit/272a88a9134e38175ab024a9a0872dcc2bba73f8))
-* clearer import pattern. supply the subpackages ([619990f](https://github.com/nguyenv217/callai-agentic_core/commit/619990f341acf076daa2fea804c8ab1e1725569f))
-* **engine:** async iterator support ([68735db](https://github.com/nguyenv217/callai-agentic_core/commit/68735db5658f48b36c8a1f233d93d2f291090c03))
-* **engine:** config.system_prompt should be optional so end-user can quickly build agent with preconfigured system prompt ([8ba1732](https://github.com/nguyenv217/callai-agentic_core/commit/8ba1732bee7680aca643927f8b7cbd8d41078641))
-* **engine:** indentation bug ([d4c733c](https://github.com/nguyenv217/callai-agentic_core/commit/d4c733c4865b779bdd11dd206308fb9f4c211e9a))
-* **engine:** new concurrent strat ([63652df](https://github.com/nguyenv217/callai-agentic_core/commit/63652dfcdc12468ed6df947fba6c306075231861))
-* make `abandon` decision halt loop instead of blindly continue ([250f84a](https://github.com/nguyenv217/callai-agentic_core/commit/250f84aeabc30f175cac7ea74d1b642bf2898e7b))
-* **mcp_init:** Fix bugs with MCP config logic to be more strict. ([5651ceb](https://github.com/nguyenv217/callai-agentic_core/commit/5651cebc46b85ea8da90b54fdb41593f3a0f726b))
-* **mcp_init:** remove 'toolset' modifying behaviour. This should be exclusively user-configured ([5b8989c](https://github.com/nguyenv217/callai-agentic_core/commit/5b8989c920b5631d2503bfb16deaaa33660bde71))
-* **mcp:** More precise MCP configuration requirement. Will raise error and log if invalid combinations ([bcc368f](https://github.com/nguyenv217/callai-agentic_core/commit/bcc368fb163feef9d042fa6d614b4cc11937786b))
-* **memory:** deprecate truncation by popping old messages to preserve context ([1487350](https://github.com/nguyenv217/callai-agentic_core/commit/1487350eedd5262af9268cc73c40774ee3b4e2ae))
-* minor redundancy ([a839c6e](https://github.com/nguyenv217/callai-agentic_core/commit/a839c6e923cdde65e98955eb37f04d2c1495e0dc))
-* **naming:** fix tests failed because of naming inconsistentcies ([16d85df](https://github.com/nguyenv217/callai-agentic_core/commit/16d85df951d344c68d4406c84b59836aaadd8323))
-* **openai:** async client by default ([2a76691](https://github.com/nguyenv217/callai-agentic_core/commit/2a76691880e858c6f2756feac4f16def03c07667))
-* **openai:** hotfix to compatible with older sync clients ([10f5193](https://github.com/nguyenv217/callai-agentic_core/commit/10f5193ad94db4f8e0f3f558afa97d7f7468f176))
-* **RAG:** `__init__` importing too much will raise importerror if not installed extras. ([f9e7411](https://github.com/nguyenv217/callai-agentic_core/commit/f9e7411dfa4485ef6cb794c41031fbe65cd15abb))
-* **RAG:** default async openai ([7050139](https://github.com/nguyenv217/callai-agentic_core/commit/7050139f8cd48e8052bfa3255635aac909460ee6))
-* redunant error check logic ([4c99551](https://github.com/nguyenv217/callai-agentic_core/commit/4c9955186424900f169e2fbd8fa8e88449f412d2))
-* redundant logic and bug in engine for nonduplicated tools ([64f148f](https://github.com/nguyenv217/callai-agentic_core/commit/64f148fda57938fe04ff52cbbeda3650eb117770))
-* redundant manager vars ([ece4063](https://github.com/nguyenv217/callai-agentic_core/commit/ece406343d9b5578bc69dda8b85ce1b4da2eb415))
-* rename 'tool_manager' to 'tools' ([3b2891c](https://github.com/nguyenv217/callai-agentic_core/commit/3b2891ca8c63094c1fdb39ef34495bcd8bfad777))
-* restructure discovery tools and remove modifying toolset directly. rename get_tools -> get_tools_from_toolset to promote non-modifying of user-configuration ([830e80e](https://github.com/nguyenv217/callai-agentic_core/commit/830e80ed813a783921c453c53816e1e3a1ad8dc5))
-* **test:** add missing conf test file ([2aff4b7](https://github.com/nguyenv217/callai-agentic_core/commit/2aff4b7dbad30cc783d3862f93a5e5764cd750ef))
-* **test:** fix test suite parallel tools test ([160efbe](https://github.com/nguyenv217/callai-agentic_core/commit/160efbe493b9d3eb3cfdba51f11baf97ec167987))
-* **test:** fix test to abide to new naming ([b519def](https://github.com/nguyenv217/callai-agentic_core/commit/b519def5b840f67c1175b3f41d2f4bdda0f6869f))
-* **test:** minor changes to follow new manager interfaces ([f100950](https://github.com/nguyenv217/callai-agentic_core/commit/f100950cd4e1b2d558f3c2223f73c544bb221194))
-* to async tests ([37455ba](https://github.com/nguyenv217/callai-agentic_core/commit/37455bafb132ad412cddbab5df6732773889bcb7))
-* **tool:** More granular control over tool-loading and no longer anyone remote modifying user-supplied toolsets ([7490d87](https://github.com/nguyenv217/callai-agentic_core/commit/7490d8771987613db7fe714c5be6bb7f107d0f9d))
-* wrong versions. not needed yet anyway ([5852850](https://github.com/nguyenv217/callai-agentic_core/commit/5852850ef94c4d8a929d870649f3dcfdbb02c01c))
-
-
-### Features
-
-* **engine:** Much more granular control over tooling turn and iteration ([f1ce63a](https://github.com/nguyenv217/callai-agentic_core/commit/f1ce63acca00da9d53972c41af173bf1dc34164e))
-* **engine:** new DAGpowered engine ([585f947](https://github.com/nguyenv217/callai-agentic_core/commit/585f94721adb7eb2b6783d30f518c2182bba129b))
-* heuristically find reasoning field ([ee5c882](https://github.com/nguyenv217/callai-agentic_core/commit/ee5c882edf86d165fcf090a91f63486faeea051d))
-* **interface:** new reasoning field ([372b396](https://github.com/nguyenv217/callai-agentic_core/commit/372b39614c23d6fc229be7bea5240674e5988adc))
-* **mcp&tool:** add `extra_env` and `extra_context` for runner config anticipate multiple agent runner with different configs ([ca43773](https://github.com/nguyenv217/callai-agentic_core/commit/ca437730ab5ec96e6fb80df6594f7c3f62e5b5f0))
-* **mcp:** Add custom ([34f2058](https://github.com/nguyenv217/callai-agentic_core/commit/34f2058953542aa4688db855be2c232f3fd63256))
-* **mcp:** allow custom hook be registered with toolmanager for MCP server death ([e9a5d3d](https://github.com/nguyenv217/callai-agentic_core/commit/e9a5d3deb0d3617665c69a1e40bea342eb79aba8))
-* **mcp:** move MCP to tools/mcp/ for clearer seperation + singleton for session spawning to avoid dup ([aee5401](https://github.com/nguyenv217/callai-agentic_core/commit/aee5401cce8087b6c37caa1e87ecc426d690dfc5))
-* **memory:** explicit strategy for trunctation memory. user can supply this for their own domain-specific truncation strat ([7e0038a](https://github.com/nguyenv217/callai-agentic_core/commit/7e0038a09c1e5ff47e919f231b33b51ba936f9de))
-* no truncation memory strat to preserve prompt caching ([351e5c1](https://github.com/nguyenv217/callai-agentic_core/commit/351e5c1dfe126d80922ab38eab3f52ac22147637))
-* **openai:** more versatile client initialization ([717b5b2](https://github.com/nguyenv217/callai-agentic_core/commit/717b5b2061b857c421c80b7fbc8b0e176ea61654))
-* **RAG:** concrete implementation of common databases ([f42108b](https://github.com/nguyenv217/callai-agentic_core/commit/f42108b8351a40ea54185dc336316eb63a2c564f))
-* **RAG:** simple rag tooling package ([41bd09a](https://github.com/nguyenv217/callai-agentic_core/commit/41bd09a5516f6ee888ed41efdf2269297f7ee363))
-* **reasoning:** done new feature reasoning with option for observer to see it at start of tool execution ([1b28040](https://github.com/nguyenv217/callai-agentic_core/commit/1b28040498b0f359d152faf59d6e1e577d78d912))
-* safer config ([ff4db2a](https://github.com/nguyenv217/callai-agentic_core/commit/ff4db2a9874cd053e9b77b7b7702a47b4fabee77))
-* **tool:** allow add toolset after init ([92332ea](https://github.com/nguyenv217/callai-agentic_core/commit/92332eabe3853aca99473898680ed1f8ab6576d5))
-* **tool:** allows extra context to be injected to toolmanager.execute() ([6d7dfe1](https://github.com/nguyenv217/callai-agentic_core/commit/6d7dfe187fe5f33b1afb1e1093fe688381994912))
-* **tool:** more control for tooling, now support decision feedback before executing tools directly through AgentEventObserver ([ca2269b](https://github.com/nguyenv217/callai-agentic_core/commit/ca2269bc1c4b9748dd328eed196398a171ead848))
-* **tool:** supports for a dynamically injected system prompt along toolset. this is aanticipated for auto routing tasks ([a4d2469](https://github.com/nguyenv217/callai-agentic_core/commit/a4d246956e03e024d58c736310ebe28d4f17b544))
-* **tool:** user configurable `max_chars` for tool results ([7bab473](https://github.com/nguyenv217/callai-agentic_core/commit/7bab47351465748d4e83439f7840f20e5aa05768))
-
-# (2026-04-26)
-
-### Breaking Changes
-* **API Interface**: `chat()` and `AgentRunner.run_turn()` now return a structured `AgentResponse` object instead of a string or dict. Use `.text` to access the response content.
-
-### Features
-* **Session Management**: Added `session_id` to `chat()` to enable persistence of Memory and MCP connections across turns.
-* **Lifecycle Management**: `AgentRunner` now supports the async context manager protocol (`async with`), ensuring all MCP subprocesses are cleaned up immediately.
-* **Performance**: `GlobalMCPRegistry` now uses granular per-server locks, preventing global bottlenecks during concurrent server initialization in web environments.
-
-### Bug Fixes
-
-* for transparency no longer try to fix double serialization which may misintepret agent intention. this is better controlled through explicit prompting and provider-side ([d33dd15](https://github.com/nguyenv217/callai-agentic_core/commit/d33dd1547c370ff26b4e85631a95b02d17068592))
-
----
-
-# [](https://github.com/nguyenv217/callai-agentic_core/compare/v0.5.0...v) (2026-04-29)
-
-
-### Bug Fixes
-
-* bug where nodes could still run when terminal states are reached due to delay mechanism ([679b2df](https://github.com/nguyenv217/callai-agentic_core/commit/679b2df857a06704ae5f24171fd7e1c7b32a848d))
-* circuit break the failed init servers ([a3a5a57](https://github.com/nguyenv217/callai-agentic_core/commit/a3a5a57197841c20ee7ad0cbd579531348e3fada))
-* clean up example ([de169a1](https://github.com/nguyenv217/callai-agentic_core/commit/de169a1eecd400693ffe4179c7d4899591780001))
-* corrected mistake. mcpclient alreayd register itself with release. will just document usages instead ([9228b1b](https://github.com/nguyenv217/callai-agentic_core/commit/9228b1b72668e3441ab9130f7d90fba87bdd474e))
-* for transparency no longer try to fix double serialization. this is better controlled through explicit prompting and provider-side ([d33dd15](https://github.com/nguyenv217/callai-agentic_core/commit/d33dd1547c370ff26b4e85631a95b02d17068592))
-* mcp shutdown concurrently and await cancellation task so the they dont race with the OS in unexpected manners ([10c01a9](https://github.com/nguyenv217/callai-agentic_core/commit/10c01a93b8f35fe9dffe1ebdbb1cce2825fd9abd))
-* **mcp:** automatic shutoff for registry ([69c22cf](https://github.com/nguyenv217/callai-agentic_core/commit/69c22cfd625650c36e599bdfe52e210bbae3830c))
-* **mcp:** enhance mcp env parsing and premature spawn retry and concurrent retry when 2 agentrunner thread dispatch at same time and identity locks are not held ([e6ea69d](https://github.com/nguyenv217/callai-agentic_core/commit/e6ea69db5bc2d073ddef647f22d675a8a2564040))
-* **mcp:** remove hacky stdio routing to builtin errlog ([b4d542c](https://github.com/nguyenv217/callai-agentic_core/commit/b4d542c6517849be6bf6ccb22cccfa801a12c6fc))
-* multiple mcp client for 1 toolmanager ([3fee024](https://github.com/nguyenv217/callai-agentic_core/commit/3fee02485e98ad781434b2b8c2550042861419c8))
-* registry cleanup ([2feb615](https://github.com/nguyenv217/callai-agentic_core/commit/2feb61569ff574d557685fc65101eef6e39ac1d2))
-
-
-### Features
-
-* command can inherit envs as well ([abd9d67](https://github.com/nguyenv217/callai-agentic_core/commit/abd9d6701e86f90b4b44dc918807dec577a60c94))
-* **mcp:** allow routing stdio to avoid conflicts ([deaa1da](https://github.com/nguyenv217/callai-agentic_core/commit/deaa1da497bb578be3200b5fbeaa6e25da50c230))
-* **streaming:** iter 1 streaming with openai, new `stream_engine` ([668e0a4](https://github.com/nguyenv217/callai-agentic_core/commit/668e0a4950cd10aae6f8b6a213ae8b9acabecd32))
-* **streaming:** iter 2 better error handling ([adadf38](https://github.com/nguyenv217/callai-agentic_core/commit/adadf38605eb5a0f127cc76f2522d4af5210999e))
-# [](https://github.com/nguyenv217/callai-agentic_core/compare/v0.6.0...v) (2026-05-01)
-
-
-### Bug Fixes
-
-* also remove standby registry when server is disconnected ([5dd5679](https://github.com/nguyenv217/callai-agentic_core/commit/5dd567983cd8742a743acfe35a5eb27fd8f8413e))
-* bug multilating dictionary while iterating ([b2c8947](https://github.com/nguyenv217/callai-agentic_core/commit/b2c8947835bb44c9a189aad185f4761a883fc747))
-* subagent tool validation before passing to engine ([62a5889](https://github.com/nguyenv217/callai-agentic_core/commit/62a5889fa20bc77eb286104f0a424620a20bb43c))
-* typos in tests ([c7208de](https://github.com/nguyenv217/callai-agentic_core/commit/c7208de0bd50f626b05d1543a25dc252346af0dd))
-
-
-### Features
-
-* `DAGeventObserver` record the original dagresponse object instead of dict ([25a3806](https://github.com/nguyenv217/callai-agentic_core/commit/25a3806f02b9bf50ab2f057f3d7110a4a13f06d2))
-* checkpoint/resume failed graphs ([ef8c8c9](https://github.com/nguyenv217/callai-agentic_core/commit/ef8c8c9472b05ca4c6e8cc07010e6e70de68b941))
-* new ops on last iteration - extend. and will raise `LastIterationError` to better accomodate deeply nested swarm workflow ([aabb745](https://github.com/nguyenv217/callai-agentic_core/commit/aabb745e425cc745d8ab540be8271d28f138d1fd))
-* validate tools config for spawn sbuagent tool as well ([c528e7d](https://github.com/nguyenv217/callai-agentic_core/commit/c528e7d21a3c18ad13e5c5a77ab659ac2fb9c6f0))
-# [](https://github.com/nguyenv217/callai-agentic_core/compare/v0.6.0...v) (2026-05-02)
-
-
-### Bug Fixes
-
-* add finish_reasong to test ([552d3db](https://github.com/nguyenv217/callai-agentic_core/commit/552d3db3fd7b164ab19a8c639e2ca89971f4fd5e))
-* anthropic tool format needs dynamic extraction from openai-compatible messages ([5776a98](https://github.com/nguyenv217/callai-agentic_core/commit/5776a98e762eb571b7f391db1ad996020a63c2e9))
-* fix 1: ([d4a6f5e](https://github.com/nguyenv217/callai-agentic_core/commit/d4a6f5ed26d4a0460cd0bb702f9fba76561fbb5e))
-* fix 3: tenant_id for chat() session manager and recover removed chat() session_id functionality ([d968101](https://github.com/nguyenv217/callai-agentic_core/commit/d9681019df84321647192f9da956fd2908a4630a))
-* fix tried to parse none when getenv ([01605b5](https://github.com/nguyenv217/callai-agentic_core/commit/01605b54728be23efcc8fc90d892050bec1a08dc))
-* missing continue ([0f7705b](https://github.com/nguyenv217/callai-agentic_core/commit/0f7705b7d93a60b0b3740c860ed064b878d493fa))
-* ollama use `tool_name` not `name` for the tool call history ([e1abdbd](https://github.com/nguyenv217/callai-agentic_core/commit/e1abdbd801bd8b58ea0ae8c347d188fcb5954781))
-* **streaming:** openai client need accumulated tool arguments so we implemented accumulation and now yield StreamEventType.TOOL_START to signal processing.  compromise for stability and simplcity with working apps ([642785e](https://github.com/nguyenv217/callai-agentic_core/commit/642785eabdb8bb640a2532885bdc0450225e2bd2))
-* subagent tool validation before passing to engine ([62a5889](https://github.com/nguyenv217/callai-agentic_core/commit/62a5889fa20bc77eb286104f0a424620a20bb43c))
-* TTL for global runner session and add metadata to chat() ([9fc5d77](https://github.com/nguyenv217/callai-agentic_core/commit/9fc5d775cae608664fde05f9a02e3422c9c48c0f))
-* typos in tests ([c7208de](https://github.com/nguyenv217/callai-agentic_core/commit/c7208de0bd50f626b05d1543a25dc252346af0dd))
-
-
-### Features
-
-* allow configurable json.load alternative for tool argument parsing (if string) or now use a better default heuristics ([6e38bef](https://github.com/nguyenv217/callai-agentic_core/commit/6e38bef7be8e93bfca1b14f09a004900e9aac432))
-* streaming for ollama ([5855a5a](https://github.com/nguyenv217/callai-agentic_core/commit/5855a5af54cd61a5bc2b960dd72265a0e34a3c41))
-# [](https://github.com/nguyenv217/callai-agentic_core/compare/v0.6.0...v) (2026-05-03)
-
-
-### Bug Fixes
-
-* a simpler way to achieve completed tool parsing is simply to wait for stream to finish, no need for `finish_reason` ([f56cc3b](https://github.com/nguyenv217/callai-agentic_core/commit/f56cc3b49cd934ed698c8096d95855bcf69e1f9d))
-* attempt at graceful closure of servers + now default memory to notruncation strat for safety ([fa97a70](https://github.com/nguyenv217/callai-agentic_core/commit/fa97a7035ceac4b19767357acb3e3a937c664d77))
-* bugs: engine unexpected `tc`, anthropic and ollama custom tool adapter ([6c2d12c](https://github.com/nguyenv217/callai-agentic_core/commit/6c2d12cd707ff69fcd0a2c320fff04dbf3610170))
-* dag engine to reraise error to be captured with gather. tool manager increase default max chars ([5284504](https://github.com/nguyenv217/callai-agentic_core/commit/5284504258c920ed6ff5073f166290025b113fde))
-* **engine:** streaming accumulateed tools now so simply assign tool lists ([86a1e07](https://github.com/nguyenv217/callai-agentic_core/commit/86a1e07d6a1ceffeb5a1829993793c7863dd044e))
-* importing stale types ([fe36a39](https://github.com/nguyenv217/callai-agentic_core/commit/fe36a39afef1b65ab3d39e2ef834781ab17f9b74))
-* in openai getattr must provide defaults and more robust error handling in anthropic ([87dd837](https://github.com/nguyenv217/callai-agentic_core/commit/87dd837d0ea81f7a259d442700ec61b3109fca52))
-* inconsistency in typing base class ([4059590](https://github.com/nguyenv217/callai-agentic_core/commit/4059590aeff379109d63d334235bdd22cf54cbff))
-* **mcp:** if an env var is set, we now attempt to isolate true servers subprocesses by diffing pid with psutil and recursively kills them. atexit fallback for event loop closing unexpectedly ([a0a0cd3](https://github.com/nguyenv217/callai-agentic_core/commit/a0a0cd30ff436235d0c07f6390b1d1893f13b7cc))
-* untransparent error message from subagent tool ([f2f2708](https://github.com/nguyenv217/callai-agentic_core/commit/f2f2708abed4d423a34634df420ca07800d47c3e))
-
-
-### Features
-
-* memory manager can now export and load states ([4ec6dec](https://github.com/nguyenv217/callai-agentic_core/commit/4ec6dec80125885b0377025725dac1a7fcab3cc3))
-# [](https://github.com/nguyenv217/callai-agentic_core/compare/v0.6.0...v) (2026-05-05)
-
-
-### Bug Fixes
-
-* care only about content of nodes for swarms ([01670d9](https://github.com/nguyenv217/callai-agentic_core/commit/01670d979f73e16d055f031080f78f3bee1619e6))
-* handle buggy api endpoints where delta.index is unreliable ([52ec7dc](https://github.com/nguyenv217/callai-agentic_core/commit/52ec7dc7bc241de68375f11de73a4443cbe0b0f4))
-* move toolexec protocol to another file and import engine inside function to prevent circular import ([77faaff](https://github.com/nguyenv217/callai-agentic_core/commit/77faaff8a27457c87d5bcb5ab8fe78bfde2eda55))
-* **observer:** observers defaults to all async to support concurrent UIs ([dea7f71](https://github.com/nguyenv217/callai-agentic_core/commit/dea7f719ea972eae294614d900b6cd45ac51a16d))
-* test to raise ConfigurationError instead of error msg ([7773fe5](https://github.com/nguyenv217/callai-agentic_core/commit/7773fe592b8961776adf64184652374ded309c67))
-* **tests:** moved import inside execute() patch ([e4a2835](https://github.com/nguyenv217/callai-agentic_core/commit/e4a28359d6f75149db3d209e48dac75aa15f4d46))
-
-
-### Features
-
-* subagent enforce per-agent char limit ([cc0ca7f](https://github.com/nguyenv217/callai-agentic_core/commit/cc0ca7f5631c84cbee6c6d14a61f82c1029ad8d7))
+        except FileNotFoundError:
+            return "Error: Shell executable not found on this system."
+        except Exception as e:
+            return f"Error: {type(e).__name__}: {e}"
 </file>
 
 <file path="README.md">
@@ -6965,6 +6756,327 @@ Agents interacting with APIs that return massive, deeply nested JSON payloads ma
 * `AgentEventHandler` implementing `on_tool_start()` provides means to enforce human validation before assembling tool coroutine pool and executing, with different levels of control (use `ToolStartDecision`).
 * Heuristically detect and remove unsafe payloads from external data sources (brittle). Most importantly, write your system prompt carefully and choose your MCP servers wisely. Dry-run extensively on domain-specific vulnerable prompts and refine system prompt. This is perhaps the single most effective mitigation against prompt injection.
 * Finally, this tool is all about robustness - it's meant to be a lightweight engine for agentic applications. Hence, it is at the developer responsibility to enforce security measures against the above risks.
+</file>
+
+<file path="agentic_core/llm_providers/anthropic.py">
+"""
+Anthropic LLM Provider.
+"""
+from typing import AsyncIterator, Any
+
+from .base import ILLMClient, LLMResponse
+from ..interfaces import Message, ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError, ToolSchema
+
+class AnthropicLLM(ILLMClient):
+    """Anthropic Claude adapter."""
+    
+    def __init__(
+        self, 
+        api_key: str, 
+        model: str,
+        **kwargs
+    ):
+        try:
+            from anthropic import AsyncAnthropic
+        except ImportError:
+            raise ImportError("Please install anthropic: pip install anthropic")
+        
+        self.client = AsyncAnthropic(api_key=api_key)
+        self.model = model
+        self.extra_kwargs = kwargs
+    
+    async def ask(
+        self, 
+        messages: list[Message], 
+        tools: list[ToolSchema] | None = None, 
+        stream: bool = False,
+        **kwargs
+    ) -> AsyncIterator[LLMResponse]:
+        """
+        Send a message request to Anthropic.
+        
+        Args:
+            messages: Conversation history.
+            tools: A list of JSON schemas for tools (NOT the `ToolManager` object).
+        """
+        from anthropic.types import RateLimitError, AuthenticationError, GatewayTimeoutError
+
+        system = None
+        anthropic_messages = []
+        
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content")
+            
+            if role == "system":
+                system = content
+            elif role == "tool":
+                # Anthropic requires tool results to be role: "user" with a `tool_result` content block.
+                anthropic_messages.append({
+                    "role": "user",
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": msg.get("tool_call_id"),
+                        "content": str(content)
+                    }]
+                })
+            else:
+                anthropic_messages.append({"role": role, "content": content})
+
+        req_kwargs = {
+            "model": self.model,
+            "messages": anthropic_messages,
+            "max_tokens": kwargs.get("max_tokens", 4096),
+            **self.extra_kwargs,
+            **kwargs
+        }
+        
+        if system:
+            req_kwargs["system"] = system
+        
+        if tools:
+            req_kwargs["tools"] = [
+                {
+                    "name": t["function"]["name"],
+                    "description": t["function"]["description"],
+                    "input_schema": t["function"]["parameters"]
+                }
+                for t in tools
+            ]
+        
+        try:
+            if stream:
+                async with self.client.messages.stream(**req_kwargs) as event_stream:
+                    async for event in event_stream:
+                        if event.type == "text":
+                            yield LLMResponse(text=event.text)
+
+                        if event.type == "thinking":
+                            yield LLMResponse(reasoning=event.thinking)
+                        
+                        elif event.type == "content_block_stop":
+                            block = event.content_block
+                            if block.type == "tool_use":
+                                yield LLMResponse(
+                                    tool_calls=[{
+                                        "id": block.id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": block.name,
+                                            "arguments": block.input
+                                        }
+                                    }]
+                                )
+                return
+            
+            response = await self.client.messages.create(**req_kwargs)
+            text_content = ""
+            tool_calls = []
+            
+            for block in response.content:
+                if block.type == "text":
+                    text_content += block.text
+                elif block.type == "tool_use":
+                    tool_calls.append({
+                        "name": block.name,
+                        "id": block.id,
+                        "arguments": block.input
+                    })
+            
+            yield LLMResponse(
+                text=text_content,
+                tool_calls=tool_calls,
+                usage={
+                    "prompt_tokens": response.usage.input_tokens, 
+                    "completion_tokens": response.usage.output_tokens
+                },
+            )
+    
+        except AuthenticationError:
+            raise ProviderAuthenticationError(f"openai client: Invalid API key for {self.model}")
+        except RateLimitError:
+            raise ProviderRateLimitError(f"openai client: Rate limit exceeded for {self.model}")
+        except GatewayTimeoutError:
+            raise ProviderTimeoutError(f"openai client: Request timed out for {self.model}")
+</file>
+
+<file path="CHANGELOG.md">
+#  (2026-04-25)
+
+
+### Bug Fixes
+
+* [no ci] old test branch pruned ([b9d6abe](https://github.com/nguyenv217/callai-agentic_core/commit/b9d6abe797aa7022c927da7e05d07be07da07013))
+* better configuratoin error handling. can still import placeholders for convenience ([466ea40](https://github.com/nguyenv217/callai-agentic_core/commit/466ea406b5bbb1e76f2f918a5b04f6fb3bb0223b))
+* cleaner seperation between runtime loaded tools and user configured ([272a88a](https://github.com/nguyenv217/callai-agentic_core/commit/272a88a9134e38175ab024a9a0872dcc2bba73f8))
+* clearer import pattern. supply the subpackages ([619990f](https://github.com/nguyenv217/callai-agentic_core/commit/619990f341acf076daa2fea804c8ab1e1725569f))
+* **engine:** async iterator support ([68735db](https://github.com/nguyenv217/callai-agentic_core/commit/68735db5658f48b36c8a1f233d93d2f291090c03))
+* **engine:** config.system_prompt should be optional so end-user can quickly build agent with preconfigured system prompt ([8ba1732](https://github.com/nguyenv217/callai-agentic_core/commit/8ba1732bee7680aca643927f8b7cbd8d41078641))
+* **engine:** indentation bug ([d4c733c](https://github.com/nguyenv217/callai-agentic_core/commit/d4c733c4865b779bdd11dd206308fb9f4c211e9a))
+* **engine:** new concurrent strat ([63652df](https://github.com/nguyenv217/callai-agentic_core/commit/63652dfcdc12468ed6df947fba6c306075231861))
+* make `abandon` decision halt loop instead of blindly continue ([250f84a](https://github.com/nguyenv217/callai-agentic_core/commit/250f84aeabc30f175cac7ea74d1b642bf2898e7b))
+* **mcp_init:** Fix bugs with MCP config logic to be more strict. ([5651ceb](https://github.com/nguyenv217/callai-agentic_core/commit/5651cebc46b85ea8da90b54fdb41593f3a0f726b))
+* **mcp_init:** remove 'toolset' modifying behaviour. This should be exclusively user-configured ([5b8989c](https://github.com/nguyenv217/callai-agentic_core/commit/5b8989c920b5631d2503bfb16deaaa33660bde71))
+* **mcp:** More precise MCP configuration requirement. Will raise error and log if invalid combinations ([bcc368f](https://github.com/nguyenv217/callai-agentic_core/commit/bcc368fb163feef9d042fa6d614b4cc11937786b))
+* **memory:** deprecate truncation by popping old messages to preserve context ([1487350](https://github.com/nguyenv217/callai-agentic_core/commit/1487350eedd5262af9268cc73c40774ee3b4e2ae))
+* minor redundancy ([a839c6e](https://github.com/nguyenv217/callai-agentic_core/commit/a839c6e923cdde65e98955eb37f04d2c1495e0dc))
+* **naming:** fix tests failed because of naming inconsistentcies ([16d85df](https://github.com/nguyenv217/callai-agentic_core/commit/16d85df951d344c68d4406c84b59836aaadd8323))
+* **openai:** async client by default ([2a76691](https://github.com/nguyenv217/callai-agentic_core/commit/2a76691880e858c6f2756feac4f16def03c07667))
+* **openai:** hotfix to compatible with older sync clients ([10f5193](https://github.com/nguyenv217/callai-agentic_core/commit/10f5193ad94db4f8e0f3f558afa97d7f7468f176))
+* **RAG:** `__init__` importing too much will raise importerror if not installed extras. ([f9e7411](https://github.com/nguyenv217/callai-agentic_core/commit/f9e7411dfa4485ef6cb794c41031fbe65cd15abb))
+* **RAG:** default async openai ([7050139](https://github.com/nguyenv217/callai-agentic_core/commit/7050139f8cd48e8052bfa3255635aac909460ee6))
+* redunant error check logic ([4c99551](https://github.com/nguyenv217/callai-agentic_core/commit/4c9955186424900f169e2fbd8fa8e88449f412d2))
+* redundant logic and bug in engine for nonduplicated tools ([64f148f](https://github.com/nguyenv217/callai-agentic_core/commit/64f148fda57938fe04ff52cbbeda3650eb117770))
+* redundant manager vars ([ece4063](https://github.com/nguyenv217/callai-agentic_core/commit/ece406343d9b5578bc69dda8b85ce1b4da2eb415))
+* rename 'tool_manager' to 'tools' ([3b2891c](https://github.com/nguyenv217/callai-agentic_core/commit/3b2891ca8c63094c1fdb39ef34495bcd8bfad777))
+* restructure discovery tools and remove modifying toolset directly. rename get_tools -> get_tools_from_toolset to promote non-modifying of user-configuration ([830e80e](https://github.com/nguyenv217/callai-agentic_core/commit/830e80ed813a783921c453c53816e1e3a1ad8dc5))
+* **test:** add missing conf test file ([2aff4b7](https://github.com/nguyenv217/callai-agentic_core/commit/2aff4b7dbad30cc783d3862f93a5e5764cd750ef))
+* **test:** fix test suite parallel tools test ([160efbe](https://github.com/nguyenv217/callai-agentic_core/commit/160efbe493b9d3eb3cfdba51f11baf97ec167987))
+* **test:** fix test to abide to new naming ([b519def](https://github.com/nguyenv217/callai-agentic_core/commit/b519def5b840f67c1175b3f41d2f4bdda0f6869f))
+* **test:** minor changes to follow new manager interfaces ([f100950](https://github.com/nguyenv217/callai-agentic_core/commit/f100950cd4e1b2d558f3c2223f73c544bb221194))
+* to async tests ([37455ba](https://github.com/nguyenv217/callai-agentic_core/commit/37455bafb132ad412cddbab5df6732773889bcb7))
+* **tool:** More granular control over tool-loading and no longer anyone remote modifying user-supplied toolsets ([7490d87](https://github.com/nguyenv217/callai-agentic_core/commit/7490d8771987613db7fe714c5be6bb7f107d0f9d))
+* wrong versions. not needed yet anyway ([5852850](https://github.com/nguyenv217/callai-agentic_core/commit/5852850ef94c4d8a929d870649f3dcfdbb02c01c))
+
+
+### Features
+
+* **engine:** Much more granular control over tooling turn and iteration ([f1ce63a](https://github.com/nguyenv217/callai-agentic_core/commit/f1ce63acca00da9d53972c41af173bf1dc34164e))
+* **engine:** new DAGpowered engine ([585f947](https://github.com/nguyenv217/callai-agentic_core/commit/585f94721adb7eb2b6783d30f518c2182bba129b))
+* heuristically find reasoning field ([ee5c882](https://github.com/nguyenv217/callai-agentic_core/commit/ee5c882edf86d165fcf090a91f63486faeea051d))
+* **interface:** new reasoning field ([372b396](https://github.com/nguyenv217/callai-agentic_core/commit/372b39614c23d6fc229be7bea5240674e5988adc))
+* **mcp&tool:** add `extra_env` and `extra_context` for runner config anticipate multiple agent runner with different configs ([ca43773](https://github.com/nguyenv217/callai-agentic_core/commit/ca437730ab5ec96e6fb80df6594f7c3f62e5b5f0))
+* **mcp:** Add custom ([34f2058](https://github.com/nguyenv217/callai-agentic_core/commit/34f2058953542aa4688db855be2c232f3fd63256))
+* **mcp:** allow custom hook be registered with toolmanager for MCP server death ([e9a5d3d](https://github.com/nguyenv217/callai-agentic_core/commit/e9a5d3deb0d3617665c69a1e40bea342eb79aba8))
+* **mcp:** move MCP to tools/mcp/ for clearer seperation + singleton for session spawning to avoid dup ([aee5401](https://github.com/nguyenv217/callai-agentic_core/commit/aee5401cce8087b6c37caa1e87ecc426d690dfc5))
+* **memory:** explicit strategy for trunctation memory. user can supply this for their own domain-specific truncation strat ([7e0038a](https://github.com/nguyenv217/callai-agentic_core/commit/7e0038a09c1e5ff47e919f231b33b51ba936f9de))
+* no truncation memory strat to preserve prompt caching ([351e5c1](https://github.com/nguyenv217/callai-agentic_core/commit/351e5c1dfe126d80922ab38eab3f52ac22147637))
+* **openai:** more versatile client initialization ([717b5b2](https://github.com/nguyenv217/callai-agentic_core/commit/717b5b2061b857c421c80b7fbc8b0e176ea61654))
+* **RAG:** concrete implementation of common databases ([f42108b](https://github.com/nguyenv217/callai-agentic_core/commit/f42108b8351a40ea54185dc336316eb63a2c564f))
+* **RAG:** simple rag tooling package ([41bd09a](https://github.com/nguyenv217/callai-agentic_core/commit/41bd09a5516f6ee888ed41efdf2269297f7ee363))
+* **reasoning:** done new feature reasoning with option for observer to see it at start of tool execution ([1b28040](https://github.com/nguyenv217/callai-agentic_core/commit/1b28040498b0f359d152faf59d6e1e577d78d912))
+* safer config ([ff4db2a](https://github.com/nguyenv217/callai-agentic_core/commit/ff4db2a9874cd053e9b77b7b7702a47b4fabee77))
+* **tool:** allow add toolset after init ([92332ea](https://github.com/nguyenv217/callai-agentic_core/commit/92332eabe3853aca99473898680ed1f8ab6576d5))
+* **tool:** allows extra context to be injected to toolmanager.execute() ([6d7dfe1](https://github.com/nguyenv217/callai-agentic_core/commit/6d7dfe187fe5f33b1afb1e1093fe688381994912))
+* **tool:** more control for tooling, now support decision feedback before executing tools directly through AgentEventObserver ([ca2269b](https://github.com/nguyenv217/callai-agentic_core/commit/ca2269bc1c4b9748dd328eed196398a171ead848))
+* **tool:** supports for a dynamically injected system prompt along toolset. this is aanticipated for auto routing tasks ([a4d2469](https://github.com/nguyenv217/callai-agentic_core/commit/a4d246956e03e024d58c736310ebe28d4f17b544))
+* **tool:** user configurable `max_chars` for tool results ([7bab473](https://github.com/nguyenv217/callai-agentic_core/commit/7bab47351465748d4e83439f7840f20e5aa05768))
+
+# (2026-04-26)
+
+### Breaking Changes
+* **API Interface**: `chat()` and `AgentRunner.run_turn()` now return a structured `AgentResponse` object instead of a string or dict. Use `.text` to access the response content.
+
+### Features
+* **Session Management**: Added `session_id` to `chat()` to enable persistence of Memory and MCP connections across turns.
+* **Lifecycle Management**: `AgentRunner` now supports the async context manager protocol (`async with`), ensuring all MCP subprocesses are cleaned up immediately.
+* **Performance**: `GlobalMCPRegistry` now uses granular per-server locks, preventing global bottlenecks during concurrent server initialization in web environments.
+
+### Bug Fixes
+
+* for transparency no longer try to fix double serialization which may misintepret agent intention. this is better controlled through explicit prompting and provider-side ([d33dd15](https://github.com/nguyenv217/callai-agentic_core/commit/d33dd1547c370ff26b4e85631a95b02d17068592))
+
+---
+
+# [](https://github.com/nguyenv217/callai-agentic_core/compare/v0.5.0...v) (2026-04-29)
+
+
+### Bug Fixes
+
+* bug where nodes could still run when terminal states are reached due to delay mechanism ([679b2df](https://github.com/nguyenv217/callai-agentic_core/commit/679b2df857a06704ae5f24171fd7e1c7b32a848d))
+* circuit break the failed init servers ([a3a5a57](https://github.com/nguyenv217/callai-agentic_core/commit/a3a5a57197841c20ee7ad0cbd579531348e3fada))
+* clean up example ([de169a1](https://github.com/nguyenv217/callai-agentic_core/commit/de169a1eecd400693ffe4179c7d4899591780001))
+* corrected mistake. mcpclient alreayd register itself with release. will just document usages instead ([9228b1b](https://github.com/nguyenv217/callai-agentic_core/commit/9228b1b72668e3441ab9130f7d90fba87bdd474e))
+* for transparency no longer try to fix double serialization. this is better controlled through explicit prompting and provider-side ([d33dd15](https://github.com/nguyenv217/callai-agentic_core/commit/d33dd1547c370ff26b4e85631a95b02d17068592))
+* mcp shutdown concurrently and await cancellation task so the they dont race with the OS in unexpected manners ([10c01a9](https://github.com/nguyenv217/callai-agentic_core/commit/10c01a93b8f35fe9dffe1ebdbb1cce2825fd9abd))
+* **mcp:** automatic shutoff for registry ([69c22cf](https://github.com/nguyenv217/callai-agentic_core/commit/69c22cfd625650c36e599bdfe52e210bbae3830c))
+* **mcp:** enhance mcp env parsing and premature spawn retry and concurrent retry when 2 agentrunner thread dispatch at same time and identity locks are not held ([e6ea69d](https://github.com/nguyenv217/callai-agentic_core/commit/e6ea69db5bc2d073ddef647f22d675a8a2564040))
+* **mcp:** remove hacky stdio routing to builtin errlog ([b4d542c](https://github.com/nguyenv217/callai-agentic_core/commit/b4d542c6517849be6bf6ccb22cccfa801a12c6fc))
+* multiple mcp client for 1 toolmanager ([3fee024](https://github.com/nguyenv217/callai-agentic_core/commit/3fee02485e98ad781434b2b8c2550042861419c8))
+* registry cleanup ([2feb615](https://github.com/nguyenv217/callai-agentic_core/commit/2feb61569ff574d557685fc65101eef6e39ac1d2))
+
+
+### Features
+
+* command can inherit envs as well ([abd9d67](https://github.com/nguyenv217/callai-agentic_core/commit/abd9d6701e86f90b4b44dc918807dec577a60c94))
+* **mcp:** allow routing stdio to avoid conflicts ([deaa1da](https://github.com/nguyenv217/callai-agentic_core/commit/deaa1da497bb578be3200b5fbeaa6e25da50c230))
+* **streaming:** iter 1 streaming with openai, new `stream_engine` ([668e0a4](https://github.com/nguyenv217/callai-agentic_core/commit/668e0a4950cd10aae6f8b6a213ae8b9acabecd32))
+* **streaming:** iter 2 better error handling ([adadf38](https://github.com/nguyenv217/callai-agentic_core/commit/adadf38605eb5a0f127cc76f2522d4af5210999e))
+# [](https://github.com/nguyenv217/callai-agentic_core/compare/v0.6.0...v) (2026-05-01)
+
+
+### Bug Fixes
+
+* also remove standby registry when server is disconnected ([5dd5679](https://github.com/nguyenv217/callai-agentic_core/commit/5dd567983cd8742a743acfe35a5eb27fd8f8413e))
+* bug multilating dictionary while iterating ([b2c8947](https://github.com/nguyenv217/callai-agentic_core/commit/b2c8947835bb44c9a189aad185f4761a883fc747))
+* subagent tool validation before passing to engine ([62a5889](https://github.com/nguyenv217/callai-agentic_core/commit/62a5889fa20bc77eb286104f0a424620a20bb43c))
+* typos in tests ([c7208de](https://github.com/nguyenv217/callai-agentic_core/commit/c7208de0bd50f626b05d1543a25dc252346af0dd))
+
+
+### Features
+
+* `DAGeventObserver` record the original dagresponse object instead of dict ([25a3806](https://github.com/nguyenv217/callai-agentic_core/commit/25a3806f02b9bf50ab2f057f3d7110a4a13f06d2))
+* checkpoint/resume failed graphs ([ef8c8c9](https://github.com/nguyenv217/callai-agentic_core/commit/ef8c8c9472b05ca4c6e8cc07010e6e70de68b941))
+* new ops on last iteration - extend. and will raise `LastIterationError` to better accomodate deeply nested swarm workflow ([aabb745](https://github.com/nguyenv217/callai-agentic_core/commit/aabb745e425cc745d8ab540be8271d28f138d1fd))
+* validate tools config for spawn sbuagent tool as well ([c528e7d](https://github.com/nguyenv217/callai-agentic_core/commit/c528e7d21a3c18ad13e5c5a77ab659ac2fb9c6f0))
+# [](https://github.com/nguyenv217/callai-agentic_core/compare/v0.6.0...v) (2026-05-02)
+
+
+### Bug Fixes
+
+* add finish_reasong to test ([552d3db](https://github.com/nguyenv217/callai-agentic_core/commit/552d3db3fd7b164ab19a8c639e2ca89971f4fd5e))
+* anthropic tool format needs dynamic extraction from openai-compatible messages ([5776a98](https://github.com/nguyenv217/callai-agentic_core/commit/5776a98e762eb571b7f391db1ad996020a63c2e9))
+* fix 1: ([d4a6f5e](https://github.com/nguyenv217/callai-agentic_core/commit/d4a6f5ed26d4a0460cd0bb702f9fba76561fbb5e))
+* fix 3: tenant_id for chat() session manager and recover removed chat() session_id functionality ([d968101](https://github.com/nguyenv217/callai-agentic_core/commit/d9681019df84321647192f9da956fd2908a4630a))
+* fix tried to parse none when getenv ([01605b5](https://github.com/nguyenv217/callai-agentic_core/commit/01605b54728be23efcc8fc90d892050bec1a08dc))
+* missing continue ([0f7705b](https://github.com/nguyenv217/callai-agentic_core/commit/0f7705b7d93a60b0b3740c860ed064b878d493fa))
+* ollama use `tool_name` not `name` for the tool call history ([e1abdbd](https://github.com/nguyenv217/callai-agentic_core/commit/e1abdbd801bd8b58ea0ae8c347d188fcb5954781))
+* **streaming:** openai client need accumulated tool arguments so we implemented accumulation and now yield StreamEventType.TOOL_START to signal processing.  compromise for stability and simplcity with working apps ([642785e](https://github.com/nguyenv217/callai-agentic_core/commit/642785eabdb8bb640a2532885bdc0450225e2bd2))
+* subagent tool validation before passing to engine ([62a5889](https://github.com/nguyenv217/callai-agentic_core/commit/62a5889fa20bc77eb286104f0a424620a20bb43c))
+* TTL for global runner session and add metadata to chat() ([9fc5d77](https://github.com/nguyenv217/callai-agentic_core/commit/9fc5d775cae608664fde05f9a02e3422c9c48c0f))
+* typos in tests ([c7208de](https://github.com/nguyenv217/callai-agentic_core/commit/c7208de0bd50f626b05d1543a25dc252346af0dd))
+
+
+### Features
+
+* allow configurable json.load alternative for tool argument parsing (if string) or now use a better default heuristics ([6e38bef](https://github.com/nguyenv217/callai-agentic_core/commit/6e38bef7be8e93bfca1b14f09a004900e9aac432))
+* streaming for ollama ([5855a5a](https://github.com/nguyenv217/callai-agentic_core/commit/5855a5af54cd61a5bc2b960dd72265a0e34a3c41))
+# [](https://github.com/nguyenv217/callai-agentic_core/compare/v0.6.0...v) (2026-05-03)
+
+
+### Bug Fixes
+
+* a simpler way to achieve completed tool parsing is simply to wait for stream to finish, no need for `finish_reason` ([f56cc3b](https://github.com/nguyenv217/callai-agentic_core/commit/f56cc3b49cd934ed698c8096d95855bcf69e1f9d))
+* attempt at graceful closure of servers + now default memory to notruncation strat for safety ([fa97a70](https://github.com/nguyenv217/callai-agentic_core/commit/fa97a7035ceac4b19767357acb3e3a937c664d77))
+* bugs: engine unexpected `tc`, anthropic and ollama custom tool adapter ([6c2d12c](https://github.com/nguyenv217/callai-agentic_core/commit/6c2d12cd707ff69fcd0a2c320fff04dbf3610170))
+* dag engine to reraise error to be captured with gather. tool manager increase default max chars ([5284504](https://github.com/nguyenv217/callai-agentic_core/commit/5284504258c920ed6ff5073f166290025b113fde))
+* **engine:** streaming accumulateed tools now so simply assign tool lists ([86a1e07](https://github.com/nguyenv217/callai-agentic_core/commit/86a1e07d6a1ceffeb5a1829993793c7863dd044e))
+* importing stale types ([fe36a39](https://github.com/nguyenv217/callai-agentic_core/commit/fe36a39afef1b65ab3d39e2ef834781ab17f9b74))
+* in openai getattr must provide defaults and more robust error handling in anthropic ([87dd837](https://github.com/nguyenv217/callai-agentic_core/commit/87dd837d0ea81f7a259d442700ec61b3109fca52))
+* inconsistency in typing base class ([4059590](https://github.com/nguyenv217/callai-agentic_core/commit/4059590aeff379109d63d334235bdd22cf54cbff))
+* **mcp:** if an env var is set, we now attempt to isolate true servers subprocesses by diffing pid with psutil and recursively kills them. atexit fallback for event loop closing unexpectedly ([a0a0cd3](https://github.com/nguyenv217/callai-agentic_core/commit/a0a0cd30ff436235d0c07f6390b1d1893f13b7cc))
+* untransparent error message from subagent tool ([f2f2708](https://github.com/nguyenv217/callai-agentic_core/commit/f2f2708abed4d423a34634df420ca07800d47c3e))
+
+
+### Features
+
+* memory manager can now export and load states ([4ec6dec](https://github.com/nguyenv217/callai-agentic_core/commit/4ec6dec80125885b0377025725dac1a7fcab3cc3))
+# [](https://github.com/nguyenv217/callai-agentic_core/compare/v0.6.0...v) (2026-05-05)
+
+
+### Bug Fixes
+
+* care only about content of nodes for swarms ([01670d9](https://github.com/nguyenv217/callai-agentic_core/commit/01670d979f73e16d055f031080f78f3bee1619e6))
+* handle buggy api endpoints where delta.index is unreliable ([52ec7dc](https://github.com/nguyenv217/callai-agentic_core/commit/52ec7dc7bc241de68375f11de73a4443cbe0b0f4))
+* move toolexec protocol to another file and import engine inside function to prevent circular import ([77faaff](https://github.com/nguyenv217/callai-agentic_core/commit/77faaff8a27457c87d5bcb5ab8fe78bfde2eda55))
+* **observer:** observers defaults to all async to support concurrent UIs ([dea7f71](https://github.com/nguyenv217/callai-agentic_core/commit/dea7f719ea972eae294614d900b6cd45ac51a16d))
+* test to raise ConfigurationError instead of error msg ([7773fe5](https://github.com/nguyenv217/callai-agentic_core/commit/7773fe592b8961776adf64184652374ded309c67))
+* **tests:** moved import inside execute() patch ([e4a2835](https://github.com/nguyenv217/callai-agentic_core/commit/e4a28359d6f75149db3d209e48dac75aa15f4d46))
+
+
+### Features
+
+* subagent enforce per-agent char limit ([cc0ca7f](https://github.com/nguyenv217/callai-agentic_core/commit/cc0ca7f5631c84cbee6c6d14a61f82c1029ad8d7))
 </file>
 
 <file path=".gitignore">
@@ -9846,7 +9958,9 @@ class AgentRunner:
                 final_response.error = e
         finally:
             await handler.on_turn_complete(final_response)
-            yield StreamEvent(StreamEventType.FINAL_RESPONSE, final_response)
+            import sys
+            if sys.exc_info()[0] is not GeneratorExit:
+                yield StreamEvent(StreamEventType.FINAL_RESPONSE, final_response)
 
     async def run_turn(self, user_input: str | list[dict], handler: AgentEventHandler | None = None, config: RunnerConfig | None = None) -> AgentResponse:
         """

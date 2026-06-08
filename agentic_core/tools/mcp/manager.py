@@ -21,13 +21,20 @@ logger = logging.getLogger(__name__)
 import os
 import atexit
 
-_MCP_CLEANUP_WITH_PSUTIL = os.getenv("MCP_CLEANUP_WITH_PSUTIL", False)
+_MCP_CLEANUP_WITH_PSUTIL = str(os.getenv("MCP_CLEANUP_WITH_PSUTIL", "true")).lower() in ("true", "1", "yes")
+
+try:
+    import psutil
+except ImportError:
+    _MCP_CLEANUP_WITH_PSUTIL = False
 
 def kill_process_tree(pid: int, expected_create_time: float = None):
     """Gracefully terminates a process and all its descendants with PID-recycle protection."""
+    if not _MCP_CLEANUP_WITH_PSUTIL:
+        return
     import psutil
     import contextlib
-    with contextlib.suppress(psutil.NoSuchProcess):
+    with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
         parent = psutil.Process(pid)
         
         # If birth times don't match, this is a recycled PID
@@ -38,7 +45,7 @@ def kill_process_tree(pid: int, expected_create_time: float = None):
         children = parent.children(recursive=True)
         
         for child in children:
-            with contextlib.suppress(psutil.NoSuchProcess):
+            with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
                 child.kill()
         
         parent.kill()
@@ -201,25 +208,26 @@ class GlobalMCPRegistry:
 
                     server_params = StdioServerParameters(command=command, args=args, env=env)
                     
+                    if _MCP_CLEANUP_WITH_PSUTIL:
+                        import psutil
+                        current_process = psutil.Process(os.getpid())
+                        children_before = set(current_process.children(recursive=False))
+
                     async with stdio_client(server_params, errlog=err_stream) as (read_stream, write_stream):
                         try:   
-                            if _MCP_CLEANUP_WITH_PSUTIL: # hack: we snapshot before and after initalizing mcp client, then can grab the PID of the server subprocess
-                                import psutil
-                                current_process = psutil.Process(os.getpid())
-                                children_before = set(current_process.children(recursive=False)) 
+                            if _MCP_CLEANUP_WITH_PSUTIL:
+                                children_after = set(current_process.children(recursive=False))
+                                new_children = list(children_after - children_before)
+
+                                if new_children:
+                                    new_children.sort(key=lambda p: p.create_time())
+                                    wrapper_proc = new_children[-1]
+                                    session_ref["pid"] = wrapper_proc.pid
+                                    session_ref["create_time"] = wrapper_proc.create_time()
+                                    _ACTIVE_MCP_PIDS.add((session_ref["pid"], session_ref["create_time"]))
+                                    logger.debug(f"[{server_name}] Captured wrapper PID: {session_ref['pid']}")
 
                             async with ClientSession(read_stream, write_stream) as session:
-                                if _MCP_CLEANUP_WITH_PSUTIL:
-                                    children_after = set(current_process.children(recursive=False))
-                                    new_children = list(children_after - children_before)
-
-                                    if new_children:
-                                        wrapper_proc = new_children[0]
-                                        session_ref["pid"] = wrapper_proc.pid
-                                        session_ref["create_time"] = wrapper_proc.create_time() # record this time to prevents PID from being recycled to innocent tasks and the shutdown event being scheduled 
-                                        _ACTIVE_MCP_PIDS.add((session_ref["pid"], session_ref["create_time"]))
-                                        logger.debug(f"[{server_name}] Captured wrapper PID: {session_ref['pid']}")
-
                                 await session.initialize()
                                 init_event.set()
 
