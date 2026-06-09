@@ -326,9 +326,11 @@ class AgentRunner:
                         if not success:
                             error_context = await self._create_error_context(tool_result, tool_name=tool_name)
                             should_abort, _ = await self._handle_error_decision(error_context, handler, final_response)
-                            await handler.on_tool_complete(tool_name, tc_id, False, str(tool_result))
-                            self.memory.add_tool_result(tool_call_id=tc_id, name=tool_name, content=str(tool_result))
-                            yield StreamEvent(StreamEventType.TOOL_RESULT, {"tool": tool_name, "id": tc_id, "result": tool_result, "success": False})
+                            
+                            error_msg = f"Tool execution failed: {type(tool_result).__name__} - {str(tool_result)}"
+                            await self._add_error_tool_result(tool_name, tc_id, error_msg, handler)
+                            yield StreamEvent(StreamEventType.TOOL_RESULT, {"tool": tool_name, "id": tc_id, "result": error_msg, "success": False})
+                            
                             if should_abort:
                                 final_response.error = tool_result
                                 return

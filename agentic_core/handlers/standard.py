@@ -27,6 +27,8 @@ class SilentHandler(AgentEventHandler):
     async def on_tool_complete(self, tool_name: str, tool_id: str, success: bool, result: str) -> None: pass
     async def on_turn_complete(self, response: dict) -> None: pass
     async def on_error(self, error_context: ErrorContext) -> DecisionEvent[ErrorAction]: 
+        if error_context.tool_name is not None:
+            return DecisionEvent(action=ErrorDecision.SKIP())
         return DecisionEvent(action=ErrorDecision.ABANDON())
 
 
@@ -69,6 +71,9 @@ class PrintHandler(AgentEventHandler, ToolExecutionController):
         ctx_str = f" ({', '.join(ctx_parts)})" if ctx_parts else ""
         print(f"❗ [ERROR{ctx_str}]: {error.__class__.__name__} - {str(error)}")
         
+        if error_context.tool_name is not None:
+            return DecisionEvent(action=ErrorDecision.SKIP())
+            
         return DecisionEvent(action=ErrorDecision.ABANDON())
 
     async def on_prompt_respond(self, prompt: str) -> str:

@@ -49,8 +49,10 @@ class AgentEventHandler(ABC):
         
         Returns:
             DecisionEvent with an ErrorDecision action to control flow.
-            Default implementation returns ABANDON for all errors.
+            Default implementation returns SKIP for tool errors, ABANDON for all other errors.
         """
+        if error_context.tool_name is not None:
+            return DecisionEvent(action=ErrorDecision.SKIP())
         return DecisionEvent(action=ErrorDecision.ABANDON())
     
     async def on_final_iteration(self) -> DecisionEvent[LastIterationAction]: 

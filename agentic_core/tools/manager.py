@@ -437,7 +437,7 @@ class ToolManager:
 
         except Exception as e:
             logger.exception(f"Tool execution failed for {tool_name}")
-            return f"Error parsing or executing tool arguments: {e}"
+            raise e
 
     async def prepare_turn(self, config: RunnerConfig):
         """Forces MCP initialization and preloads requested tools before turn 1."""
