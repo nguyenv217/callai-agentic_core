@@ -51,6 +51,9 @@ class DockerIsolationConfig:
     container_name: str | None = None
     setup_commands: list[str] | None = None
     volumes: list[str] | None = None
+    publish_ports: list[str] | None = None
+    privileged: bool = False
+    extra_args: list[str] | None = None
     user: str | None = None
     env: dict[str, str] | None = None
 
@@ -65,22 +68,35 @@ class DockerIsolationBackend(IsolationBackend):
         
         if self.config.persistent_container:
             import atexit
-            atexit.register(self._sync_cleanup)
+            atexit.register(self._atexit_cleanup)
 
-    def _sync_cleanup(self):
+    def _sync_cleanup(self, blocking: bool = False):
         if self._container_started and not self._cleaned_up:
             import subprocess
-            # Execute asynchronously from the GC thread's perspective via Popen 
-            # to prevent hanging the interpreter shutdown phase
-            subprocess.Popen(
-                ["docker", "rm", "-f", self._container_name],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
+            try:
+                if blocking:
+                    subprocess.run(
+                        ["docker", "rm", "-f", self._container_name],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                else:
+                    # Execute asynchronously from the GC thread's perspective via Popen 
+                    # to prevent hanging the interpreter shutdown phase
+                    subprocess.Popen(
+                        ["docker", "rm", "-f", self._container_name],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+            except Exception:
+                pass
             self._cleaned_up = True
 
+    def _atexit_cleanup(self):
+        self._sync_cleanup(blocking=True)
+
     def __del__(self):
-        self._sync_cleanup()
+        self._sync_cleanup(blocking=False)
         
     async def _ensure_container(self, cwd: str | None = None):
         if self._container_started:
@@ -105,6 +121,14 @@ class DockerIsolationBackend(IsolationBackend):
             for v in cfg.volumes:
                 vol_args.extend(["-v", v])
                 
+        port_args = []
+        if cfg.publish_ports:
+            for p in cfg.publish_ports:
+                port_args.extend(["-p", p])
+                
+        priv_args = ["--privileged"] if cfg.privileged else []
+        extra_args = cfg.extra_args or []
+                
         user_args = ["-u", cfg.user] if cfg.user else []
 
         cmd = [
@@ -115,6 +139,9 @@ class DockerIsolationBackend(IsolationBackend):
             *user_args,
             *env_args,
             *vol_args,
+            *port_args,
+            *priv_args,
+            *extra_args,
             *mount_args,
             cfg.image,
             "tail", "-f", "/dev/null"
@@ -190,6 +217,13 @@ class DockerIsolationBackend(IsolationBackend):
             if cfg.volumes:
                 for v in cfg.volumes:
                     vol_args.extend(["-v", v])
+            port_args = []
+            if cfg.publish_ports:
+                for p in cfg.publish_ports:
+                    port_args.extend(["-p", p])
+            priv_args = ["--privileged"] if cfg.privileged else []
+            extra_args = cfg.extra_args or []
+
             user_args = ["-u", cfg.user] if cfg.user else []
             container_env_args = []
             if cfg.env:
@@ -209,6 +243,9 @@ class DockerIsolationBackend(IsolationBackend):
                 *container_env_args,
                 *env_args,
                 *vol_args,
+                *port_args,
+                *priv_args,
+                *extra_args,
                 *mount_args,
                 cfg.image,
                 "sh", "-lc", full_command

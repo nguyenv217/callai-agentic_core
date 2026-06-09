@@ -103,10 +103,11 @@ class SmartRetryHandler(AgentEventHandler):
     async def on_error(self, error_context: ErrorContext) -> DecisionEvent[ErrorAction]:
         error = error_context.error
         retry_count = error_context.retry_count
+        active_max_retries = error_context.max_retries if error_context.max_retries > 0 else self.max_retries
         
         # Transient API Errors - Retry with backoff
         if isinstance(error, (ProviderRateLimitError, ProviderTimeoutError, ConnectionError)):
-            if retry_count < self.max_retries:
+            if retry_count < active_max_retries:
                 if self.on_retry_callback:
                     await self.on_retry_callback(error_context, retry_count, self.base_delay)
                 return DecisionEvent(action=ErrorDecision.RETRY(
@@ -128,11 +129,14 @@ class SmartRetryHandler(AgentEventHandler):
         # Tool execution errors - Skip to keep the loop alive
         elif error_context.tool_name is not None:
             return DecisionEvent(action=ErrorDecision.SKIP())
-        
-        elif isinstance(error, IterationLimitReachedError) or "limit" in str(error).lower():
-            return DecisionEvent(action=ErrorDecision.RESOLVE_WITH(
-                msg=f"Limit reached: {str(error)}. Please finalize your response."
-            ))
+            
+        # Context limits or other fatal provider limits
+        elif "limit" in str(error).lower() or "context" in str(error).lower():
+            if retry_count < 1:
+                return DecisionEvent(action=ErrorDecision.RESOLVE_WITH(
+                    msg=f"System error: {str(error)}. Please synthesize immediately."
+                ))
+            return DecisionEvent(action=ErrorDecision.ABANDON())
             
         # Unknown errors - One quick retry, then abandon
         else:

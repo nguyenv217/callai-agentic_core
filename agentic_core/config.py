@@ -30,6 +30,7 @@ class RunnerConfig:
         mcp_enable_discovery (bool = False): Whether to enable user to dynamically browse and load MCP tools. Recommended 'False' if `mcp_preload_tools` is specified
     '''
     max_iterations: int = 20
+    max_retries: int = 1
     max_chars: int | None = 10000
     system_prompt: str | None = None
     kwargs: dict[str, Any] | None = None

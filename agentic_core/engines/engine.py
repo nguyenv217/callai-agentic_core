@@ -215,7 +215,7 @@ class AgentRunner:
         iteration = 1
         final_response = AgentResponse()
         retry_count = 0
-        max_retries = getattr(config, 'max_tool_retries', 0)
+        max_retries = getattr(config, 'max_retries', 1)
 
         try:
             while iteration <= max_iterations and iteration <= AGENTIC_ITERATION_MAXIMUM:
@@ -305,6 +305,9 @@ class AgentRunner:
                         error_context = await self._create_error_context(e, tool_name=tool_name)
                         should_abort, _ = await self._handle_error_decision(error_context, handler, final_response)
                         await self._add_error_tool_result(tool_name, tool_id, f"Invalid JSON: {e}", handler)
+                        if should_abort:
+                            final_response.error = e
+                            return
                         continue
 
                     tasks.append(self.tools.execute(
@@ -322,11 +325,13 @@ class AgentRunner:
                         if not success:
                             error_context = await self._create_error_context(tool_result, tool_name=tool_name)
                             should_abort, _ = await self._handle_error_decision(error_context, handler, final_response)
+                            await handler.on_tool_complete(tool_name, tc_id, False, str(tool_result))
+                            self.memory.add_tool_result(tool_call_id=tc_id, name=tool_name, content=str(tool_result))
+                            yield StreamEvent(StreamEventType.TOOL_RESULT, {"tool": tool_name, "id": tc_id, "result": tool_result, "success": False})
                             if should_abort:
-                                await handler.on_tool_complete(tool_name, tc_id, False, str(tool_result))
-                                self.memory.add_tool_result(tool_call_id=tc_id, name=tool_name, content=str(tool_result))
-                                yield StreamEvent(StreamEventType.TOOL_RESULT, {"tool": tool_name, "id": tc_id, "result": tool_result, "success": False})
-                                continue
+                                final_response.error = tool_result
+                                return
+                            continue
                                 
                         await handler.on_tool_complete(tool_name, tc_id, success, tool_result)
                         self.memory.add_tool_result(tool_call_id=tc_id, name=tool_name, content=str(tool_result))

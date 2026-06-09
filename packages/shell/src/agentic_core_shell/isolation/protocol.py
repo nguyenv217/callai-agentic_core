@@ -12,6 +12,9 @@ class IsolationDockerConfig(TypedDict, total=False):
     persistent_container: NotRequired[bool]
     setup_commands: NotRequired[list[str]]
     volumes: NotRequired[list[str]]
+    publish_ports: NotRequired[list[str]]
+    privileged: NotRequired[bool]
+    extra_args: NotRequired[list[str]]
     user: NotRequired[str]
     env: NotRequired[dict[str, str]]
 

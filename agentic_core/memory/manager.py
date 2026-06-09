@@ -28,18 +28,18 @@ class MemoryManager:
 
     def set_system_prompt(self, content: str):
         self.system_prompt = {"role": "system", "content": content}
-        self._update_hash()
+        self._current_hash = None
 
     def add_message(self, message: dict):
         """Adds standard messages (user, assistant)."""
         self.messages.append(message)
-        self._update_hash()
+        self._current_hash = None
 
     def add_tool_result(self, name: str, tool_call_id: str, content: str):
         """Adds a tool result message."""
         msg = {"role": "tool", "name": name, "tool_call_id": tool_call_id, "content": content}
         self.messages.append(msg)
-        self._update_hash()
+        self._current_hash = None
 
     def get_history(self) -> list[dict]:
         history = []
@@ -56,7 +56,7 @@ class MemoryManager:
     def enforce_context_limits(self):
         """Delegates complexity to the pluggable strategy."""
         self.messages = self.strategy.truncate(self.messages, self.max_chars)
-        self._update_hash()
+        self._current_hash = None
 
     def _update_hash(self):
         self._hash_obj = hashlib.sha256()
@@ -68,7 +68,7 @@ class MemoryManager:
 
     def clear(self):
         self.messages = []
-        self._update_hash()
+        self._current_hash = None
     
     def is_new_session(self):
         return len(self.messages) == 0
@@ -86,4 +86,4 @@ class MemoryManager:
         self.system_prompt = state.get("system_prompt")
         self.messages = list(state.get("messages", []))
         self.max_chars = state.get("max_chars", self.max_chars)
-        self._update_hash()
+        self._current_hash = None

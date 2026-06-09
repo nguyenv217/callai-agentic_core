@@ -134,6 +134,9 @@ class ShellExecTool(BaseTool):
                     persistent_container=bool(iso_cfg.get("persistent_container", True)),
                     setup_commands=iso_cfg.get("setup_commands", []),
                     volumes=iso_cfg.get("volumes", []),
+                    publish_ports=iso_cfg.get("publish_ports", []),
+                    privileged=bool(iso_cfg.get("privileged", False)),
+                    extra_args=iso_cfg.get("extra_args", []),
                     user=iso_cfg.get("user", ""),
                     env=iso_cfg.get("env", {}),
                 )
