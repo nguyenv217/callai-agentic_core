@@ -220,6 +220,7 @@ class AgentRunner:
         try:
             while iteration <= max_iterations and iteration <= AGENTIC_ITERATION_MAXIMUM:
                 await handler.on_iteration_start(iteration, max_iterations)
+                self.memory.enforce_context_limits()
                 conversation = self.memory.get_history()
                 kwargs = config.kwargs or {}
                 

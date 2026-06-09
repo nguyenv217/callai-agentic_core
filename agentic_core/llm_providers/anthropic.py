@@ -85,6 +85,7 @@ class AnthropicLLM(ILLMClient):
         
         try:
             if stream:
+                accumulated_tools = []
                 async with self.client.messages.stream(**req_kwargs) as event_stream:
                     async for event in event_stream:
                         if event.type == "text":
@@ -96,15 +97,16 @@ class AnthropicLLM(ILLMClient):
                         elif event.type == "content_block_stop":
                             block = event.content_block
                             if block.type == "tool_use":
+                                accumulated_tools.append({
+                                    "id": block.id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": block.name,
+                                        "arguments": block.input
+                                    }
+                                })
                                 yield LLMResponse(
-                                    tool_calls=[{
-                                        "id": block.id,
-                                        "type": "function",
-                                        "function": {
-                                            "name": block.name,
-                                            "arguments": block.input
-                                        }
-                                    }]
+                                    tool_calls=list(accumulated_tools)
                                 )
                 return
             
