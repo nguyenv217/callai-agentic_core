@@ -120,13 +120,15 @@ class GlobalMCPRegistry:
     @staticmethod
     def _get_identity_key(server_config: dict[str, Any], tenant_id: str = "default") -> Tuple:
         """Identity key hash from (command, args, eng) and a tenant_id to prevent cross-tenant poisoning"""
+        import hashlib
         command = server_config.get("command", "python")
         raw_args = server_config.get("args", [])
         if isinstance(raw_args, str):
             raw_args = [raw_args]
         args = tuple(raw_args)
-        env = tuple(sorted(server_config.get("env", {}).items()))
-        return (tenant_id, command, args, env)
+        env_str = json.dumps(server_config.get("env", {}), sort_keys=True)
+        env_hash = hashlib.sha256(env_str.encode()).hexdigest()
+        return (tenant_id, command, args, env_hash)
 
     async def _get_lock_for_identity(self, identity_key: Tuple) -> asyncio.Lock:
         async with self._global_lock:
@@ -187,6 +189,8 @@ class GlobalMCPRegistry:
                         env[key] = val if val is not None else os.environ.get(env_var, value)
                     else:
                         env[key] = value
+                else:
+                    env[key] = value
             
             shutdown_event = asyncio.Event()
             init_event = asyncio.Event()
@@ -264,7 +268,14 @@ class GlobalMCPRegistry:
                                     _ACTIVE_MCP_PIDS.discard((pid_to_kill, birth_time)) # cancellation happened, so no need for sync cleanup hook
 
                 except Exception as e:
-                    if type(e).__name__ in ("ExceptionGroup", "BaseExceptionGroup") and "ProcessLookupError" in str(e):
+                    is_process_lookup = False
+                    if type(e).__name__ in ("ExceptionGroup", "BaseExceptionGroup"):
+                        if any(type(sub_e).__name__ == "ProcessLookupError" for sub_e in getattr(e, "exceptions", [])):
+                            is_process_lookup = True
+                    elif type(e).__name__ == "ProcessLookupError":
+                        is_process_lookup = True
+
+                    if is_process_lookup:
                         logger.debug(f"[{server_name}] Suppressed teardown exception group: Process already terminated.")
                     else:
                         logger.exception(f"[{server_name}] Server task died unexpectedly: {e}")
