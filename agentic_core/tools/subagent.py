@@ -136,6 +136,8 @@ class SpawnSubAgentsTool(BaseTool):
 
                 if len(config.tools) != len(requested_tools):
                     return f"Validation Error: One or more requested tools for node {node_id} are not available. This is likely because you are trying to pass tools you do not have yourself."
+            else:
+                config.tools = []
 
             prompt = cfg.get("prompt", "")
             max_retries = cfg.get("max_retries", 0)

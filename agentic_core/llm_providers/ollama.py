@@ -46,6 +46,30 @@ class OllamaLLM(ILLMClient):
         }
         
         # To ollama format
+        ollama_messages = []
+        for msg in req_kwargs["messages"]:
+            content = msg.get("content")
+            if isinstance(content, list):
+                text_parts = []
+                images = []
+                for block in content:
+                    if block.get("type") == "text":
+                        text_parts.append(block.get("text", ""))
+                    elif block.get("type") == "image_url":
+                        url = block["image_url"]["url"]
+                        if url.startswith("data:"):
+                            images.append(url.split(",", 1)[1])
+                
+                new_msg = dict(msg)
+                new_msg["content"] = "\n".join(text_parts)
+                if images:
+                    new_msg["images"] = images
+                ollama_messages.append(new_msg)
+            else:
+                ollama_messages.append(msg)
+
+        req_kwargs["messages"] = ollama_messages
+
         if tools:
             req_kwargs["tools"] = [{"type": "function", "function": t["function"]} for t in tools]
 

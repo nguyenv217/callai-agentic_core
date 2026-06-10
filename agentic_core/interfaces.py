@@ -18,7 +18,7 @@ class ToolResponse(TypedDict):
 
 class Message(TypedDict):
     role: Literal["user", "assistant", "tool"]
-    content: str
+    content: str | list[Any]
     
     # The following arguments are presented when role = "tool"
     tool_name: str | None 

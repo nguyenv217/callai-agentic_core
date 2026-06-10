@@ -244,7 +244,10 @@ class GlobalMCPRegistry:
                                                 logger.info(f"[{server_name}] ACTOR: Successfully executed '{payload['name']}'")
                                                 if not fut.done(): fut.set_result(res)
                                         except Exception as e:
-                                            logger.exception(f"[{server_name}] ACTOR ERROR: {type(e).__name__} - {e}")
+                                            if type(e).__name__ == "ClosedResourceError":
+                                                logger.debug(f"[{server_name}] ACTOR: Connection closed normally.")
+                                            else:
+                                                logger.exception(f"[{server_name}] ACTOR ERROR: {type(e).__name__} - {e}")
                                             if not fut.done(): fut.set_exception(e)
                                         finally:
                                             request_queue.task_done()
@@ -261,12 +264,15 @@ class GlobalMCPRegistry:
                                     _ACTIVE_MCP_PIDS.discard((pid_to_kill, birth_time)) # cancellation happened, so no need for sync cleanup hook
 
                 except Exception as e:
-                    logger.exception(f"[{server_name}] Server task died unexpectedly: {e}")
-                    if on_server_death: 
-                        on_server_death(server_name, e)
-                    session_ref["error"] = e
-                    if not init_event.is_set():
-                        init_event.set()
+                    if type(e).__name__ in ("ExceptionGroup", "BaseExceptionGroup") and "ProcessLookupError" in str(e):
+                        logger.debug(f"[{server_name}] Suppressed teardown exception group: Process already terminated.")
+                    else:
+                        logger.exception(f"[{server_name}] Server task died unexpectedly: {e}")
+                        if on_server_death: 
+                            on_server_death(server_name, e)
+                        session_ref["error"] = e
+                        if not init_event.is_set():
+                            init_event.set()
 
                 finally:
                     if err_stream:

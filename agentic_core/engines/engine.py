@@ -98,7 +98,16 @@ class AgentRunner:
                 self.memory.set_system_prompt(toolset_prompt + "\n\n" + self.memory.system_prompt['content'])
                 self._toolset_prompt_loaded = True
 
-        messages = [{"role": "user", "content": user_input}] if isinstance(user_input, str) else user_input
+        if isinstance(user_input, str):
+            messages = [{"role": "user", "content": user_input}]
+        elif isinstance(user_input, list):
+            if len(user_input) > 0 and "type" in user_input[0] and "role" not in user_input[0]:
+                messages = [{"role": "user", "content": user_input}]
+            else:
+                messages = user_input
+        else:
+            messages = [{"role": "user", "content": user_input}]
+
         for msg in messages:
             self.memory.add_message(msg)
 

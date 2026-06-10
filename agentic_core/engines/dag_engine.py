@@ -270,7 +270,6 @@ class DAGAgentRunner:
                         else: # CASCADE
                             await self._cascade_failure(node_id)
                             await self.handler.on_node_complete(node_id, NodeState.FAILED, str(e))
-                            raise e 
                 finally:
                     self.queue.task_done()
             except asyncio.CancelledError:

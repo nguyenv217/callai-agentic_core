@@ -48,7 +48,10 @@ class AnthropicLLM(ILLMClient):
             content = msg.get("content")
             
             if role == "system":
-                system = content
+                if isinstance(content, list):
+                    system = "".join(b.get("text", "") for b in content if b.get("type") == "text")
+                else:
+                    system = content
             elif role == "tool":
                 # Anthropic requires tool results to be role: "user" with a `tool_result` content block.
                 anthropic_messages.append({
@@ -60,7 +63,27 @@ class AnthropicLLM(ILLMClient):
                     }]
                 })
             else:
-                anthropic_messages.append({"role": role, "content": content})
+                if isinstance(content, list):
+                    anthropic_content = []
+                    for block in content:
+                        if block.get("type") == "text":
+                            anthropic_content.append({"type": "text", "text": block.get("text")})
+                        elif block.get("type") == "image_url":
+                            url = block["image_url"]["url"]
+                            if url.startswith("data:"):
+                                header, b64_data = url.split(",", 1)
+                                media_type = header.split(";")[0][5:]
+                                anthropic_content.append({
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": media_type,
+                                        "data": b64_data
+                                    }
+                                })
+                    anthropic_messages.append({"role": role, "content": anthropic_content})
+                else:
+                    anthropic_messages.append({"role": role, "content": content})
 
         req_kwargs = {
             "model": self.model,
