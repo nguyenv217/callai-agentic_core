@@ -223,6 +223,7 @@ class AgentRunner:
         max_iterations = config.max_iterations
         iteration = 1
         final_response = AgentResponse()
+        total_usage = {"prompt_tokens": 0, "completion_tokens": 0}
         retry_count = 0
         max_retries = getattr(config, 'max_retries', 1)
 
@@ -252,6 +253,10 @@ class AgentRunner:
                         if response.usage:
                             self.last_usage_meta = response.usage
                 except Exception as e:
+                    if self.last_usage_meta:
+                        total_usage["prompt_tokens"] += self.last_usage_meta.get("prompt_tokens", 0)
+                        total_usage["completion_tokens"] += self.last_usage_meta.get("completion_tokens", 0)
+                        self.last_usage_meta = None
                     error_context = await self._create_error_context(e, retry_count=retry_count, max_retries=max_retries)
                     should_abort, final_response = await self._handle_error_decision(error_context, handler, final_response)
                     yield StreamEvent(StreamEventType.ERROR, str(e), error=e)
@@ -263,11 +268,20 @@ class AgentRunner:
 
                 retry_count = 0
 
+                if self.last_usage_meta:
+                    if isinstance(self.last_usage_meta, dict):
+                        total_usage["prompt_tokens"] += self.last_usage_meta.get("prompt_tokens", 0)
+                        total_usage["completion_tokens"] += self.last_usage_meta.get("completion_tokens", 0)
+                    else:
+                        total_usage["prompt_tokens"] += getattr(self.last_usage_meta, "prompt_tokens", 0)
+                        total_usage["completion_tokens"] += getattr(self.last_usage_meta, "completion_tokens", 0)
+                    self.last_usage_meta = None
+
                 if not turn_response["tool_calls"]:
                     self.memory.add_message({"role": "assistant", "content": turn_response["text"]})
                     final_response.text = turn_response["text"]
                     final_response.reasoning = turn_response["reasoning"]
-                    final_response.usage = self.last_usage_meta or {}
+                    final_response.usage = total_usage
                     break
 
                 for tc in turn_response["tool_calls"]:
@@ -360,6 +374,7 @@ class AgentRunner:
                         max_iterations += decision_event.action.extra_iterations_count or max_iterations
 
             if iteration > max_iterations:
+                final_response.usage = total_usage
                 limit_error = IterationLimitReachedError(f"Agent failed after {max_iterations} iterations.")
                 error_context = await self._create_error_context(limit_error)
                 should_abort, final_response = await self._handle_error_decision(error_context, handler, final_response)

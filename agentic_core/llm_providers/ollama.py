@@ -77,6 +77,12 @@ class OllamaLLM(ILLMClient):
             stream_response = await self.client.chat(stream=True, **req_kwargs)
             async for chunk in stream_response:
                 msg = chunk.message
+                usage_dict = {}
+                if getattr(chunk, 'prompt_eval_count', None):
+                    usage_dict['prompt_tokens'] = chunk.prompt_eval_count
+                if getattr(chunk, 'eval_count', None):
+                    usage_dict['completion_tokens'] = chunk.eval_count
+
                 if msg.tool_calls:
                     tool_calls = []
                     for tc in msg.tool_calls:
@@ -93,19 +99,26 @@ class OllamaLLM(ILLMClient):
                         text=msg.content or "",
                         reasoning=msg.thinking or "",
                         tool_calls=tool_calls,
-                        usage={}
+                        usage=usage_dict
                     )
                 else:                            
                     yield LLMResponse(
                         text=msg.content or "",
                         reasoning=msg.thinking or "",
-                        usage={}
+                        usage=usage_dict
                     )
             return
 
         response = await self.client.chat(stream=False, **req_kwargs)
         
         msg = response.message
+        
+        usage_dict = {}
+        if getattr(response, 'prompt_eval_count', None):
+            usage_dict['prompt_tokens'] = response.prompt_eval_count
+        if getattr(response, 'eval_count', None):
+            usage_dict['completion_tokens'] = response.eval_count
+            
         yield LLMResponse(
             text=msg.content,
             reasoning=msg.thinking,
@@ -116,5 +129,5 @@ class OllamaLLM(ILLMClient):
                     "function": {"name": tc.function.name, "arguments": tc.function.arguments}
                 } for tc in msg.tool_calls
             ] if msg.tool_calls else [],
-            usage={},
+            usage=usage_dict,
         )

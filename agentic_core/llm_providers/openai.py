@@ -76,6 +76,8 @@ class OpenAILLM(ILLMClient):
             active_index_map = {}
             
             if stream:
+                if "stream_options" not in req_kwargs:
+                    req_kwargs["stream_options"] = {"include_usage": True}
                 stream_response = await self.client.chat.completions.create(stream=True, **req_kwargs)
             
                 async for chunk in stream_response:
@@ -123,11 +125,16 @@ class OpenAILLM(ILLMClient):
 
                     current_tool_calls = list(accumulated_tools.values())
                     
+                    usage_dict = {}
+                    if chunk.usage:
+                        usage_dict["prompt_tokens"] = getattr(chunk.usage, "prompt_tokens", 0) if hasattr(chunk.usage, "prompt_tokens") else chunk.usage.get("prompt_tokens", 0)
+                        usage_dict["completion_tokens"] = getattr(chunk.usage, "completion_tokens", 0) if hasattr(chunk.usage, "completion_tokens") else chunk.usage.get("completion_tokens", 0)
+
                     yield LLMResponse(
                         text=delta.content or "",
                         reasoning=getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None) or getattr(delta, "thinking", None) or "",
                         tool_calls=current_tool_calls,
-                        usage=chunk.usage or {}, # only yielded at last chunk
+                        usage=usage_dict,
                     )
 
                 return
