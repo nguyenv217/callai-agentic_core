@@ -81,7 +81,14 @@ class OpenAILLM(ILLMClient):
                 stream_response = await self.client.chat.completions.create(stream=True, **req_kwargs)
             
                 async for chunk in stream_response:
+                    usage_dict = {}
+                    if chunk.usage:
+                        usage_dict["prompt_tokens"] = getattr(chunk.usage, "prompt_tokens", 0) if hasattr(chunk.usage, "prompt_tokens") else chunk.usage.get("prompt_tokens", 0)
+                        usage_dict["completion_tokens"] = getattr(chunk.usage, "completion_tokens", 0) if hasattr(chunk.usage, "completion_tokens") else chunk.usage.get("completion_tokens", 0)
+
                     if not chunk.choices:
+                        if usage_dict:
+                            yield LLMResponse(usage=usage_dict)
                         continue
                     
                     choice = chunk.choices[0]

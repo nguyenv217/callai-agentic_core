@@ -318,12 +318,14 @@ class AgentRunner:
                         continue
                     elif isinstance(decision_event.action, ToolStartDecision.SKIP_WITH_MSG):
                         await self._add_error_tool_result(tool_name, tool_id, decision_event.action.msg, handler)
+                        yield StreamEvent(StreamEventType.TOOL_RESULT, {"tool": tool_name, "id": tool_id, "result": decision_event.action.msg, "success": True})
                         continue
                     elif isinstance(decision_event.action, ToolStartDecision.ABANDON):
                         iteration = max_iterations + 1
                         break
                     elif isinstance(decision_event.action, ToolStartDecision.BREAK_WITH_MSG):
                         await self._add_error_tool_result(tool_name, tool_id, decision_event.action.msg, handler)
+                        yield StreamEvent(StreamEventType.TOOL_RESULT, {"tool": tool_name, "id": tool_id, "result": decision_event.action.msg, "success": True})
                         break
 
                     try:
@@ -333,6 +335,7 @@ class AgentRunner:
                         error_context = await self._create_error_context(e, tool_name=tool_name)
                         should_abort, _ = await self._handle_error_decision(error_context, handler, final_response)
                         await self._add_error_tool_result(tool_name, tool_id, f"Invalid JSON: {e}", handler)
+                        yield StreamEvent(StreamEventType.TOOL_RESULT, {"tool": tool_name, "id": tool_id, "result": f"Invalid JSON: {e}", "success": False})
                         if should_abort:
                             final_response.error = e
                             return

@@ -114,8 +114,16 @@ class AnthropicLLM(ILLMClient):
                         if event.type == "text":
                             yield LLMResponse(text=event.text)
 
-                        if event.type == "thinking":
+                        elif event.type == "thinking":
                             yield LLMResponse(reasoning=event.thinking)
+                            
+                        elif event.type == "message_start":
+                            if hasattr(event.message, "usage") and event.message.usage:
+                                yield LLMResponse(usage={"prompt_tokens": event.message.usage.input_tokens})
+                                
+                        elif event.type == "message_delta":
+                            if hasattr(event, "usage") and event.usage:
+                                yield LLMResponse(usage={"completion_tokens": event.usage.output_tokens})
                         
                         elif event.type == "content_block_stop":
                             block = event.content_block
