@@ -370,6 +370,10 @@ class AgentRunner:
                         self.memory.add_tool_result(tool_call_id=tc_id, name=tool_name, content=str(tool_result))
                         yield StreamEvent(StreamEventType.TOOL_RESULT, {"tool": tool_name, "id": tc_id, "result": tool_result, "success": success})
 
+                # Special flag to halt the loop temporarily to allow for external control
+                if config.extra_context and config.extra_context.get("continuous_yield"):
+                    break
+
                 iteration += 1
                 if iteration == max_iterations:
                     decision_event = await handler.on_final_iteration()

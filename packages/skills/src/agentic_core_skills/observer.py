@@ -25,6 +25,19 @@ class AutoSkillObserver(AgentEventHandler):
         self._trace_log.append("[TURN START]")
         if self.base_handler: await self.base_handler.on_turn_start()
 
+    async def on_iteration_start(self, iteration: int, max_iterations: int) -> None:
+        if self.base_handler: await self.base_handler.on_iteration_start(iteration, max_iterations)
+
+    async def on_llm_progress(self, info: str) -> None:
+        if self.base_handler: await self.base_handler.on_llm_progress(info)
+
+    async def on_tool_call_session_start(self, reasoning_text: str, tool_calls: list, iteration: int, max_iterations: int) -> None:
+        if self.base_handler: await self.base_handler.on_tool_call_session_start(reasoning_text, tool_calls, iteration, max_iterations)
+
+    async def on_final_iteration(self) -> Any:
+        if self.base_handler: return await self.base_handler.on_final_iteration()
+        return await super().on_final_iteration()
+
     async def on_tool_start(self, tool_name: str, tool_id: str, tool_arg: str | dict | None = None) -> DecisionEvent[ToolStartAction]:
         self._trace_log.append(f"[TOOL START] {tool_name} | Args: {tool_arg}")
         if self.base_handler:
