@@ -1,61 +1,92 @@
-import re
 import uuid
 import logging
 from pathlib import Path
 from agentic_core.llm_providers.base import ILLMClient
+from agentic_core.utils import heuristic_json_parse
 
 logger = logging.getLogger(__name__)
 
 class SkillExtractor:
     """
-    Synthesizes execution traces into reusable SKILL.md rules using an LLM.
+    Synthesizes conversation history into reusable SKILL.md rules using structured tool calling.
     """
     def __init__(self, llm_client: ILLMClient, output_dir: Path | str):
         self.llm = llm_client
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    async def extract_skill(self, execution_trace: str) -> bool:
+    async def extract_skill(self, messages: list[dict]) -> bool:
+        # Appending directly to the existing sequence guarantees a prefix cache hit on supported providers
         prompt = (
-            "You are an expert meta-cognitive agent. Review the following execution trace of an agent "
-            "attempting a complex task. The trace contains errors, retries, and trial-and-error tool usage, "
-            "but ultimately succeeded.\n"
-            "Extract the optimal, error-free path into a reusable SKILL.md file for future agents to follow.\n"
-            "Identify the exact tool sequences that worked and explicitly warn against the mistakes made.\n\n"
-            "Format your response EXACTLY as follows (including the markdown code block):\n"
-            "```markdown\n"
-            "---\n"
-            "name: \"<Short, descriptive skill name>\"\n"
-            "description: \"<Brief description of what this skill achieves>\"\n"
-            "triggers:\n"
-            "  - \"<trigger_keyword_1>\"\n"
-            "  - \"<trigger_keyword_2>\"\n"
-            "---\n"
-            "<Detailed instructions, optimal tool sequence, and pitfalls to avoid>\n"
-            "```\n\n"
-            f"EXECUTION TRACE:\n{execution_trace}"
+            "Meta-Cognitive Reflection: You have just successfully completed a task that required some trial-and-error. "
+            "Review the conversation history above. Extract the optimal, error-free path into a reusable skill "
+            "for future agents. Identify the exact tool sequences that worked and explicitly note the mistakes/pitfalls to avoid. "
+            "You MUST use the `save_skill` tool to output your structural synthesis."
         )
 
-        try:
-            messages = [{"role": "user", "content": prompt}]
-            response_text = ""
-            async for response in self.llm.ask(messages=messages, stream=False):
-                if response.text:
-                    response_text += response.text
+        extraction_messages = list(messages) + [{"role": "user", "content": prompt}]
 
-            match = re.search(r'```markdown\s*(.*?)\s*```', response_text, re.DOTALL | re.IGNORECASE)
-            if not match:
-                logger.warning("Failed to extract markdown block from LLM response.")
+        schema = {
+            "type": "function",
+            "function": {
+                "name": "save_skill",
+                "description": "Saves a synthesized skill definition.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Short, descriptive skill name (e.g. 'React Developer', 'Postgres Querying')"},
+                        "description": {"type": "string", "description": "Brief description of what this skill achieves."},
+                        "triggers": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Keywords that should trigger this skill."
+                        },
+                        "instructions": {"type": "string", "description": "Detailed markdown instructions, optimal tool sequence, and pitfalls to avoid."}
+                    },
+                    "required": ["name", "description", "triggers", "instructions"]
+                }
+            }
+        }
+
+        try:
+            tool_calls = []
+            async for response in self.llm.ask(messages=extraction_messages, tools=[schema], stream=False):
+                if response.tool_calls:
+                    tool_calls.extend(response.tool_calls)
+                    
+            if not tool_calls:
+                logger.warning("Agent failed to call `save_skill` during extraction.")
                 return False
 
-            skill_content = match.group(1).strip()
-            
-            # Extract name to create a sensible directory
-            name_match = re.search(r'name:\s*"?([^"]+)"?', skill_content)
-            dir_name = "extracted_skill_" + str(uuid.uuid4())[:8]
-            if name_match:
-                safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', name_match.group(1).lower())
-                dir_name = f"{safe_name}_{str(uuid.uuid4())[:4]}"
+            target_call = next((tc for tc in tool_calls if tc["function"]["name"] == "save_skill"), None)
+            if not target_call:
+                return False
+                
+            args_str = target_call["function"].get("arguments", "{}")
+            try:
+                args = heuristic_json_parse(args_str) if isinstance(args_str, str) else args_str
+            except Exception:
+                logger.error("Failed to parse save_skill arguments.")
+                return False
+
+            name = args.get("name", "Unknown Skill")
+            desc = args.get("description", "")
+            triggers = args.get("triggers", [])
+            instructions = args.get("instructions", "")
+
+            import re
+            safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', name.lower())
+            dir_name = f"{safe_name}_{str(uuid.uuid4())[:4]}"
+
+            skill_content = (
+                f"---\n"
+                f"name: \"{name}\"\n"
+                f"description: \"{desc}\"\n"
+                f"triggers:\n"
+            )
+            for t in triggers:
+                skill_content += f"  - \"{t}\"\n"
+            skill_content += f"---\n\n{instructions}\n"
 
             skill_path = self.output_dir / dir_name
             skill_path.mkdir(parents=True, exist_ok=True)

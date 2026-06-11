@@ -5,31 +5,29 @@ from agentic_core_skills.extractor import SkillExtractor
 from agentic_core.llm_providers.base import ILLMClient, LLMResponse
 
 class MockLLMClient(ILLMClient):
-    def __init__(self, response_text: str):
-        self.response_text = response_text
+    def __init__(self, response: LLMResponse):
+        self.response = response
 
     async def ask(self, messages, tools=None, stream=False, **kwargs):
-        yield LLMResponse(text=self.response_text)
+        yield self.response
 
 @pytest.mark.asyncio
 async def test_extract_skill_success():
-    mock_response = """
-    Here is the skill you requested:
-    ```markdown
-    ---
-    name: "Test Skill"
-    description: "A test skill"
-    triggers:
-      - "test"
-    ---
-    Do this, not that.
-    ```
-    """
+    mock_response = LLMResponse(
+        tool_calls=[{
+            "id": "call_1",
+            "type": "function",
+            "function": {
+                "name": "save_skill",
+                "arguments": '{"name": "Test Skill", "description": "A test skill", "triggers": ["test"], "instructions": "Do this, not that."}'
+            }
+        }]
+    )
     llm = MockLLMClient(mock_response)
     
     with tempfile.TemporaryDirectory() as tmpdir:
         extractor = SkillExtractor(llm_client=llm, output_dir=tmpdir)
-        result = await extractor.extract_skill("Mock execution trace")
+        result = await extractor.extract_skill([{"role": "user", "content": "history"}])
         
         assert result is True
         
@@ -47,12 +45,12 @@ async def test_extract_skill_success():
         assert "Do this, not that." in content
 
 @pytest.mark.asyncio
-async def test_extract_skill_no_markdown():
-    mock_response = "I couldn't find a skill to extract. I failed."
+async def test_extract_skill_no_tool_call():
+    mock_response = LLMResponse(text="I failed to call the tool.", tool_calls=[])
     llm = MockLLMClient(mock_response)
     
     with tempfile.TemporaryDirectory() as tmpdir:
         extractor = SkillExtractor(llm_client=llm, output_dir=tmpdir)
-        result = await extractor.extract_skill("Mock execution trace")
+        result = await extractor.extract_skill([{"role": "user", "content": "history"}])
         
         assert result is False

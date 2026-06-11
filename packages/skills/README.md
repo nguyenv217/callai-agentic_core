@@ -47,4 +47,4 @@ async def main():
 asyncio.run(main())
 ```
 
-The extraction runs as a detached asynchronous background task (`asyncio.create_task`) upon `on_turn_complete`, ensuring the primary execution thread is never blocked during the synthesis phase.
+To bridge the `AutoSkillObserver` with the extraction process, implement a sub-class overriding `on_turn_complete` to fetch the context directly from the runner's `MemoryManager`. This enforces explicit dependency injection, allowing the synthesis request to efficiently append to the agent's pre-existing token context to preserve prefix-caching benefits.
