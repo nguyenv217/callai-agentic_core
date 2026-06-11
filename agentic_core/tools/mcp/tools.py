@@ -168,7 +168,7 @@ class MCPToolAdapter(BaseTool):
         mcp_tool_def: dict[str, Any], 
         session: Any, 
         server_name: str,
-        timeout: float = 30.0,
+        timeout: float = 60.0,
         clean_schema: bool = True
     ):
         """

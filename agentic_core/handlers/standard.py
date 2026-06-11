@@ -136,11 +136,10 @@ class SmartRetryHandler(AgentEventHandler):
             return DecisionEvent(action=ErrorDecision.SKIP())
             
         # Context limits or other fatal provider limits
-        elif "limit" in str(error).lower() or "context" in str(error).lower():
-            if retry_count < 1:
-                return DecisionEvent(action=ErrorDecision.RESOLVE_WITH(
-                    msg=f"System error: {str(error)}. Please synthesize immediately."
-                ))
+        elif "limit" in str(error).lower() or "context" in str(error).lower() or "too many tokens" in str(error).lower():
+            if retry_count < 2:
+                # Trigger a retry so the engine auto-truncates memory and tries again
+                return DecisionEvent(action=ErrorDecision.RETRY(delay=0.0))
             return DecisionEvent(action=ErrorDecision.ABANDON())
             
         # Unknown errors - One quick retry, then abandon

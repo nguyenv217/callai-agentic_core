@@ -59,8 +59,19 @@ class DefaultTruncationStrategy(TruncationStrategy):
             # Re-calculate and break if we are under limit
             new_total = sum(len(str(m.get("content", ""))) for m in messages_copy)
             if new_total <= max_chars:
-                break
+                return messages_copy
                 
+        # If still over limit after compressing individual messages, we must drop older messages.
+        while messages_copy and sum(len(str(m.get("content", ""))) for m in messages_copy) > max_chars:
+            popped = messages_copy.pop(0)
+            # If we popped an assistant message with tool calls, we must also pop the corresponding tool responses
+            # to maintain API schema validity.
+            if popped.get("role") == "assistant" and popped.get("tool_calls"):
+                tool_call_ids = {tc.get("id") for tc in popped["tool_calls"] if isinstance(tc, dict)}
+                # Remove any tool messages in the immediate vicinity that match these IDs
+                while messages_copy and messages_copy[0].get("role") == "tool" and messages_copy[0].get("tool_call_id") in tool_call_ids:
+                    messages_copy.pop(0)
+            
         return messages_copy
 
     def _truncate_tool(self, content: str, threshold: int) -> str:

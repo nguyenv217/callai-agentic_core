@@ -175,10 +175,13 @@ class ToolManager:
         # Populate standby registry
         mcp_tools = await self._mcp_manager.list_all_tools()
         for tool_def in mcp_tools:
+            server_name = tool_def["server_name"]
+            server_timeout = self._mcp_config_dict.get("mcpServers", {}).get(server_name, {}).get("timeout_s", 60.0)
             adapter = MCPToolAdapter(
                 mcp_tool_def=tool_def,
                 session=tool_def["session"],
-                server_name=tool_def["server_name"]
+                server_name=server_name,
+                timeout=server_timeout
             )
             self._mcp_standby_registry[adapter.name] = adapter
             
@@ -207,7 +210,7 @@ class ToolManager:
         except Exception as e:
             logger.error(f"MCP initialization failed: {e}")
     
-    def add_mcp_server(self, server_name: str, command: str, args: list[str] = None, env: dict[str, str] = None, log_file: str = None):
+    def add_mcp_server(self, server_name: str, command: str, args: list[str] = None, env: dict[str, str] = None, log_file: str = None, timeout_s: float = 60.0):
         """
         Programmatically add an MCP server configuration.
         
@@ -217,6 +220,7 @@ class ToolManager:
             args: List of arguments for the command
             env: Environment variables for the server process
             log_file: Optional path to log stderr for server output. Useful for debugging and avoid conflicts with TUI apps.
+            timeout_s: Maximum execution time in seconds for the server's tools.
         """
         if self._mcp_init_in_progress:
             logger.warning("MCP is initializing. Please wait or restart the program.")
@@ -234,7 +238,8 @@ class ToolManager:
             "command": command,
             "args": args,
             "env": env,
-            "log_file": log_file
+            "log_file": log_file,
+            "timeout_s": timeout_s
         }
         
         # Reset MCP initialization state to force reload on next ensure_mcp_initialized call

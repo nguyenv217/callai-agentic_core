@@ -23,14 +23,6 @@ from ..interfaces import (
 
 logger = logging.getLogger(__name__)
 
-import os
-try:
-    agentic_max = int(os.getenv("AGENTIC_ITERATION_MAXIMUM", "50"))
-except ValueError:
-    logger.warning("Invalid value for AGENTIC_ITERATION_MAXIMUM")
-    agentic_max = 50
-AGENTIC_ITERATION_MAXIMUM = agentic_max
-
 class AgentRunner:
     """
     A class that manages the execution of an agent, coordinating between an LLM client,
@@ -228,7 +220,7 @@ class AgentRunner:
         max_retries = getattr(config, 'max_retries', 1)
 
         try:
-            while iteration <= max_iterations and iteration <= AGENTIC_ITERATION_MAXIMUM:
+            while iteration <= max_iterations:
                 await handler.on_iteration_start(iteration, max_iterations)
                 self.memory.enforce_context_limits()
                 conversation = self.memory.get_history()
@@ -253,9 +245,18 @@ class AgentRunner:
                         if response.usage:
                             self.last_usage_meta = response.usage
                 except Exception as e:
+                    err_str = str(e).lower()
+                    if "context" in err_str or "limit" in err_str or "too many tokens" in err_str:
+                        # Auto-adjust truncation bounds if we hit a provider context limit
+                        self.memory.max_chars = max(int(self.memory.max_chars * 0.75), 10000)
+
                     if self.last_usage_meta:
-                        total_usage["prompt_tokens"] += self.last_usage_meta.get("prompt_tokens", 0)
-                        total_usage["completion_tokens"] += self.last_usage_meta.get("completion_tokens", 0)
+                        if isinstance(self.last_usage_meta, dict):
+                            total_usage["prompt_tokens"] += self.last_usage_meta.get("prompt_tokens", 0)
+                            total_usage["completion_tokens"] += self.last_usage_meta.get("completion_tokens", 0)
+                        else:
+                            total_usage["prompt_tokens"] += getattr(self.last_usage_meta, "prompt_tokens", 0)
+                            total_usage["completion_tokens"] += getattr(self.last_usage_meta, "completion_tokens", 0)
                         self.last_usage_meta = None
                     error_context = await self._create_error_context(e, retry_count=retry_count, max_retries=max_retries)
                     should_abort, final_response = await self._handle_error_decision(error_context, handler, final_response)
@@ -279,12 +280,13 @@ class AgentRunner:
 
                 if not turn_response["tool_calls"]:
                     self.memory.add_message({"role": "assistant", "content": turn_response["text"]})
-                    final_response.text = turn_response["text"]
-                    final_response.reasoning = turn_response["reasoning"]
+                    final_response.text += turn_response["text"]
+                    final_response.reasoning += turn_response["reasoning"]
                     final_response.usage = total_usage
                     break
 
                 for tc in turn_response["tool_calls"]:
+                    final_response.tool_calls.append(tc)
                     yield StreamEvent(StreamEventType.TOOL_CALL, tc)
 
                 self.memory.add_message({
@@ -292,6 +294,8 @@ class AgentRunner:
                     "content": turn_response.get("text", ""),
                     "tool_calls": turn_response["tool_calls"]
                 })
+                final_response.text += turn_response.get("text", "")
+                final_response.reasoning += turn_response.get("reasoning", "")
 
                 reasoning_text = turn_response.get("reasoning") or turn_response.get("text")
                 await handler.on_tool_call_session_start(
@@ -419,8 +423,6 @@ class AgentRunner:
         async for event in self.stream_turn(user_input, handler, config):
             if event.type == StreamEventType.FINAL_RESPONSE: 
                 final_response = event.content
-            elif event.type == StreamEventType.TOOL_CALL: 
-                final_response.tool_calls.append(event.content)
             elif event.type == StreamEventType.ERROR:
                 cached_error = event.error
                 cached_error_msg = event.content

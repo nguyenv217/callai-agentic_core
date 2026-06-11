@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import Any, Callable, Tuple, TypedDict
+from typing import Any, Callable, Tuple, TypedDict, Literal
 from pathlib import Path
 
 from ...config import ConfigurationError
@@ -18,21 +18,20 @@ logger = logging.getLogger(__name__)
 # =================================
 # Custom Process Management
 # =================================
-import os
 import atexit
 
-_MCP_CLEANUP_WITH_PSUTIL = str(os.getenv("MCP_CLEANUP_WITH_PSUTIL", "true")).lower() in ("true", "1", "yes")
-
+_HAS_PSUTIL = True
 try:
     import psutil
 except ImportError:
-    _MCP_CLEANUP_WITH_PSUTIL = False
+    _HAS_PSUTIL = False
+    logger.warning("`psutil` package is not installed. MCP cleanup will not be using `psutil`.")
 
-def kill_process_tree(pid: int, expected_create_time: float = None):
+def kill_process_tree(pid: int, expected_create_time: float = None, mcp_cleanup_method: str = "psutil"):
     """Gracefully terminates a process and all its descendants with PID-recycle protection."""
-    if not _MCP_CLEANUP_WITH_PSUTIL:
+    if not mcp_cleanup_method == "psutil" or not _HAS_PSUTIL:
         return
-    import psutil
+
     import contextlib
     with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied):
         parent = psutil.Process(pid)
@@ -112,9 +111,30 @@ class GlobalMCPRegistry:
     _global_lock = asyncio.Lock()
     _failed_sessions: set[Tuple] = set() # Track failed identity keys
 
-    def __new__(cls):
+    def __init__(self, mcp_cleanup_method: Literal["default", "psutil"] = "psutil"):
+        if hasattr(self, "_initialized"):
+            return
+        self._initialized = True
+        
+        cleaned_method = mcp_cleanup_method.strip().lower()
+        
+        if cleaned_method not in {"default", "psutil"}:
+            raise ValueError(
+                f"Invalid cleanup method '{mcp_cleanup_method}'. "
+                "Must be 'default' or 'psutil'."
+            )
+        
+        if cleaned_method == "psutil" and not _HAS_PSUTIL:
+            logger.warning("`psutil` not installed, falling back to default cleanup.")
+            cleaned_method = "default"
+        
+        self.mcp_cleanup_method = cleaned_method
+
+    def __new__(cls, *args, **kwargs):
         if cls._instance is None:
-            cls._instance = super(GlobalMCPRegistry, cls).__new__(cls)
+            # We capture *args and **kwargs here so the signature matches,
+            # but we do NOT pass them up to object.__new__
+            cls._instance = super().__new__(cls)
         return cls._instance
     
     @staticmethod
@@ -212,14 +232,14 @@ class GlobalMCPRegistry:
 
                     server_params = StdioServerParameters(command=command, args=args, env=env)
                     
-                    if _MCP_CLEANUP_WITH_PSUTIL:
+                    if self.mcp_cleanup_method == "psutil":
                         import psutil
                         current_process = psutil.Process(os.getpid())
                         children_before = set(current_process.children(recursive=False))
 
                     async with stdio_client(server_params, errlog=err_stream) as (read_stream, write_stream):
                         try:   
-                            if _MCP_CLEANUP_WITH_PSUTIL:
+                            if self.mcp_cleanup_method == "psutil":
                                 children_after = set(current_process.children(recursive=False))
                                 new_children = list(children_after - children_before)
 
@@ -259,7 +279,7 @@ class GlobalMCPRegistry:
                                         # Normal heartbeat
                                         pass
                         finally:
-                            if _MCP_CLEANUP_WITH_PSUTIL:
+                            if self.mcp_cleanup_method == "psutil":
                                 pid_to_kill = session_ref.get("pid")
                                 birth_time = session_ref.get("create_time")
                                 if pid_to_kill:
@@ -363,7 +383,12 @@ class MCPClientManager:
     when server configurations are identical.
     """
 
-    def __init__(self, config_path: str | Path | None = None, config: dict[str, Any] | None = None, on_server_death: Callable[[str, Exception], Any] | None = None):
+    def __init__(
+            self, config_path: str | Path | None = None, 
+            config: dict[str, Any] | None = None, 
+            on_server_death: Callable[[str, Exception], Any] | None = None,
+            mcp_cleanup_method: Literal["default", "psutil"] = "psutil"
+        ):
         """
         Initialize the MCP client manager.
 
@@ -376,7 +401,7 @@ class MCPClientManager:
         self.config = config
         self.on_server_death = on_server_death
         self.sessions: list[dict] = []
-        self._registry = GlobalMCPRegistry()
+        self._registry = GlobalMCPRegistry(mcp_cleanup_method=mcp_cleanup_method)
 
     def load_config(self) -> dict[str, Any]:
         """
