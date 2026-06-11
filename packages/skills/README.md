@@ -31,10 +31,12 @@ async def main():
 
     # 2. Wrap your standard event handler
     # `error_threshold` defines how many transient errors must occur before 
-    # the agent's successful recovery is deemed "skill-worthy"
+    # the agent's successful recovery is deemed "skill-worthy".
+    # `tool_call_threshold` tracks excessive meandering/inefficiency.
     skill_aware_handler = AutoSkillObserver(
         extractor=extractor,
         error_threshold=2,
+        tool_call_threshold=6,
         base_handler=PrintHandler()
     )
 

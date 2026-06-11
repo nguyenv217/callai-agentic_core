@@ -18,8 +18,8 @@ class SkillExtractor:
     async def extract_skill(self, messages: list[dict]) -> bool:
         # Appending directly to the existing sequence guarantees a prefix cache hit on supported providers
         prompt = (
-            "Meta-Cognitive Reflection: You have just successfully completed a task that required some trial-and-error. "
-            "Review the conversation history above. Extract the optimal, error-free path into a reusable skill "
+            "Meta-Cognitive Reflection: You have just successfully completed a task that required some trial-and-error, redundant tool calls, or error recoveries. "
+            "Review the conversation history above. Extract the optimal, direct, error-free path into a reusable skill "
             "for future agents. Identify the exact tool sequences that worked and explicitly note the mistakes/pitfalls to avoid. "
             "You MUST use the `save_skill` tool to output your structural synthesis."
         )

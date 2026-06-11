@@ -10,13 +10,15 @@ logger = logging.getLogger(__name__)
 class AutoSkillObserver(AgentEventHandler):
     """
     Passively monitors agent execution over a session.
-    Accumulates errors and tracks explicit task completion (e.g. via announce_finish).
+    Accumulates errors and tracks excessive tool usage/inefficiencies.
     """
-    def __init__(self, extractor: SkillExtractor, error_threshold: int = 3, base_handler: AgentEventHandler | None = None):
+    def __init__(self, extractor: SkillExtractor, error_threshold: int = 3, tool_call_threshold: int = 6, base_handler: AgentEventHandler | None = None):
         self.extractor = extractor
         self.error_threshold = error_threshold
+        self.tool_call_threshold = tool_call_threshold
         self.base_handler = base_handler
         self._session_error_count = 0
+        self._session_tool_call_count = 0
         self._task_completed = False
 
     async def on_turn_start(self) -> None:
@@ -32,6 +34,7 @@ class AutoSkillObserver(AgentEventHandler):
         if self.base_handler: await self.base_handler.on_tool_call_session_start(reasoning_text, tool_calls, iteration, max_iterations)
 
     async def on_tool_start(self, tool_name: str, tool_id: str, tool_arg: str | dict | None = None) -> DecisionEvent[ToolStartAction]:
+        self._session_tool_call_count += 1
         if self.base_handler:
             return await self.base_handler.on_tool_start(tool_name, tool_id, tool_arg)
         return await super().on_tool_start(tool_name, tool_id, tool_arg)
