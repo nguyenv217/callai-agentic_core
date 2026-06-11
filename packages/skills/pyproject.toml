@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "callai-agentic_core-skills"
+version = "0.1.0"
+description = "Autonomous skill evolution and extraction module for callai-agentic_core"
+requires-python = ">=3.10"
+dependencies = [
+    "callai-agentic_core>=0.6.6"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentic_core_skills"]

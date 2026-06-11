@@ -459,31 +459,35 @@ tools = ToolManager(
 ## Structure
  
  ```
- agentic_core/
- ├── __init__.py              
- ├── engine.py                # AgentRunner (The execution loop)
- ├── agents/                  # Agent construction and orchestration
- │   └── builder.py           # Agent builder logic
- ├── llm_providers/           # LLM Adapters (OpenAI, Anthropic, Ollama)
- │   ├── base.py              # Base LLM interface
- │   ├── openai.py            # OpenAI/Compatible provider
- │   ├── anthropic.py         # Anthropic Claude provider
- │   └── ollama.py            # Local Ollama provider
- ├── memory/                  # Context and state management
- │   ├── manager.py           # MemoryManager
- │   └── strategies.py        # Truncation strategies
- ├── handlers/               # Event logging and observation
- │   ├── base.py              # Base Handler
- │   ├── dag.py               # `DAGEventHandler` for `DAGAgentRunner`-specific event hooks
- │   └── standard.py          # Default/Print handlers
- ├── tools/                   # Tooling system
- │   ├── base.py              # `BaseTool`, schemas, etc.
- │   ├── mcp.py               # MCP server management
- │   ├── 🔍 rag/             # Custom RAG-based tool suite, supporting your custom backends, default options: ChromaDB, Sqlite. see 'docs/RAG_TOOLS.md'
- │   └── manager.py           # `ToolManager` class
- └── interfaces/              # Type definitions and Protocols
-     ├── llm.py
-     └── events.py
+ callai-agentic_core/
+ ├── packages/                # Extensible Monorepo Packages
+ │   ├── rag/                 # RAG components
+ │   ├── shell/               # Safe shell execution & docker sandboxing
+ │   └── skills/              # Autonomous skill evolution and extraction
+ └── agentic_core/
+     ├── __init__.py              
+     ├── engine.py                # AgentRunner (The execution loop)
+     ├── agents/                  # Agent construction and orchestration
+     │   └── builder.py           # Agent builder logic
+     ├── llm_providers/           # LLM Adapters (OpenAI, Anthropic, Ollama)
+     │   ├── base.py              # Base LLM interface
+     │   ├── openai.py            # OpenAI/Compatible provider
+     │   ├── anthropic.py         # Anthropic Claude provider
+     │   └── ollama.py            # Local Ollama provider
+     ├── memory/                  # Context and state management
+     │   ├── manager.py           # MemoryManager
+     │   └── strategies.py        # Truncation strategies
+     ├── handlers/               # Event logging and observation
+     │   ├── base.py              # Base Handler
+     │   ├── dag.py               # `DAGEventHandler` for `DAGAgentRunner`-specific event hooks
+     │   └── standard.py          # Default/Print handlers
+     ├── tools/                   # Tooling system
+     │   ├── base.py              # `BaseTool`, schemas, etc.
+     │   ├── mcp.py               # MCP server management
+     │   └── manager.py           # `ToolManager` class
+     └── interfaces/              # Type definitions and Protocols
+         ├── llm.py
+         └── events.py
  ```
 
 ---
