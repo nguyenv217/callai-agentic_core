@@ -13,3 +13,6 @@ dependencies = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentic_core_skills"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
