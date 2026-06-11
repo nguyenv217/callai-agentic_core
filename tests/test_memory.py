@@ -5,8 +5,8 @@ from agentic_core.memory.strategies import DefaultTruncationStrategy, NoTruncati
 def test_default_truncation_strategy_text():
     strategy = DefaultTruncationStrategy(text_threshold=10)
     messages = [{"role": "user", "content": "This is a very long message that should be truncated"}]
-    # Max chars set very low to force truncation
-    truncated = strategy.truncate(messages, max_chars=15)
+    # Max chars set to allow the truncated message but not the full one
+    truncated = strategy.truncate(messages, max_chars=50)
     
     assert "[LONG TEXT TRUNCATED]" in truncated[0]["content"]
     assert len(truncated[0]["content"]) <= 10 + len("\n... [LONG TEXT TRUNCATED] ...")
@@ -17,7 +17,8 @@ def test_default_truncation_strategy_json_array():
     data = [{"id": i, "val": "some data"} for i in range(10)]
     messages = [{"role": "tool", "content": json.dumps(data)}]
     
-    truncated = strategy.truncate(messages, max_chars=50)
+    # Needs to be > ~120 to fit the truncated payload without dropping the entire message
+    truncated = strategy.truncate(messages, max_chars=150)
     
     assert "[ARRAY TRUNCATED]" in truncated[0]["content"]
     # Check that we kept some elements (the strategy keeps first 3)

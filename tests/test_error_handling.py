@@ -121,15 +121,14 @@ class TestSmartRetryHandler:
         assert isinstance(result.action, ErrorDecision.ABANDON)
     
     @pytest.mark.asyncio
-    async def test_context_limit_error_resolves_with_message(self):
+    async def test_context_limit_error_triggers_retry(self):
         handler = SmartRetryHandler()
         context = ErrorContext(error=RuntimeError("Token limit exceeded"))
         
         result = await handler.on_error(context)
         
-        # Simulating a decay/fallback by injecting a resolution message
-        assert isinstance(result.action, ErrorDecision.RESOLVE_WITH)
-        assert "limit" in result.action.msg.lower()
+        # Simulating a dynamic retry so the engine loop can natively truncate memory
+        assert isinstance(result.action, ErrorDecision.RETRY)
     
     @pytest.mark.asyncio
     async def test_max_retries_exceeded_abandons(self):
