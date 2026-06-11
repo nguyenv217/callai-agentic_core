@@ -111,10 +111,17 @@ class GlobalMCPRegistry:
     _global_lock = asyncio.Lock()
     _failed_sessions: set[Tuple] = set() # Track failed identity keys
 
-    def __init__(self, mcp_cleanup_method: Literal["default", "psutil"] = "psutil"):
+    def __init__(
+        self, 
+        mcp_cleanup_method: Literal["default", "psutil"] = "psutil",
+        server_init_timeout: float = 60.0,
+        server_shutdown_timeout: float = 2.0
+    ):
         if hasattr(self, "_initialized"):
             return
         self._initialized = True
+        self.server_init_timeout = server_init_timeout
+        self.server_shutdown_timeout = server_shutdown_timeout
         
         cleaned_method = mcp_cleanup_method.strip().lower()
         
@@ -314,11 +321,11 @@ class GlobalMCPRegistry:
 
             task = asyncio.create_task(server_task(), name=f"mcp_server_{server_name}")
             try:
-                await asyncio.wait_for(init_event.wait(), timeout=60.0)
+                await asyncio.wait_for(init_event.wait(), timeout=self.server_init_timeout)
             except asyncio.TimeoutError:
                 task.cancel()
                 self._failed_sessions.add(identity_key)
-                raise MCPTimeoutError(f"Server '{server_name}' failed to initialize within 60 seconds (timeout).")
+                raise MCPTimeoutError(f"Server '{server_name}' failed to initialize within {self.server_init_timeout} seconds (timeout).")
 
             if session_ref["error"]: 
                 task.cancel() # ensure the task is killed if it died with an error
@@ -334,7 +341,7 @@ class GlobalMCPRegistry:
         session_info['shutdown_event'].set()
         task = session_info['task']
         try: 
-            await asyncio.wait_for(task, timeout=2.0)
+            await asyncio.wait_for(task, timeout=self.server_shutdown_timeout)
         except (asyncio.TimeoutError, asyncio.CancelledError):
             task.cancel()
             try:
@@ -387,7 +394,9 @@ class MCPClientManager:
             self, config_path: str | Path | None = None, 
             config: dict[str, Any] | None = None, 
             on_server_death: Callable[[str, Exception], Any] | None = None,
-            mcp_cleanup_method: Literal["default", "psutil"] = "psutil"
+            mcp_cleanup_method: Literal["default", "psutil"] = "psutil",
+            server_init_timeout: float = 60.0,
+            server_shutdown_timeout: float = 2.0
         ):
         """
         Initialize the MCP client manager.
@@ -401,7 +410,11 @@ class MCPClientManager:
         self.config = config
         self.on_server_death = on_server_death
         self.sessions: list[dict] = []
-        self._registry = GlobalMCPRegistry(mcp_cleanup_method=mcp_cleanup_method)
+        self._registry = GlobalMCPRegistry(
+            mcp_cleanup_method=mcp_cleanup_method,
+            server_init_timeout=server_init_timeout,
+            server_shutdown_timeout=server_shutdown_timeout
+        )
 
     def load_config(self) -> dict[str, Any]:
         """

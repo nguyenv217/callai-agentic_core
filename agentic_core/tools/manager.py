@@ -6,8 +6,6 @@ import atexit
 import inspect
 import logging
 
-from agentic_core.constants import MCP_INITLIAZE_TIMEOUT
-
 from ..config import ConfigurationError
 from .protocols import ToolExecutionController
 
@@ -44,7 +42,8 @@ class ToolManager:
         extra_env: dict[str, str] | None = None,
         extra_context: dict[str, Any] | None = None,
         on_server_error: Callable[[str, Exception], None] | None = None,
-        tenant_id: str = "default"
+        tenant_id: str = "default",
+        mcp_initialize_timeout: float = 15.0
     ):
         """
         Initializes the ToolManager.
@@ -67,6 +66,7 @@ class ToolManager:
         self._plugins: dict[str, BaseTool] = {}
         
         self.tenant_id = tenant_id
+        self.mcp_initialize_timeout = mcp_initialize_timeout
 
         # Toolsets initialization
         # Support optional prompts per toolset. `toolsets` can be a dict mapping toolset name to either a list of tool names
@@ -202,7 +202,7 @@ class ToolManager:
             return
             
         try:
-            await asyncio.wait_for(self.initialize_mcp(), timeout=MCP_INITLIAZE_TIMEOUT)
+            await asyncio.wait_for(self.initialize_mcp(), timeout=self.mcp_initialize_timeout)
             # self._mcp_initialized = True
             logger.debug("MCP servers initialized successfully.")
         except asyncio.TimeoutError:

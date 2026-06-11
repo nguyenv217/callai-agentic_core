@@ -11,12 +11,13 @@ class SessionManager:
     Manages cached AgentRunner instances to preserve memory and MCP connections.
     Includes an automatic TTL (Time-To-Live) cleanup mechanism to prevent memory leaks.
     """
-    def __init__(self, ttl_seconds: int = 3600, cleanup_interval: int = 600):
+    def __init__(self, ttl_seconds: int = 3600, cleanup_interval: int = 600, mcp_shutdown_timeout: float = 10.0):
         # Store dicts containing both the runner and its last accessed time
         self._sessions: dict[str, dict] = {} 
         self._lock = None
         self.ttl_seconds = ttl_seconds
         self.cleanup_interval = cleanup_interval
+        self.mcp_shutdown_timeout = mcp_shutdown_timeout
         self._cleanup_task: asyncio.Task | None = None
 
     def _get_key(self, tenant_id: str, session_id: str) -> str:
@@ -62,7 +63,7 @@ class SessionManager:
             if hasattr(runner, "tools") and hasattr(runner.tools, "shutdown_mcp"):
                 try:
                     # Apply a timeout so a hanging MCP server doesn't stall the cleanup loop
-                    await asyncio.wait_for(runner.tools.shutdown_mcp(), timeout=10.0)
+                    await asyncio.wait_for(runner.tools.shutdown_mcp(), timeout=self.mcp_shutdown_timeout)
                 except Exception as e:
                     logger.error(f"Error shutting down MCP for stale session {key}: {e}")
 
@@ -102,4 +103,4 @@ class SessionManager:
 
 # Global singleton for the convenience chat() function
 # Defaults: 1 hour (3600s) TTL, sweeping every 10 minutes (600s)
-global_session_manager = SessionManager(ttl_seconds=3600, cleanup_interval=600)
+global_session_manager = SessionManager(ttl_seconds=3600, cleanup_interval=600, mcp_shutdown_timeout=10.0)

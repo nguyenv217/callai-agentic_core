@@ -1,12 +1,10 @@
 import hashlib
 import json
 
-from agentic_core.constants import MEMORY_MANAGER_MAX_CHARS
-
 from .strategies import NoTruncationStrategy, TruncationStrategy, DefaultTruncationStrategy
 
 class MemoryManager:
-    def __init__(self, max_chars: int = MEMORY_MANAGER_MAX_CHARS, strategy: TruncationStrategy = None):
+    def __init__(self, max_chars: int = 80000, strategy: TruncationStrategy = None):
         """
         Initialize the MemoryManager instance.
 

@@ -30,6 +30,10 @@ class SpawnSubAgentsTool(BaseTool):
     """
     name = "spawn_subagents"
 
+    def __init__(self, default_max_chars: int = 5000):
+        super().__init__()
+        self.default_max_chars = default_max_chars
+
     schema = {
         "type": "function",
         "function": {
@@ -172,7 +176,7 @@ class SpawnSubAgentsTool(BaseTool):
                     if isinstance(node.error, IterationLimitReachedError):
                         res_text += " (Hint: You can retry spawning this subagent by providing a higher 'max_iterations' in the node config)"
 
-                max_chars = context.get("subagent_max_chars") or 5000
+                max_chars = context.get("subagent_max_chars") or self.default_max_chars
                 if len(res_text) > max_chars:
                     res_text = res_text[:max_chars] + "\n... [Truncated to preserve context limit]"
                 status = node.state.name
