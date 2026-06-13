@@ -51,8 +51,8 @@ def _extract_executables(cmd_str: str) -> list[str]:
         return []
         
     try:
-        # posix=True ensures quotes and escapes are handled correctly
-        tokens = shlex.split(cmd_str, posix=True)
+        # posix=(os.name != "nt") preserves backslashes on Windows while still parsing quotes
+        tokens = shlex.split(cmd_str, posix=(os.name != "nt"))
     except ValueError as e:
         raise ValueError(f"Malformed shell command: {e}")
         
@@ -208,26 +208,26 @@ class ShellExecTool(BaseTool):
                 return f"Error: {type(e).__name__}: {e}"
 
         # Local execution path (best-effort)
-        # Cross-platform shell execution
-        # Windows: cmd.exe /c <command>
-        # Others: use platform default shell if available, otherwise fall back to /bin/sh.
-        if os.name == "nt":
-            shell_cmd = ["cmd.exe", "/c", cmd]
-        else:
-            shell = os.environ.get("SHELL")
-            if not shell:
-                # Common fallbacks on unix-like platforms
-                shell = "/bin/sh"
-            shell_cmd = [shell, "-c", cmd]
-
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *shell_cmd,
-                cwd=cwd,
-                env={**os.environ, **env} if env else None,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-            )
+            if os.name != "nt":
+                # Use explicit SHELL on POSIX if available
+                shell = os.environ.get("SHELL") or "/bin/sh"
+                proc = await asyncio.create_subprocess_exec(
+                    shell, "-c", cmd,
+                    cwd=cwd,
+                    env={**os.environ, **env} if env else None,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                )
+            else:
+                # Native shell execution prevents list2cmdline quote mutilation on Windows
+                proc = await asyncio.create_subprocess_shell(
+                    cmd,
+                    cwd=cwd,
+                    env={**os.environ, **env} if env else None,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                )
 
             try:
                 stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)

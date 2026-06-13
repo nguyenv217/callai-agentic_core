@@ -61,10 +61,15 @@ class OpenAILLM(ILLMClient):
             AsyncIterator[LLMResponse]: An iterator of LLMResponse objects.
         """
         try:
+            clean_messages = []
+            for msg in messages:
+                clean_msg = {k: v for k, v in msg.items() if k not in ("reasoning", "usage")}
+                clean_messages.append(clean_msg)
+
             # Build request kwargs dynamically to avoid SDK validation errors when tools=None is passed
             req_kwargs = {
                 "model": self.model,
-                "messages": messages,
+                "messages": clean_messages,
                 **self.extra_kwargs,
                 **kwargs
             }

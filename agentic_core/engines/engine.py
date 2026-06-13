@@ -292,7 +292,9 @@ class AgentRunner:
                 self.memory.add_message({
                     "role": "assistant",
                     "content": turn_response.get("text", ""),
-                    "tool_calls": turn_response["tool_calls"]
+                    "reasoning": turn_response.get("reasoning", ""),
+                    "tool_calls": turn_response["tool_calls"],
+                    "usage": total_usage.copy() if total_usage else None
                 })
                 final_response.text += turn_response.get("text", "")
                 final_response.reasoning += turn_response.get("reasoning", "")

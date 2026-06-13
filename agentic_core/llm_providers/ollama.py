@@ -60,13 +60,14 @@ class OllamaLLM(ILLMClient):
                         if url.startswith("data:"):
                             images.append(url.split(",", 1)[1])
                 
-                new_msg = dict(msg)
+                new_msg = {k: v for k, v in msg.items() if k not in ("reasoning", "usage")}
                 new_msg["content"] = "\n".join(text_parts)
                 if images:
                     new_msg["images"] = images
                 ollama_messages.append(new_msg)
             else:
-                ollama_messages.append(msg)
+                new_msg = {k: v for k, v in msg.items() if k not in ("reasoning", "usage")}
+                ollama_messages.append(new_msg)
 
         req_kwargs["messages"] = ollama_messages
 
