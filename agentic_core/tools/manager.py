@@ -210,7 +210,7 @@ class ToolManager:
         except Exception as e:
             logger.error(f"MCP initialization failed: {e}")
     
-    def add_mcp_server(self, server_name: str, command: str, args: list[str] = None, env: dict[str, str] = None, log_file: str = None, timeout_s: float = 60.0):
+    def add_mcp_server(self, server_name: str, command: str = "", args: list[str] = None, env: dict[str, str] = None, log_file: str = None, timeout_s: float = 60.0, url: str = None):
         """
         Programmatically add an MCP server configuration.
         
@@ -221,6 +221,7 @@ class ToolManager:
             env: Environment variables for the server process
             log_file: Optional path to log stderr for server output. Useful for debugging and avoid conflicts with TUI apps.
             timeout_s: Maximum execution time in seconds for the server's tools.
+            url: Optional HTTP URL for servers implementing the SSE transport protocol.
         """
         if self._mcp_init_in_progress:
             logger.warning("MCP is initializing. Please wait or restart the program.")
@@ -239,7 +240,8 @@ class ToolManager:
             "args": args,
             "env": env,
             "log_file": log_file,
-            "timeout_s": timeout_s
+            "timeout_s": timeout_s,
+            "url": url
         }
         
         # Reset MCP initialization state to force reload on next ensure_mcp_initialized call
@@ -368,6 +370,24 @@ class ToolManager:
     def get_active_servers(self) -> list[str]:
         return self._mcp_manager.get_active_servers() if self._mcp_manager else []
     
+    def clear_mcp_errors(self, server_names: list[str] | None = None):
+        """
+        Clears the failed circuit-breaker state for specified MCP servers.
+        
+        Args:
+            server_names: List of server names to clear. If None, clears all.
+        """
+        if not self._mcp_manager:
+            return
+            
+        config = self._mcp_manager.load_config()
+        servers = config.get("mcpServers", {})
+        
+        for name, cfg in servers.items():
+            if server_names is None or name in server_names:
+                identity_key = self._mcp_manager._registry._get_identity_key(cfg, self.tenant_id)
+                self._mcp_manager._registry._failed_sessions.discard(identity_key)
+
     async def disconnect_mcp(self, server_names: list[str] | None = None):
         """
         Disconnect from MCP server(s) and wipe the tools out of registries.

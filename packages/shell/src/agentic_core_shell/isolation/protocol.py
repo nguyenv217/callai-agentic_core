@@ -6,6 +6,8 @@ from typing import TypedDict, Literal, NotRequired
 class IsolationDockerConfig(TypedDict, total=False):
     type: Literal["docker"]
     image: NotRequired[str]
+    container_name: NotRequired[str]
+    container_cmd: NotRequired[str]
     workdir: NotRequired[str]
     mount_cwd: NotRequired[bool]
     disable_network: NotRequired[bool]

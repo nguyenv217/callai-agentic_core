@@ -49,6 +49,7 @@ class DockerIsolationConfig:
     disable_network: bool = False
     persistent_container: bool = True
     container_name: str | None = None
+    container_cmd: str | None = ""
     setup_commands: list[str] | None = None
     volumes: list[str] | None = None
     publish_ports: list[str] | None = None
@@ -63,6 +64,7 @@ class DockerIsolationBackend(IsolationBackend):
         if shutil.which("docker") is None:
             raise RuntimeError("Docker is not installed or not on PATH.")
         self._container_started = False
+        self._we_created_container = False
         self._container_name = self.config.container_name or f"callai_sandbox_{os.getpid()}_{id(self)}"
         self._cleaned_up = False
         
@@ -71,7 +73,7 @@ class DockerIsolationBackend(IsolationBackend):
             atexit.register(self._atexit_cleanup)
 
     def _sync_cleanup(self, blocking: bool = False):
-        if self._container_started and not self._cleaned_up:
+        if self._container_started and not self._cleaned_up and self._we_created_container:
             import subprocess
             try:
                 if blocking:
@@ -101,12 +103,36 @@ class DockerIsolationBackend(IsolationBackend):
     async def _ensure_container(self, cwd: str | None = None):
         if self._container_started:
             return
-        
+            
         cfg = self.config
-        mount_args = []
         self._mounted_cwd = None
         if cfg.mount_cwd and cwd:
             self._mounted_cwd = os.path.abspath(cwd)
+
+        check_proc = await asyncio.create_subprocess_exec(
+            "docker", "inspect", "-f", "{{.State.Running}}", self._container_name,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        out, _ = await check_proc.communicate()
+        if check_proc.returncode == 0:
+            if out.decode('utf-8', errors='ignore').strip() == "true":
+                self._container_started = True
+                return
+            else:
+                start_proc = await asyncio.create_subprocess_exec(
+                    "docker", "start", self._container_name,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                )
+                await start_proc.communicate()
+                if start_proc.returncode == 0:
+                    self._container_started = True
+                    return
+        
+        self._we_created_container = True
+        mount_args = []
+        if self._mounted_cwd:
             mount_args = ["-v", f"{self._mounted_cwd}:{cfg.workdir}"]
             
         net_args = ["--network", "none"] if cfg.disable_network else []
@@ -132,7 +158,7 @@ class DockerIsolationBackend(IsolationBackend):
         user_args = ["-u", cfg.user] if cfg.user else []
 
         cmd = [
-            "docker", "run", "-d", "--rm",
+            "docker", "run", "-d", "-i", "-t", "--rm",
             "--name", self._container_name,
             "-w", cfg.workdir,
             *net_args,
@@ -143,9 +169,12 @@ class DockerIsolationBackend(IsolationBackend):
             *priv_args,
             *extra_args,
             *mount_args,
-            cfg.image,
-            "tail", "-f", "/dev/null"
+            cfg.image
         ]
+        
+        if cfg.container_cmd:
+            import shlex
+            cmd.extend(shlex.split(cfg.container_cmd))
         
         proc = await asyncio.create_subprocess_exec(
             *cmd,

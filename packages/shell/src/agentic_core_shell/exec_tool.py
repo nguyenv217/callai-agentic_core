@@ -128,6 +128,8 @@ class ShellExecTool(BaseTool):
             try:
                 docker_cfg = DockerIsolationConfig(
                     image=iso_cfg.get("image", "ubuntu:latest"),
+                    container_name=iso_cfg.get("container_name") or None,
+                    container_cmd=iso_cfg.get("container_cmd", ""),
                     workdir=iso_cfg.get("workdir", "/workspace"),
                     mount_cwd=bool(iso_cfg.get("mount_cwd", False)),
                     disable_network=bool(iso_cfg.get("disable_network", False)),

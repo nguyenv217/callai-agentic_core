@@ -8,6 +8,7 @@ from ...config import ConfigurationError
 
 try:
     from mcp.client.stdio import stdio_client
+    from mcp.client.sse import sse_client
     from mcp import ClientSession, StdioServerParameters
 except ImportError:
     raise ConfigurationError("Python `mcp` package is not installed. Please install with: `pip install mcp`")
@@ -69,19 +70,29 @@ class MCPTimeoutError(Exception):
     pass
 
 class _MCPSessionProxy:
-    def __init__(self, request_queue: asyncio.Queue, loop: asyncio.AbstractEventLoop, server_name: str):
+    def __init__(self, request_queue: asyncio.Queue, loop: asyncio.AbstractEventLoop, server_name: str, check_alive: Callable[[], bool] = lambda: True):
         self.request_queue = request_queue
         self.loop = loop  # The loop where the background task lives
         self.server_name = server_name
+        self.check_alive = check_alive
 
     async def _send_to_actor(self, action, payload):
         """Safely injects a command into the actor's loop from ANY thread/loop."""
+        if not self.check_alive():
+            raise RuntimeError(f"MCP actor loop for {self.server_name} is dead.")
+            
         import concurrent.futures
         thread_safe_fut = concurrent.futures.Future()
         def _inject():
             self.request_queue.put_nowait((action, payload, thread_safe_fut))
         self.loop.call_soon_threadsafe(_inject)
-        return await asyncio.wrap_future(thread_safe_fut)
+        
+        while not thread_safe_fut.done():
+            if not self.check_alive():
+                raise RuntimeError(f"MCP actor loop for {self.server_name} died while waiting for response.")
+            await asyncio.sleep(0.1)
+            
+        return thread_safe_fut.result()
 
     async def list_tools(self):
         logger.info(f"[{self.server_name}] PROXY: Sending 'list_tools' to actor loop...")
@@ -148,13 +159,18 @@ class GlobalMCPRegistry:
     def _get_identity_key(server_config: dict[str, Any], tenant_id: str = "default") -> Tuple:
         """Identity key hash from (command, args, eng) and a tenant_id to prevent cross-tenant poisoning"""
         import hashlib
+        env_str = json.dumps(server_config.get("env", {}), sort_keys=True)
+        env_hash = hashlib.sha256(env_str.encode()).hexdigest()
+        
+        url = server_config.get("url")
+        if url:
+            return (tenant_id, "sse", url, env_hash)
+            
         command = server_config.get("command", "python")
         raw_args = server_config.get("args", [])
         if isinstance(raw_args, str):
             raw_args = [raw_args]
         args = tuple(raw_args)
-        env_str = json.dumps(server_config.get("env", {}), sort_keys=True)
-        env_hash = hashlib.sha256(env_str.encode()).hexdigest()
         return (tenant_id, command, args, env_hash)
 
     async def _get_lock_for_identity(self, identity_key: Tuple) -> asyncio.Lock:
@@ -183,17 +199,26 @@ class GlobalMCPRegistry:
         lock = await self._get_lock_for_identity(identity_key)
         async with lock:
             if identity_key in self._sessions:
-                logger.info(f"[Registry] Reusing existing session for '{server_name}' (Identity: {identity_key})")
-                self._sessions[identity_key]['ref_count'] += 1
-                return self._sessions[identity_key]
+                if self._sessions[identity_key]["task"].done():
+                    logger.warning(f"[Registry] Existing session for '{server_name}' is dead. Cleaning up.")
+                    self._sessions.pop(identity_key)
+                else:
+                    logger.info(f"[Registry] Reusing existing session for '{server_name}' (Identity: {identity_key})")
+                    self._sessions[identity_key]['ref_count'] += 1
+                    return self._sessions[identity_key]
 
             logger.info(f"[Registry] Creating new session for '{server_name}' (Identity: {identity_key})")
             import re, os, shutil
-            raw_command = server_config.get("command", "python")
-            args = server_config.get("args", [])
-            command = shutil.which(raw_command)
-            if not command: 
-                raise RuntimeError(f"Could not find {raw_command}")
+            url = server_config.get("url")
+            command = None
+            args = []
+            
+            if not url:
+                raw_command = server_config.get("command", "python")
+                args = server_config.get("args", [])
+                command = shutil.which(raw_command)
+                if not command: 
+                    raise RuntimeError(f"Could not find {raw_command}")
 
             safe_env_keys = ["PATH", "HOME", "USERPROFILE", "SystemRoot", "APPDATA", "LOCALAPPDATA"]
             env = {k: os.environ[k] for k in safe_env_keys if k in os.environ}
@@ -229,72 +254,94 @@ class GlobalMCPRegistry:
             async def server_task():
                 err_stream = None
                 try:
-                    log_file = server_config.get("log_file")
-                    if log_file:
-                        os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
-                        err_stream = open(log_file, "a", encoding="utf-8")
-                    else:
-                        # Provide an explicit devnull handle if no log file is set
-                        err_stream = open(os.devnull, "w")
+                    async def actor_loop(read_stream, write_stream):
+                        async with ClientSession(read_stream, write_stream) as session:
+                            await session.initialize()
+                            init_event.set()
 
-                    server_params = StdioServerParameters(command=command, args=args, env=env)
-                    
-                    if self.mcp_cleanup_method == "psutil":
-                        import psutil
-                        current_process = psutil.Process(os.getpid())
-                        children_before = set(current_process.children(recursive=False))
-
-                    async with stdio_client(server_params, errlog=err_stream) as (read_stream, write_stream):
-                        try:   
-                            if self.mcp_cleanup_method == "psutil":
-                                children_after = set(current_process.children(recursive=False))
-                                new_children = list(children_after - children_before)
-
-                                if new_children:
-                                    new_children.sort(key=lambda p: p.create_time())
-                                    wrapper_proc = new_children[-1]
-                                    session_ref["pid"] = wrapper_proc.pid
-                                    session_ref["create_time"] = wrapper_proc.create_time()
-                                    _ACTIVE_MCP_PIDS.add((session_ref["pid"], session_ref["create_time"]))
-                                    logger.debug(f"[{server_name}] Captured wrapper PID: {session_ref['pid']}")
-
-                            async with ClientSession(read_stream, write_stream) as session:
-                                await session.initialize()
-                                init_event.set()
-
-                                logger.info(f"[{server_name}] ACTOR: Background task ready and polling queue.")
-                                while not shutdown_event.is_set():
+                            logger.info(f"[{server_name}] ACTOR: Background task ready and polling queue.")
+                            while not shutdown_event.is_set():
+                                try:
+                                    action, payload, fut = await asyncio.wait_for(request_queue.get(), timeout=0.5)
                                     try:
-                                        action, payload, fut = await asyncio.wait_for(request_queue.get(), timeout=0.5)
-                                        try:
-                                            if action == "list_tools":
-                                                res = await session.list_tools()
-                                                if not fut.done(): fut.set_result(res)
-                                            elif action == "call_tool":
-                                                res = await session.call_tool(payload["name"], arguments=payload.get("arguments"))
-                                                logger.info(f"[{server_name}] ACTOR: Successfully executed '{payload['name']}'")
-                                                if not fut.done(): fut.set_result(res)
-                                        except Exception as e:
-                                            if type(e).__name__ == "ClosedResourceError":
-                                                logger.debug(f"[{server_name}] ACTOR: Connection closed normally.")
-                                            else:
-                                                logger.exception(f"[{server_name}] ACTOR ERROR: {type(e).__name__} - {e}")
-                                            if not fut.done(): fut.set_exception(e)
-                                        finally:
-                                            request_queue.task_done()
-                                    except asyncio.TimeoutError: 
-                                        # Normal heartbeat
-                                        pass
-                        finally:
-                            if self.mcp_cleanup_method == "psutil":
-                                pid_to_kill = session_ref.get("pid")
-                                birth_time = session_ref.get("create_time")
-                                if pid_to_kill:
-                                    logger.debug(f"[{server_name}] Executing tree-killer on PID {pid_to_kill}")
-                                    kill_process_tree(pid_to_kill, expected_create_time=birth_time)
-                                    _ACTIVE_MCP_PIDS.discard((pid_to_kill, birth_time)) # cancellation happened, so no need for sync cleanup hook
+                                        if action == "list_tools":
+                                            res = await session.list_tools()
+                                            if not fut.done(): fut.set_result(res)
+                                        elif action == "call_tool":
+                                            res = await session.call_tool(payload["name"], arguments=payload.get("arguments"))
+                                            logger.info(f"[{server_name}] ACTOR: Successfully executed '{payload['name']}'")
+                                            if not fut.done(): fut.set_result(res)
+                                    except Exception as e:
+                                        if type(e).__name__ == "ClosedResourceError":
+                                            logger.debug(f"[{server_name}] ACTOR: Connection closed normally.")
+                                        else:
+                                            logger.exception(f"[{server_name}] ACTOR ERROR: {type(e).__name__} - {e}")
+                                        if not fut.done(): fut.set_exception(e)
+                                    finally:
+                                        request_queue.task_done()
+                                except asyncio.TimeoutError: 
+                                    # Normal heartbeat
+                                    pass
 
-                except Exception as e:
+                    if url:
+                        retries = 10
+                        for attempt in range(retries):
+                            try:
+                                async with sse_client(url) as (read_stream, write_stream):
+                                    await actor_loop(read_stream, write_stream)
+                                break
+                            except BaseException as e:
+                                if isinstance(e, asyncio.CancelledError):
+                                    raise
+                                if attempt < retries - 1:
+                                    logger.warning(f"[{server_name}] SSE connection failed, retrying in 2s... (Attempt {attempt+1}/{retries})")
+                                    await asyncio.sleep(2)
+                                else:
+                                    raise
+                    else:
+                        log_file = server_config.get("log_file")
+                        if log_file:
+                            os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
+                            err_stream = open(log_file, "a", encoding="utf-8")
+                        else:
+                            # Provide an explicit devnull handle if no log file is set
+                            err_stream = open(os.devnull, "w")
+
+                        server_params = StdioServerParameters(command=command, args=args, env=env)
+                        
+                        if self.mcp_cleanup_method == "psutil":
+                            import psutil
+                            current_process = psutil.Process(os.getpid())
+                            children_before = set(current_process.children(recursive=False))
+
+                        async with stdio_client(server_params, errlog=err_stream) as (read_stream, write_stream):
+                            try:   
+                                if self.mcp_cleanup_method == "psutil":
+                                    children_after = set(current_process.children(recursive=False))
+                                    new_children = list(children_after - children_before)
+
+                                    if new_children:
+                                        new_children.sort(key=lambda p: p.create_time())
+                                        wrapper_proc = new_children[-1]
+                                        session_ref["pid"] = wrapper_proc.pid
+                                        session_ref["create_time"] = wrapper_proc.create_time()
+                                        _ACTIVE_MCP_PIDS.add((session_ref["pid"], session_ref["create_time"]))
+                                        logger.debug(f"[{server_name}] Captured wrapper PID: {session_ref['pid']}")
+
+                                await actor_loop(read_stream, write_stream)
+
+                            finally:
+                                if self.mcp_cleanup_method == "psutil":
+                                    pid_to_kill = session_ref.get("pid")
+                                    birth_time = session_ref.get("create_time")
+                                    if pid_to_kill:
+                                        logger.debug(f"[{server_name}] Executing tree-killer on PID {pid_to_kill}")
+                                        kill_process_tree(pid_to_kill, expected_create_time=birth_time)
+                                        _ACTIVE_MCP_PIDS.discard((pid_to_kill, birth_time)) # cancellation happened, so no need for sync cleanup hook
+
+                except BaseException as e:
+                    if isinstance(e, asyncio.CancelledError):
+                        raise
                     is_process_lookup = False
                     if type(e).__name__ in ("ExceptionGroup", "BaseExceptionGroup"):
                         if any(type(sub_e).__name__ == "ProcessLookupError" for sub_e in getattr(e, "exceptions", [])):
@@ -320,6 +367,7 @@ class GlobalMCPRegistry:
                             pass
 
             task = asyncio.create_task(server_task(), name=f"mcp_server_{server_name}")
+            session_proxy.check_alive = lambda: not task.done()
             try:
                 await asyncio.wait_for(init_event.wait(), timeout=self.server_init_timeout)
             except asyncio.TimeoutError:
@@ -448,7 +496,12 @@ class MCPClientManager:
         return self.config
 
     def get_active_servers(self):
-        return [s['name'] for s in self.sessions]
+        active = []
+        for s in self.sessions:
+            task = s.get("task")
+            if task and not task.done():
+                active.append(s['name'])
+        return active
 
     async def initialize(self, allowed_servers: list[str] | None = None, extra_env: dict[str, str] | None = None, tenant_id: str = "default") -> bool:
         """
@@ -494,7 +547,7 @@ class MCPClientManager:
             )
 
             for name, result in zip(server_names, results):
-                if isinstance(result, Exception):
+                if isinstance(result, BaseException):
                     logger.error(f"Skipping server '{name}' due to error: {result}")
 
             return len(self.sessions) > 0
@@ -535,11 +588,16 @@ class MCPClientManager:
             return_exceptions=True
         )
 
+        dead_servers = []
         for session_name, result in zip(sessions, results):
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 logger.exception(f"Error listing tools from server '{session_name[0]}': {result}")
+                dead_servers.append(session_name[0])
             else:
                 all_tools.extend(result)
+                
+        if dead_servers:
+            await self.disconnect(dead_servers)
 
         return all_tools
 

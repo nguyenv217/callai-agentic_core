@@ -403,9 +403,10 @@ class AgentRunner:
                 yield StreamEvent(StreamEventType.ERROR, str(e), error=e)
                 final_response.error = e
         finally:
-            await handler.on_turn_complete(final_response)
             import sys
-            if sys.exc_info()[0] is not GeneratorExit:
+            is_generator_exit = sys.exc_info()[0] is GeneratorExit
+            await handler.on_turn_complete(final_response)
+            if not is_generator_exit:
                 yield StreamEvent(StreamEventType.FINAL_RESPONSE, final_response)
 
     async def run_turn(self, user_input: str | list[dict], handler: AgentEventHandler | None = None, config: RunnerConfig | None = None) -> AgentResponse:
