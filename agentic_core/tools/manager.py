@@ -196,15 +196,15 @@ class ToolManager:
             await self._mcp_manager.close() # this triggers shutdown event for all active serveers
             self._mcp_manager = None
 
-    async def ensure_mcp_initialized(self) -> None:
+    async def ensure_mcp_initialized(self, allowed_servers: list[str] | None = None) -> None:
         """Pure async lazy-loader for MCP servers."""
-        if not self.mcp_config_path or self._mcp_init_in_progress:
+        if not self.mcp_config_path and not self._mcp_config_dict:
             return
-            
+        if self._mcp_init_in_progress:
+            return
+
         try:
-            await asyncio.wait_for(self.initialize_mcp(), timeout=self.mcp_initialize_timeout)
-            # self._mcp_initialized = True
-            logger.debug("MCP servers initialized successfully.")
+            await asyncio.wait_for(self.initialize_mcp(allowed_servers=allowed_servers), timeout=self.mcp_initialize_timeout)
         except asyncio.TimeoutError:
             logger.error("MCP initialization timed out after 15 seconds.")
         except Exception as e:
@@ -426,11 +426,12 @@ class ToolManager:
             return f"Error: Tool '{tool_name}' not found or not registered."
         
         try:
+            turn_extra_context = extra_context or self.extra_context
+
             # Load all servers if agent call discovery tools
             if tool_name in self._discovery_tools:
-                await self.ensure_mcp_initialized()
-
-            turn_extra_context = extra_context or self.extra_context
+                allowed = turn_extra_context.get("mcp_active_servers")
+                await self.ensure_mcp_initialized(allowed_servers=allowed)
 
             context = {
                 "active_sessions": self.active_sessions,

@@ -101,20 +101,19 @@ class DockerIsolationBackend(IsolationBackend):
         self._sync_cleanup(blocking=False)
         
     async def _ensure_container(self, cwd: str | None = None):
-        if self._container_started:
-            return
-            
         cfg = self.config
         self._mounted_cwd = None
         if cfg.mount_cwd and cwd:
             self._mounted_cwd = os.path.abspath(cwd)
 
+        # Always verify container state to recover from unexpected deaths (e.g., OOM, Docker daemon restart)
         check_proc = await asyncio.create_subprocess_exec(
             "docker", "inspect", "-f", "{{.State.Running}}", self._container_name,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
         out, _ = await check_proc.communicate()
+        
         if check_proc.returncode == 0:
             if out.decode('utf-8', errors='ignore').strip() == "true":
                 self._container_started = True
@@ -129,8 +128,17 @@ class DockerIsolationBackend(IsolationBackend):
                 if start_proc.returncode == 0:
                     self._container_started = True
                     return
+                else:
+                    rm_proc = await asyncio.create_subprocess_exec(
+                        "docker", "rm", "-f", self._container_name,
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    await rm_proc.communicate()
         
         self._we_created_container = True
+        self._container_started = False
+
         mount_args = []
         if self._mounted_cwd:
             mount_args = ["-v", f"{self._mounted_cwd}:{cfg.workdir}"]

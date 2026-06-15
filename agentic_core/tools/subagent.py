@@ -88,7 +88,7 @@ class SpawnSubAgentsTool(BaseTool):
     }
     
     async def execute(self, args: dict, context: dict) -> str:
-        from agentic_core.engines import AgentRunner, DAGAgentRunner
+        from agentic_core.engines import AgentRunner, StatefulSwarmEngine
         # Resolve dependencies from context
         llm_client: ILLMClient = context.get("llm_client")
         tools_manager: ToolManager = context.get("tools_manager")
@@ -150,7 +150,7 @@ class SpawnSubAgentsTool(BaseTool):
             nodes_def[node_id] = (runner, config, prompt, max_retries)
 
         try:
-            dag_runner = DAGAgentRunner(nodes_def, edges, handler=handler)
+            dag_runner = StatefulSwarmEngine(nodes_def, edges, handler=handler)
             result = await dag_runner.execute()
 
             if result.error:
@@ -162,9 +162,9 @@ class SpawnSubAgentsTool(BaseTool):
                 
             summary.append("\nDetailed Outputs:")
             
-            for node_id, node in dag_runner.nodes.items():
-                if node.state.name == "SUCCESS" and node.result:
-                    res_text_raw = node.result.text if hasattr(node.result, 'text') else str(node.result)
+            for node_id, node_resp in result.nodes.items():
+                if node_resp.state == "SUCCESS" and node_resp.result:
+                    res_text_raw = node_resp.result.text if hasattr(node_resp.result, 'text') else str(node_resp.result)
                     try:    
                         res_text = clean_context_for_downstream(res_text_raw)
                     except Exception: 
@@ -172,14 +172,14 @@ class SpawnSubAgentsTool(BaseTool):
                         res_text = res_text_raw
                     if len(res_text.strip()) == 0: res_text = "NO OUTPUT."
                 else:
-                    res_text = f"Execution halted: {node.error}"
-                    if isinstance(node.error, IterationLimitReachedError):
+                    res_text = f"Execution halted: {node_resp.error}"
+                    if isinstance(node_resp.error, IterationLimitReachedError):
                         res_text += " (Hint: You can retry spawning this subagent by providing a higher 'max_iterations' in the node config)"
 
                 max_chars = context.get("subagent_max_chars") or self.default_max_chars
                 if len(res_text) > max_chars:
                     res_text = res_text[:max_chars] + "\n... [Truncated to preserve context limit]"
-                status = node.state.name
+                status = node_resp.state
                 summary.append(f"[{status}] Task {node_id}: {res_text}")
 
             return "Sub-agent execution results:\n" + "\n".join(summary)

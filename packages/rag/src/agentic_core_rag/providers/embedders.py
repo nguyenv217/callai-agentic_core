@@ -47,12 +47,12 @@ class OllamaEmbedder(IEmbeddingProvider):
         
         self._base_url = base_url
         self._model = model
+        self._client = ollama.Client(host=self._base_url)
     
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        import ollama
         embeddings = []
         for text in texts:
-            response = ollama.embeddings(model=self._model, prompt=text, host=self._base_url)
+            response = self._client.embeddings(model=self._model, prompt=text)
             embeddings.append(response['embedding'])
         return embeddings
 

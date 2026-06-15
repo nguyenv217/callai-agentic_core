@@ -70,12 +70,12 @@ async def test_spawn_subagents_granular_tools(subagent_tool, mock_llm, mock_tm):
         "tools_manager": mock_tm
     }
 
-    with patch('agentic_core.engines.DAGAgentRunner') as MockDAG:
-        MockDAG.return_value.execute = AsyncMock(return_value=MagicMock(error=None))
-        # To make it return something that doesn't crash the summary loop
-        MockDAG.return_value.nodes = {
-            "n1": MagicMock(result=MockLLMResponse(), state=MagicMock(name="SUCCESS"))
+    with patch('agentic_core.engines.StatefulSwarmEngine') as MockDAG:
+        mock_result = MagicMock(error=None)
+        mock_result.nodes = {
+            "n1": MagicMock(result=MockLLMResponse(), state="SUCCESS", error=None)
         }
+        MockDAG.return_value.execute = AsyncMock(return_value=mock_result)
 
         args = {
             "plan": {
