@@ -4,7 +4,8 @@ Anthropic LLM Provider.
 from typing import AsyncIterator, Any
 
 from .base import ILLMClient, LLMResponse
-from ..interfaces import Message, ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError, ToolSchema
+from ..interfaces import Message, ToolSchema
+from ..exceptions import ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError
 
 class AnthropicLLM(ILLMClient):
     """Anthropic Claude adapter."""

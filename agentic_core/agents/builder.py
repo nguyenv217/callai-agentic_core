@@ -15,7 +15,8 @@ from ..engines.engine import AgentRunner
 from ..memory.manager import MemoryManager
 from ..tools import ToolManager
 from ..handlers.standard import SilentHandler, PrintHandler, AgentEventHandler
-from ..interfaces import AgentResponse, Message
+from ..models import AgentResponse
+from ..interfaces import Message
 from ..llm_providers import OpenAILLM, AnthropicLLM, OllamaLLM
 from ..config import RunnerConfig
 

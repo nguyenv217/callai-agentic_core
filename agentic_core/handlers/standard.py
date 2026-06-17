@@ -8,7 +8,7 @@ import logging
 from .base import AgentEventHandler
 from ..decisions import ToolStartAction, ToolStartDecision, DecisionEvent, ErrorContext, ErrorAction, ErrorDecision
 from ..tools.protocols import ToolExecutionController
-from ..interfaces import (
+from ..exceptions import (
     ProviderRateLimitError, 
     ProviderAuthenticationError, 
     ProviderTimeoutError,

@@ -2,7 +2,7 @@ import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 from agentic_core.decisions import ErrorContext
-from agentic_core.interfaces import AgentResponse
+from agentic_core.models import AgentResponse
 from agentic_core_skills.observer import AutoSkillObserver
 from agentic_core.handlers.base import AgentEventHandler
 

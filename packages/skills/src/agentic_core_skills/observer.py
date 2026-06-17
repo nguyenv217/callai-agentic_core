@@ -2,7 +2,7 @@ import logging
 from typing import Any
 from agentic_core.handlers.base import AgentEventHandler
 from agentic_core.decisions import ErrorContext, DecisionEvent, ToolStartAction
-from agentic_core.interfaces import AgentResponse
+from agentic_core.models import AgentResponse
 from .extractor import SkillExtractor
 
 logger = logging.getLogger(__name__)

@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 from agentic_core.engines.engine import AgentRunner, RunnerConfig
 from agentic_core.engines.dag_engine import DAGAgentRunner
-from agentic_core.interfaces import AgentResponse
+from agentic_core.models import AgentResponse
 from agentic_core.llm_providers.base import ILLMClient, LLMResponse
 from agentic_core.memory.manager import MemoryManager
 from agentic_core.tools import ToolManager

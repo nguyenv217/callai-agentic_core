@@ -6,7 +6,7 @@ from typing import Any, Callable, Tuple, Awaitable
 
 from agentic_core.config import RunnerConfig
 from agentic_core.engines.engine import AgentRunner
-from agentic_core.interfaces import AgentResponse, DAGResponse, DAGNodeResponse
+from agentic_core.models import AgentResponse, DAGResponse, DAGNodeResponse
 from agentic_core.tools.base import BaseTool
 from agentic_core.handlers.dag import DAGEventHandler
 from agentic_core.engines.dag_engine import NodeState

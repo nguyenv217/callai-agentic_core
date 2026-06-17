@@ -14,7 +14,7 @@ from agentic_core.engines import AgentRunner
 from agentic_core.llm_providers.openai import OpenAILLM
 from agentic_core.tools import BaseTool, ToolManager
 from agentic_core.memory import MemoryManager
-from agentic_core.interfaces import StreamEventType
+from agentic_core.models import StreamEventType
 
 # Define a simple tool for testing
 import json

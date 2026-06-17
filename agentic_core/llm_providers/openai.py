@@ -5,7 +5,8 @@ from typing import Any, AsyncIterator
 
 from ..config import ConfigurationError
 from .base import ILLMClient, LLMResponse
-from ..interfaces import ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError, Message, ToolSchema
+from ..exceptions import ProviderAuthenticationError, ProviderRateLimitError, ProviderTimeoutError
+from ..interfaces import Message, ToolSchema
 
 _OPENAI_IMPORTED=True
 try:

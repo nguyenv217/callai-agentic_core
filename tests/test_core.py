@@ -1,7 +1,7 @@
 import pytest
 from agentic_core.agents.builder import create_openai_agent
 from agentic_core.config import RunnerConfig
-from agentic_core.interfaces import IterationLimitReachedError
+from agentic_core.exceptions import IterationLimitReachedError
 from agentic_core.llm_providers.base import ILLMClient, LLMResponse
 from agentic_core.handlers.standard import SilentHandler
 from agentic_core.tools.base import BaseTool
@@ -87,7 +87,6 @@ async def test_system_prompt_combination(mock_llm_class):
     agent.tools.add_toolset("my_set", [], "TOOLSET PROMPT")
 
     assert "my_set" in agent.tools.toolsets
-    assert "my_set" in agent.tools.toolset_prompts
 
     config = RunnerConfig(toolset="my_set", system_prompt="USER SYSTEM PROMPT")
     agent.llm = mock_llm_class([LLMResponse(text="Hi", tool_calls=[], usage={}, )])

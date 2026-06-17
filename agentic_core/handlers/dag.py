@@ -8,12 +8,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from ..interfaces import AgentResponse, DAGResponse
+    from ..models import AgentResponse, DAGResponse
     from ..engines.dag_engine import NodeState
     
 from .base import AgentEventHandler
 from ..decisions import DecisionEvent, GraphRoutingAction, GraphRoutingDecision, ErrorContext, ErrorAction, ErrorDecision
-from ..interfaces import ProviderRateLimitError, ProviderTimeoutError
+from ..exceptions import ProviderRateLimitError, ProviderTimeoutError
 
 class DAGEventHandler(AgentEventHandler):
     """Base handler for DAG execution events."""

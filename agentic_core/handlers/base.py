@@ -3,7 +3,7 @@ Handler base interface.
 """
 from abc import ABC
 
-from agentic_core.interfaces import AgentResponse
+from agentic_core.models import AgentResponse
 from ..decisions import (
     DecisionEvent, 
     LastIterationAction, 

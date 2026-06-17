@@ -3,7 +3,7 @@ import logging
 from typing import Any, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 
-from agentic_core.interfaces import IterationLimitReachedError
+from agentic_core.exceptions import IterationLimitReachedError
 from agentic_core.utils import clean_context_for_downstream, convert_exception_to_message
 
 if TYPE_CHECKING:
