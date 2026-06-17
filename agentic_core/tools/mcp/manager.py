@@ -90,12 +90,19 @@ class _MCPSessionProxy:
             self.request_queue.put_nowait((action, payload, thread_safe_fut))
         self.loop.call_soon_threadsafe(_inject)
         
-        while not thread_safe_fut.done():
+        wrapped_fut = asyncio.wrap_future(thread_safe_fut)
+        while not wrapped_fut.done():
             if not self.check_alive():
                 raise RuntimeError(f"MCP actor loop for {self.server_name} died while waiting for response.")
-            await asyncio.sleep(0.1)
+            try:
+                done, pending = await asyncio.wait([wrapped_fut], timeout=0.5)
+                if done:
+                    break
+            except asyncio.CancelledError:
+                thread_safe_fut.cancel()
+                raise
             
-        return thread_safe_fut.result()
+        return wrapped_fut.result()
 
     async def list_tools(self):
         logger.info(f"[{self.server_name}] PROXY: Sending 'list_tools' to actor loop...")
@@ -118,12 +125,35 @@ class GlobalMCPRegistry:
     A singleton registry that manages a pool of active MCP sessions.
     Uses reference counting to ensure that multiple managers can share the same
     underlying MCP server process, maximizing resource efficiency.
+    State is strictly isolated per event loop to ensure thread-safety and prevent pytest leakage.
     """
     _instance: 'GlobalMCPRegistry' = None
-    _sessions: dict[Tuple, _MCPSession] = {}
-    _locks: dict[Tuple, asyncio.Lock] = {}
-    _global_lock = asyncio.Lock()
-    _failed_sessions: set[Tuple] = set() # Track failed identity keys
+    _all_sessions: dict[asyncio.AbstractEventLoop, dict[Tuple, _MCPSession]] = {}
+    _all_failed_sessions: dict[asyncio.AbstractEventLoop, set[Tuple]] = {}
+    _loop_locks: dict[asyncio.AbstractEventLoop, asyncio.Lock] = {}
+    _identity_locks: dict[asyncio.AbstractEventLoop, dict[Tuple, asyncio.Lock]] = {}
+
+    @property
+    def _sessions(self) -> dict[Tuple, _MCPSession]:
+        try:
+            loop = asyncio.get_running_loop()
+            return self._all_sessions.setdefault(loop, {})
+        except RuntimeError:
+            class _SyncDictProxy(dict):
+                def clear(self_proxy):
+                    self._all_sessions.clear()
+                    self._all_failed_sessions.clear()
+                def __len__(self_proxy):
+                    return sum(len(s) for s in self._all_sessions.values())
+            return _SyncDictProxy()
+
+    @property
+    def _failed_sessions(self) -> set[Tuple]:
+        try:
+            loop = asyncio.get_running_loop()
+            return self._all_failed_sessions.setdefault(loop, set())
+        except RuntimeError:
+            return set()
 
     def __init__(
         self, 
@@ -177,10 +207,14 @@ class GlobalMCPRegistry:
         return (tenant_id, command, args, env_hash)
 
     async def _get_lock_for_identity(self, identity_key: Tuple) -> asyncio.Lock:
-        async with self._global_lock:
-            if identity_key not in self._locks:
-                self._locks[identity_key] = asyncio.Lock()
-            return self._locks[identity_key]
+        loop = asyncio.get_running_loop()
+        loop_lock = self._loop_locks.setdefault(loop, asyncio.Lock())
+        
+        async with loop_lock:
+            identity_locks = self._identity_locks.setdefault(loop, {})
+            if identity_key not in identity_locks:
+                identity_locks[identity_key] = asyncio.Lock()
+            return identity_locks[identity_key]
 
     async def acquire(
         self,
@@ -417,7 +451,13 @@ class GlobalMCPRegistry:
         
     async def clear(self):
         """Clears all sessions in the registry concurrently."""
-        async with self._global_lock:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+            
+        loop_lock = self._loop_locks.setdefault(loop, asyncio.Lock())
+        async with loop_lock:
             identity_keys = list(self._sessions.keys())
 
         if not identity_keys:

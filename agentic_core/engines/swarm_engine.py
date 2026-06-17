@@ -88,9 +88,13 @@ class StatefulSwarmEngine:
         max_swarm_steps: int = 50,
         max_concurrency: int = 4,
         handler: DAGEventHandler | None = None,
-        initial_state: dict[str, Any] | None = None
+        initial_state: dict[str, Any] | None = None,
+        retry_delay_s: float = 1.0,
+        queue_poll_interval_s: float = 0.05
     ):
         self.nodes_def = nodes_def
+        self.retry_delay_s = retry_delay_s
+        self.queue_poll_interval_s = queue_poll_interval_s
         self.edges = edges
         self.max_swarm_steps = max_swarm_steps
         self.max_concurrency = max_concurrency
@@ -209,7 +213,7 @@ class StatefulSwarmEngine:
                                 break
                             retries += 1
                             logger.warning(f"Retrying node {node_id} ({retries}/{max_retries}) due to error: {e}")
-                            await asyncio.sleep(1.0)
+                            await asyncio.sleep(self.retry_delay_s)
                     
                     queue.task_done()
                     active_tasks -= 1
@@ -222,7 +226,7 @@ class StatefulSwarmEngine:
         while True:
             if queue.empty() and active_tasks == 0:
                 break
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(self.queue_poll_interval_s)
         
         for w in workers:
             w.cancel()

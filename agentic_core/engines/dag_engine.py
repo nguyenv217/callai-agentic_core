@@ -305,7 +305,7 @@ class DAGAgentRunner:
                 await self.queue.join()
                 if self.active_retries == 0:
                     break
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0.05)
         finally:
             for w in workers: w.cancel()
             await asyncio.gather(*workers, return_exceptions=True)

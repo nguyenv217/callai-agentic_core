@@ -15,18 +15,36 @@ class SessionManager:
         # Store dicts containing both the runner and its last accessed time
         self._sessions: dict[str, dict] = {} 
         self._lock = None
+        self._loop_bound = None
         self.ttl_seconds = ttl_seconds
         self.cleanup_interval = cleanup_interval
         self.mcp_shutdown_timeout = mcp_shutdown_timeout
         self._cleanup_task: asyncio.Task | None = None
+
+    async def _get_lock(self) -> asyncio.Lock:
+        loop = asyncio.get_running_loop()
+        if self._lock is None or self._loop_bound != loop:
+            self._lock = asyncio.Lock()
+            self._loop_bound = loop
+        return self._lock
 
     def _get_key(self, tenant_id: str, session_id: str) -> str:
         return f"{tenant_id}::{session_id}"
 
     async def _ensure_cleanup_task(self):
         """Ensures the background cleanup task is running within the current event loop."""
-        if self._cleanup_task is None or self._cleanup_task.done():
+        try:
             loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        if self._cleanup_task is not None:
+            task_loop = self._cleanup_task.get_loop()
+            if task_loop != loop or self._cleanup_task.done():
+                if task_loop != loop and not self._cleanup_task.done():
+                    task_loop.call_soon_threadsafe(self._cleanup_task.cancel)
+                self._cleanup_task = loop.create_task(self._cleanup_loop())
+        else:
             self._cleanup_task = loop.create_task(self._cleanup_loop())
 
     async def _cleanup_loop(self):
@@ -37,13 +55,12 @@ class SessionManager:
 
     async def cleanup_stale_sessions(self):
         """Identifies and removes sessions that have exceeded the TTL."""
-        if self._lock is None:
-            self._lock = asyncio.Lock()
+        lock = await self._get_lock()
             
         now = time.time()
         stale_keys = []
         
-        async with self._lock:
+        async with lock:
             for key, data in self._sessions.items():
                 if now - data["last_accessed"] > self.ttl_seconds:
                     stale_keys.append(key)
@@ -52,7 +69,7 @@ class SessionManager:
             logger.info(f"SessionManager: TTL expired, cleaning up session {key}")
             
             # Re-acquire lock briefly to pop the session safely
-            async with self._lock:
+            async with lock:
                 if key in self._sessions:
                     data = self._sessions.pop(key)
                 else:
@@ -68,13 +85,12 @@ class SessionManager:
                     logger.error(f"Error shutting down MCP for stale session {key}: {e}")
 
     async def get_runner(self, session_id: str, creator_func, tenant_id: str = "default") -> AgentRunner:
-        if self._lock is None:
-            self._lock = asyncio.Lock()
+        lock = await self._get_lock()
             
         await self._ensure_cleanup_task()
         cache_key = self._get_key(tenant_id, session_id)
         
-        async with self._lock:
+        async with lock:
             if cache_key in self._sessions:
                 # Update the timestamp on access
                 self._sessions[cache_key]["last_accessed"] = time.time()
@@ -89,12 +105,11 @@ class SessionManager:
 
     async def remove_session(self, session_id: str, tenant_id: str = "default"):
         """Manually removes a session and shuts down its dependencies."""
-        if self._lock is None:
-            self._lock = asyncio.Lock()
+        lock = await self._get_lock()
             
         cache_key = self._get_key(tenant_id, session_id)
         
-        async with self._lock:
+        async with lock:
             if cache_key in self._sessions:
                 data = self._sessions.pop(cache_key)
                 runner = data["runner"]
