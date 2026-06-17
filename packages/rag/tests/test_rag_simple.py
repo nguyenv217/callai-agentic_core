@@ -44,8 +44,8 @@ async def test_rag_registration():
     assert "knowledge_search" in tm._plugins
     assert "knowledge_ingest" in tm._plugins
     assert "rag_suite" in tm.toolsets
-    assert "knowledge_search" in tm.toolsets["rag_suite"]
-    assert "knowledge_ingest" in tm.toolsets["rag_suite"]
+    assert "knowledge_search" in tm.toolsets["rag_suite"].tools
+    assert "knowledge_ingest" in tm.toolsets["rag_suite"].tools
     
 
 @pytest.mark.asyncio

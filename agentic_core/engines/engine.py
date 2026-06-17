@@ -18,7 +18,8 @@ from ..interfaces import (
     AgentResponse, 
     IterationLimitReachedError, 
     StreamEvent, 
-    StreamEventType
+    StreamEventType,
+    Message
 )
 
 logger = logging.getLogger(__name__)
@@ -76,7 +77,7 @@ class AgentRunner:
         await handler.on_tool_complete(tool_name, tool_id, False, msg)
         self.memory.add_tool_result(name=tool_name, tool_call_id=tool_id, content=msg)
 
-    async def _handle_setup(self, user_input: str | list[dict], config: RunnerConfig, handler: AgentEventHandler):
+    async def _handle_setup(self, user_input: str | list[Message], config: RunnerConfig, handler: AgentEventHandler):
         """Handles the setup of the agent runner for a new turn."""
         toolset_prompt = self.tools.get_toolset_prompt(config.toolset) if config.toolset else None
         
@@ -91,14 +92,14 @@ class AgentRunner:
                 self._toolset_prompt_loaded = True
 
         if isinstance(user_input, str):
-            messages = [{"role": "user", "content": user_input}]
+            messages: list[Message] = [{"role": "user", "content": user_input}]
         elif isinstance(user_input, list):
             if len(user_input) > 0 and "type" in user_input[0] and "role" not in user_input[0]:
-                messages = [{"role": "user", "content": user_input}]
+                messages = [{"role": "user", "content": str(user_input)}]
             else:
                 messages = user_input
         else:
-            messages = [{"role": "user", "content": user_input}]
+            messages = [{"role": "user", "content": str(user_input)}]
 
         for msg in messages:
             self.memory.add_message(msg)
@@ -186,7 +187,7 @@ class AgentRunner:
 
     async def stream_turn(
         self, 
-        user_input: str | list[dict], 
+        user_input: str | list[Message], 
         handler: AgentEventHandler | None = None, 
         config: RunnerConfig | None = None,
         tool_args_parser: Callable[[str], dict[str, Any]] | None = None
@@ -409,7 +410,7 @@ class AgentRunner:
             if not is_generator_exit:
                 yield StreamEvent(StreamEventType.FINAL_RESPONSE, final_response)
 
-    async def run_turn(self, user_input: str | list[dict], handler: AgentEventHandler | None = None, config: RunnerConfig | None = None) -> AgentResponse:
+    async def run_turn(self, user_input: str | list[Message], handler: AgentEventHandler | None = None, config: RunnerConfig | None = None) -> AgentResponse:
         """
         Standard method that wraps the `stream_turn` to return a single block response.
 

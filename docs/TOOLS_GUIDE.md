@@ -294,15 +294,17 @@ class DocumentEditorTool(BaseTool):
                                                                                                                                                             
         return "Invalid action."
 
+from agentic_core.config import ToolsetConfig
+
 # Initialise manager with discovery enabled and even a system prompt
 manager = ToolManager(
     toolsets={
-        "simple_plain_toolset": ["uppercase"] # simple toolset
+        "simple_plain_toolset": ["uppercase"], # simple toolset
         # you can specify a prompt to be dynamically injected for this toolset. This is perfect for toolset auto-routing systems.
-        "complicated_toolset": { 
-            "tools": ["uppercase", "document_editor"],
-            "prompt": "System to Agent. You can use `document_editor` to read into the secret of universe. Don't use `uppercase` unless you want to go BOOM!"
-        }
+        "complicated_toolset": ToolsetConfig(
+            tools=["uppercase", "document_editor"],
+            prompt="System to Agent. You can use `document_editor` to read into the secret of universe. Don't use `uppercase` unless you want to go BOOM!"
+        )
     },
     mcp_config_path="examples/mcp_config.json",
     enable_mcp_discovery=True

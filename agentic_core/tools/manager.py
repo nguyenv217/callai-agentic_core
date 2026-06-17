@@ -6,11 +6,11 @@ import atexit
 import inspect
 import logging
 
-from ..config import ConfigurationError
+from ..config import ConfigurationError, ToolsetConfig
 from .protocols import ToolExecutionController
 
 if TYPE_CHECKING:
-    from ..interfaces import ToolSchema
+    from ..interfaces import ToolSchema, MCPConfigDict
     from ..decisions import DecisionEvent, ToolOnPromptDecision
     from .base import BaseTool
 
@@ -36,7 +36,7 @@ class ToolManager:
     """
     def __init__(
         self, 
-        toolsets: dict[str, list[str]] | None = None,
+        toolsets: dict[str, ToolsetConfig | list[str] | dict[str, Any]] | None = None,
         mcp_config_path: str | Path | None = None,
         enable_mcp_discovery: bool = True,
         extra_env: dict[str, str] | None = None,
@@ -49,7 +49,7 @@ class ToolManager:
         Initializes the ToolManager.
 
         Args:
-            toolsets: A dictionary where the keys are the names of the toolsets and the values are lists of tool names.
+            toolsets: A dictionary where the keys are the names of the toolsets and the values are ToolsetConfig instances or lists of tool names.
             extra_context: Extra context to pass to tools when executed. Useful for state-aware tool implementations.
             mcp_config_path: The path to the MCP servers configuration file.
             enable_mcp_discovery: If True, the ToolManager will inject MCP discovery tools on each agent run.
@@ -69,30 +69,29 @@ class ToolManager:
         self.mcp_initialize_timeout = mcp_initialize_timeout
 
         # Toolsets initialization
-        # Support optional prompts per toolset. `toolsets` can be a dict mapping toolset name to either a list of tool names
-        # or a dict with keys 'tools' (list) and optional 'prompt' (str).
-        self.toolsets: dict[str, list[str]] = {}
-        self.toolset_prompts: dict[str, str] = {}
+        self.toolsets: dict[str, ToolsetConfig] = {}
         if toolsets:
             for name, spec in toolsets.items():
-                if isinstance(spec, dict):
-                    tools = spec.get('tools', [])
-                    prompt = spec.get('prompt')
+                if isinstance(spec, ToolsetConfig):
+                    self.toolsets[name] = spec
+                elif isinstance(spec, dict):
+                    self.toolsets[name] = ToolsetConfig(tools=list(spec.get('tools', [])), prompt=spec.get('prompt'))
                 else:
-                    tools = spec  # assume list of tool names
-                    prompt = None
-                self.toolsets[name] = list(tools)
-                if prompt:
-                    self.toolset_prompts[name] = prompt
-        self.toolsets.setdefault('all', [])
+                    self.toolsets[name] = ToolsetConfig(tools=list(spec))
+        
+        if 'all' not in self.toolsets:
+            self.toolsets['all'] = ToolsetConfig(tools=[])
+            
+        # aggregate 'all'
         for ts in self.toolsets.values():
-            self.toolsets['all'].extend(ts)
-        self.toolsets['all'] = list(set(self.toolsets['all']))
+            if ts is not self.toolsets['all']:
+                self.toolsets['all'].tools.extend(ts.tools)
+        self.toolsets['all'].tools = list(set(self.toolsets['all'].tools))
         
         # --- MCP State ---
         self.mcp_config_path = mcp_config_path
         self.on_server_error = on_server_error
-        self._mcp_config_dict = {}
+        self._mcp_config_dict: Any = {}
         self._mcp_standby_registry: dict[str, MCPToolAdapter] = {}  
         self._mcp_loaded_tools: Set[BaseTool] = set()
         self._mcp_init_in_progress = False
@@ -124,9 +123,9 @@ class ToolManager:
             self.tool_schemas.append(tool_instance.schema)
 
             if 'all' not in self.toolsets:
-                self.toolsets['all'] = []
-            if tool_instance.name not in self.toolsets['all']:
-                self.toolsets['all'].append(tool_instance.name)
+                self.toolsets['all'] = ToolsetConfig(tools=[])
+            if tool_instance.name not in self.toolsets['all'].tools:
+                self.toolsets['all'].tools.append(tool_instance.name)
         
         if load_mcp:
             self._mcp_loaded_tools.add(tool_instance)
@@ -292,11 +291,14 @@ class ToolManager:
 
     def get_tools_from_toolset(self, toolset: str = "all") -> list[ToolSchema]:
         """Get tools for a specific toolset."""
-        return [t for t in self.tool_schemas if t['function']['name'] in self.toolsets.get(toolset, [])]
+        ts = self.toolsets.get(toolset)
+        tools_list = ts.tools if ts else []
+        return [t for t in self.tool_schemas if t['function']['name'] in tools_list]
 
     def get_toolset_prompt(self, toolset: str) -> str | None:
         """Return the custom prompt associated with a toolset, if any."""
-        return self.toolset_prompts.get(toolset)
+        ts = self.toolsets.get(toolset)
+        return ts.prompt if ts else None
     
     def get_discovery_tools(self) -> list[ToolSchema]:
         """Get discovery tools."""
@@ -407,9 +409,7 @@ class ToolManager:
         logger.info(f"Disconnected from MCP server(s): {server_names}")
     
     def add_toolset(self, name: str, tools: list[str], prompt: str | None = None):
-        self.toolsets[name] = list(tools)
-        if prompt:
-            self.toolset_prompts[name] = prompt
+        self.toolsets[name] = ToolsetConfig(tools=list(tools), prompt=prompt)
 
     # ===================================
     # EXECUTION

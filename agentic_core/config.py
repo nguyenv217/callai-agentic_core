@@ -12,6 +12,12 @@ class ConfigurationError(Exception):
     pass
 
 @dataclass
+class ToolsetConfig:
+    """Configuration for a specific toolset."""
+    tools: list[str]
+    prompt: str | None = None
+
+@dataclass
 class RunnerConfig:
     '''
     Configuration for the AgentRunner.

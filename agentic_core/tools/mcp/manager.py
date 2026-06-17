@@ -1,10 +1,13 @@
 import asyncio
 import json
 import logging
-from typing import Any, Callable, Tuple, TypedDict, Literal
+from typing import Any, Callable, Tuple, TypedDict, Literal, TYPE_CHECKING
 from pathlib import Path
 
 from ...config import ConfigurationError
+
+if TYPE_CHECKING:
+    from ...interfaces import MCPConfigDict
 
 try:
     from mcp.client.stdio import stdio_client
@@ -440,7 +443,7 @@ class MCPClientManager:
 
     def __init__(
             self, config_path: str | Path | None = None, 
-            config: dict[str, Any] | None = None, 
+            config: 'MCPConfigDict | dict[str, Any] | None' = None, 
             on_server_death: Callable[[str, Exception], Any] | None = None,
             mcp_cleanup_method: Literal["default", "psutil"] = "psutil",
             server_init_timeout: float = 60.0,

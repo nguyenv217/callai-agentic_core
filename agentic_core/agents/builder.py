@@ -15,7 +15,7 @@ from ..engines.engine import AgentRunner
 from ..memory.manager import MemoryManager
 from ..tools import ToolManager
 from ..handlers.standard import SilentHandler, PrintHandler, AgentEventHandler
-from ..interfaces import AgentResponse
+from ..interfaces import AgentResponse, Message
 from ..llm_providers import OpenAILLM, AnthropicLLM, OllamaLLM
 from ..config import RunnerConfig
 
@@ -106,7 +106,7 @@ class ChatResult:
     tenant_id: str | None = None
 
 async def chat(
-    message: str,
+    message: str | list[Message],
     runner: AgentRunner | None = None,
     provider: str = "openai",
     api_key: str | None = None,

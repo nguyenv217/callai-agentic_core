@@ -195,13 +195,13 @@ tools.register_tool(uppercase_tool)
 # === More advanced usage: `toolset` ===
 tools = ToolManager(
     toolsets = {
-        "my_custom_toolset": {
-            "tools": ["uppercase"],
-            "prompt": "This prompt is dynamically injected when toolset=my_custom_toolset"
-        },
-        "my_other_toolset": ["some_other_tool", "other_tool2", ...] # Or just a list if no custom prompt is needed
-        },
-    )
+        "my_custom_toolset": ToolsetConfig(
+            tools=["uppercase"],
+            prompt="This prompt is dynamically injected when toolset=my_custom_toolset"
+        ),
+        "my_other_toolset": ["some_other_tool", "other_tool2"] # Or just a list if no custom prompt is needed
+    }
+)
     
 # Then pass to `RunnerConfig`
 config = RunnerConfig(
