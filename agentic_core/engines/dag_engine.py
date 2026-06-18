@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Tuple, TYPE_CHECKING, Optional
+from typing import Tuple, TYPE_CHECKING, Optional, Callable, Any
 import asyncio
 import traceback
 from enum import Enum, auto
@@ -30,6 +30,7 @@ class NodeState(Enum):
     FAILED = auto()
     FAILED_UPSTREAM = auto()
     RETRYING = auto()
+    SKIPPED = auto()
 
 @dataclass
 class DAGNode:
@@ -46,12 +47,18 @@ class DAGNode:
     error: BaseException | None = None
     error_details: str | None = None
     failed_by: str | None = None
+    active_parents: list[str] = None
+    skipped_parents: list[str] = None
+
+    def __post_init__(self):
+        if self.active_parents is None: self.active_parents = []
+        if self.skipped_parents is None: self.skipped_parents = []
 
 class DAGAgentRunner:
     def __init__(
         self, 
         nodes_def: dict[str, Tuple[AgentRunner, RunnerConfig, str, int]] | None, 
-        edges: list[Tuple[str, str]], 
+        edges: list[Tuple[str, str] | Tuple[str, str, Callable[[AgentResponse], bool]]], 
         max_concurrency: int = 4,
         handler: DAGEventHandler | None = None,
         checkpoint_state: dict[str, AgentResponse] | None = None,
@@ -64,7 +71,7 @@ class DAGAgentRunner:
 
         Args:
             nodes_def: {node_id: (runner, config, prompt, max_retries)}
-            edges: [(parent_id, child_id)]
+            edges: [(parent_id, child_id)] or [(parent_id, child_id, condition_callable)]
             max_concurrency: Maximum number of concurrent nodes to run at once.
             handler: Optional handler for tracking execution events.
             checkpoint_state: Optional state from a previous failed run to resume from.
@@ -76,6 +83,7 @@ class DAGAgentRunner:
         self.out_edges: dict[str, list[str]] = {node_id: [] for node_id in nodes_def}
         self.in_edges: dict[str, list[str]] = {node_id: [] for node_id in nodes_def}
         self.in_degree: dict[str, int] = {node_id: 0 for node_id in nodes_def}
+        self.edge_conditions: dict[Tuple[str, str], Callable[[AgentResponse], bool]] = {}
         
         self.default_backoff_base = default_backoff_base
         self.default_backoff_max = default_backoff_max
@@ -85,13 +93,23 @@ class DAGAgentRunner:
             max_retries = def_vals[3] if len(def_vals) > 3 else default_max_retries
             self.nodes[node_id] = DAGNode(node_id, runner, config, prompt, max_retries=max_retries)
 
-        for parent, child in edges:
+        for edge in edges:
+            if len(edge) == 2:
+                parent, child = edge
+                condition = None
+            elif len(edge) == 3:
+                parent, child, condition = edge
+            else:
+                raise NodeValidationError(f"Invalid edge format: {edge}")
+
             if parent not in self.nodes or child not in self.nodes:
                 raise NodeValidationError(f"Edge {parent} -> {child} contains undefined nodes")
+            
             self.out_edges[parent].append(child)
             self.in_edges[child].append(parent)
             self.in_degree[child] += 1
             self.nodes[child].in_degree = self.in_degree[child]
+            self.edge_conditions[(parent, child)] = condition
 
         self.max_concurrency = max_concurrency
         self.handler = handler or DAGEventHandler()
@@ -105,6 +123,20 @@ class DAGAgentRunner:
                     node.state = NodeState.SUCCESS
                     node.result = result
                     for child_id in self.out_edges[node_id]:
+                        cond = self.edge_conditions.get((node_id, child_id))
+                        passed = True
+                        if cond:
+                            try:
+                                passed = cond(result)
+                            except Exception:
+                                passed = False
+                        
+                        child = self.nodes[child_id]
+                        if passed:
+                            child.active_parents.append(node_id)
+                        else:
+                            child.skipped_parents.append(node_id)
+                            
                         self.in_degree[child_id] -= 1
                         self.nodes[child_id].in_degree = self.in_degree[child_id]
 
@@ -169,13 +201,45 @@ class DAGAgentRunner:
         else: # ABANDON
             return True, None
 
+    async def _resolve_child(self, child_id: str, parent_id: str, passed_condition: bool):
+        child = self.nodes[child_id]
+        if child.state == NodeState.FAILED_UPSTREAM:
+            return
+
+        if passed_condition:
+            child.active_parents.append(parent_id)
+        else:
+            child.skipped_parents.append(parent_id)
+
+        child.in_degree -= 1
+        if child.in_degree == 0:
+            if len(self.in_edges[child_id]) > 0 and not child.active_parents:
+                child.state = NodeState.SKIPPED
+                child.result = AgentResponse(text=f"Node {child_id} skipped because all parent branches were pruned.")
+                await self.handler.on_node_complete(child_id, NodeState.SKIPPED, child.result)
+                for grand_child_id in self.out_edges[child_id]:
+                    await self._resolve_child(grand_child_id, child_id, passed_condition=False)
+            else:
+                child.state = NodeState.READY
+                await self.queue.put((-child.priority, child_id))
+                await self.handler.on_node_queued(child_id, child.priority)
+
     async def _worker(self, worker_id: int):
         while True:
             try:
                 prio, node_id = await self.queue.get()
                 node = self.nodes[node_id]
 
-                if node.state in (NodeState.SUCCESS, NodeState.FAILED, NodeState.FAILED_UPSTREAM):
+                if node.state in (NodeState.SUCCESS, NodeState.FAILED, NodeState.FAILED_UPSTREAM, NodeState.SKIPPED):
+                    self.queue.task_done()
+                    continue
+
+                if len(self.in_edges[node_id]) > 0 and not node.active_parents:
+                    node.state = NodeState.SKIPPED
+                    node.result = AgentResponse(text=f"Node {node_id} skipped because all parent branches were pruned.")
+                    await self.handler.on_node_complete(node_id, NodeState.SKIPPED, node.result)
+                    for child_id in self.out_edges[node_id]:
+                        await self._resolve_child(child_id, node_id, passed_condition=False)
                     self.queue.task_done()
                     continue
 
@@ -185,7 +249,7 @@ class DAGAgentRunner:
                 try:
                     parent_results = [
                         f"Node {p_id} result: {clean_context_for_downstream(self.nodes[p_id].result.text)}"
-                        for p_id in self.in_edges[node_id]
+                        for p_id in node.active_parents
                     ]
                     context_prefix = "\n\nParent Context:\n" + "\n".join(parent_results) if parent_results else ""
                     
@@ -203,13 +267,15 @@ class DAGAgentRunner:
                     await self.handler.on_node_complete(node_id, NodeState.SUCCESS, result)
 
                     for child_id in self.out_edges[node_id]:
-                        child = self.nodes[child_id]
-                        if child.state == NodeState.FAILED_UPSTREAM: continue
-                        child.in_degree -= 1
-                        if child.in_degree == 0:
-                            child.state = NodeState.READY
-                            await self.queue.put((-child.priority, child_id))
-                            await self.handler.on_node_queued(child_id, child.priority)
+                        cond = self.edge_conditions.get((node_id, child_id))
+                        passed = True
+                        if cond:
+                            try:
+                                passed = cond(result)
+                            except Exception as ce:
+                                logger.warning(f"Edge condition {node_id}->{child_id} failed with exception: {ce}")
+                                passed = False
+                        await self._resolve_child(child_id, node_id, passed)
 
                 except Exception as e:
                     tb_str = traceback.format_exc()
@@ -234,14 +300,17 @@ class DAGAgentRunner:
                         node.error = e
                         node.error_details = tb_str
 
-                        for child_id in self.out_edges[node_id]:
-                            child = self.nodes[child_id]
-                            if child.state == NodeState.FAILED_UPSTREAM: continue
-                            child.in_degree -= 1
-                            if child.in_degree == 0:
-                                child.state = NodeState.READY
-                                await self.queue.put((-child.priority, child_id))
                         await self.handler.on_node_complete(node_id, NodeState.SUCCESS, fallback_response)
+                        for child_id in self.out_edges[node_id]:
+                            cond = self.edge_conditions.get((node_id, child_id))
+                            passed = True
+                            if cond:
+                                try:
+                                    passed = cond(fallback_response)
+                                except Exception as ce:
+                                    logger.warning(f"Edge condition {node_id}->{child_id} failed with exception: {ce}")
+                                    passed = False
+                            await self._resolve_child(child_id, node_id, passed)
                     else:
                         node.state = NodeState.FAILED
                         node.error = e
@@ -253,12 +322,15 @@ class DAGAgentRunner:
                             node.state = NodeState.SUCCESS 
                             await self.handler.on_node_complete(node_id, NodeState.SUCCESS, node.result)
                             for child_id in self.out_edges[node_id]:
-                                child = self.nodes[child_id]
-                                if child.state == NodeState.FAILED_UPSTREAM: continue
-                                child.in_degree -= 1
-                                if child.in_degree == 0:
-                                    child.state = NodeState.READY
-                                    await self.queue.put((-child.priority, child_id))
+                                cond = self.edge_conditions.get((node_id, child_id))
+                                passed = True
+                                if cond:
+                                    try:
+                                        passed = cond(node.result)
+                                    except Exception as ce:
+                                        logger.warning(f"Edge condition {node_id}->{child_id} failed with exception: {ce}")
+                                        passed = False
+                                await self._resolve_child(child_id, node_id, passed)
                         elif isinstance(decision_event.action, GraphRoutingDecision.FALLBACK):
                             # Future implementation: Inject dynamic fallback runner here
                             pass 

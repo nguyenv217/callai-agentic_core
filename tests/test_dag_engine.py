@@ -144,6 +144,39 @@ async def test_multi_parent_cascade_bug():
     assert results.nodes["C"].failed_by == "A"
 
 @pytest.mark.asyncio
+async def test_conditional_edges():
+    llm = MockLLMClient()
+    tools = MinimalToolManager()
+    memory = MemoryManager()
+    runner = AgentRunner(llm, tools, memory)
+    config = RunnerConfig()
+
+    def condition_false(res: AgentResponse) -> bool:
+        return False
+
+    nodes_def = {
+        "A": (runner, config, "Node_A success", 0),
+        "B": (runner, config, "Node_B success", 0),
+        "C": (runner, config, "Node_C success", 0),
+        "D": (runner, config, "Node_D success", 0),
+    }
+    
+    edges = [
+        ("A", "B"), 
+        ("A", "C", condition_false), 
+        ("B", "D"), 
+        ("C", "D")
+    ]
+
+    dag = DAGAgentRunner(nodes_def, edges)
+    results = await dag.execute()
+
+    assert results.nodes["A"].state == "SUCCESS"
+    assert results.nodes["B"].state == "SUCCESS"
+    assert results.nodes["C"].state == "SKIPPED"
+    assert results.nodes["D"].state == "SUCCESS"
+    
+@pytest.mark.asyncio
 async def test_dag_success():
     llm = MockLLMClient()
     tools = MinimalToolManager()
