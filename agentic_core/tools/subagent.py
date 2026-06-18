@@ -67,10 +67,6 @@ class SpawnSubAgentsTool(BaseTool):
                                     "required": ["prompt"]
                                 }
                             },
-                            "max_swarm_steps": {
-                                "type": "integer",
-                                "description": "Global safety limit for the maximum number of task execution steps across the entire sub-agent swarm. Default is 50."
-                            },
                             "edges": {
                                 "type": "array",
                                 "items": {
@@ -92,7 +88,7 @@ class SpawnSubAgentsTool(BaseTool):
     }
     
     async def execute(self, args: dict, context: dict) -> str:
-        from agentic_core.engines import AgentRunner, StatefulSwarmEngine
+        from agentic_core.engines import AgentRunner, DAGAgentRunner
         # Resolve dependencies from context
         llm_client: ILLMClient = context.get("llm_client")
         tools_manager: ToolManager = context.get("tools_manager")
@@ -105,7 +101,6 @@ class SpawnSubAgentsTool(BaseTool):
 
         nodes_config = plan_data.get("nodes", {})
         edges_raw = plan_data.get("edges", [])
-        max_swarm_steps = plan_data.get("max_swarm_steps", 50)
 
         if not nodes_config or not isinstance(nodes_config, dict):
             return "Validation Error: 'nodes' must be a non-empty dictionary mapping node IDs to their configurations."
@@ -155,7 +150,7 @@ class SpawnSubAgentsTool(BaseTool):
             nodes_def[node_id] = (runner, config, prompt, max_retries)
 
         try:
-            dag_runner = StatefulSwarmEngine(nodes_def, edges, max_swarm_steps=max_swarm_steps, handler=handler)
+            dag_runner = DAGAgentRunner(nodes_def, edges, handler=handler)
             result = await dag_runner.execute()
 
             if result.error:

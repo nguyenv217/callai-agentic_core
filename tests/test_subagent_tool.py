@@ -70,7 +70,7 @@ async def test_spawn_subagents_granular_tools(subagent_tool, mock_llm, mock_tm):
         "tools_manager": mock_tm
     }
 
-    with patch('agentic_core.engines.StatefulSwarmEngine') as MockDAG:
+    with patch('agentic_core.engines.DAGAgentRunner') as MockDAG:
         mock_result = MagicMock(error=None)
         mock_result.nodes = {
             "n1": MagicMock(result=MockLLMResponse(), state="SUCCESS", error=None)

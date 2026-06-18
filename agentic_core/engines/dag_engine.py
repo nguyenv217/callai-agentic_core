@@ -58,13 +58,14 @@ class DAGAgentRunner:
     def __init__(
         self, 
         nodes_def: dict[str, Tuple[AgentRunner, RunnerConfig, str, int]] | None, 
-        edges: list[Tuple[str, str] | Tuple[str, str, Callable[[AgentResponse], bool]]], 
+        edges: list[Tuple[str, str] | Tuple[str, str, Callable[[AgentResponse, dict[str, Any]], bool]]], 
         max_concurrency: int = 4,
         handler: DAGEventHandler | None = None,
         checkpoint_state: dict[str, AgentResponse] | None = None,
         default_max_retries: int = 3,
         default_backoff_base: float = 1.0,
-        default_backoff_max: float = 60.0
+        default_backoff_max: float = 60.0,
+        shared_state: dict[str, Any] | None = None
     ):
         """
         Engine for concurrent dispatch of agent swarms with dependencies modeled as a Directed Acyclic Graph (DAG) .
@@ -78,12 +79,14 @@ class DAGAgentRunner:
             default_max_retries: Default max retries for nodes that don't specify.
             default_backoff_base: Default base delay for exponential backoff.
             default_backoff_max: Default max delay for exponential backoff.
+            shared_state: Global dictionary for stateful data passing between nodes.
         """
         self.nodes: dict[str, DAGNode] = {}
         self.out_edges: dict[str, list[str]] = {node_id: [] for node_id in nodes_def}
         self.in_edges: dict[str, list[str]] = {node_id: [] for node_id in nodes_def}
         self.in_degree: dict[str, int] = {node_id: 0 for node_id in nodes_def}
-        self.edge_conditions: dict[Tuple[str, str], Callable[[AgentResponse], bool]] = {}
+        self.edge_conditions: dict[Tuple[str, str], Callable[[AgentResponse, dict[str, Any]], bool]] = {}
+        self.shared_state = shared_state if shared_state is not None else {}
         
         self.default_backoff_base = default_backoff_base
         self.default_backoff_max = default_backoff_max
@@ -127,7 +130,7 @@ class DAGAgentRunner:
                         passed = True
                         if cond:
                             try:
-                                passed = cond(result)
+                                passed = cond(result, self.shared_state)
                             except Exception:
                                 passed = False
                         
@@ -247,6 +250,10 @@ class DAGAgentRunner:
                 node.state = NodeState.RUNNING
 
                 try:
+                    if node.config.extra_context is None:
+                        node.config.extra_context = {}
+                    node.config.extra_context["dag_state"] = self.shared_state
+
                     parent_results = [
                         f"Node {p_id} result: {clean_context_for_downstream(self.nodes[p_id].result.text)}"
                         for p_id in node.active_parents
@@ -271,7 +278,7 @@ class DAGAgentRunner:
                         passed = True
                         if cond:
                             try:
-                                passed = cond(result)
+                                passed = cond(result, self.shared_state)
                             except Exception as ce:
                                 logger.warning(f"Edge condition {node_id}->{child_id} failed with exception: {ce}")
                                 passed = False
@@ -306,7 +313,7 @@ class DAGAgentRunner:
                             passed = True
                             if cond:
                                 try:
-                                    passed = cond(fallback_response)
+                                    passed = cond(fallback_response, self.shared_state)
                                 except Exception as ce:
                                     logger.warning(f"Edge condition {node_id}->{child_id} failed with exception: {ce}")
                                     passed = False
@@ -326,7 +333,7 @@ class DAGAgentRunner:
                                 passed = True
                                 if cond:
                                     try:
-                                        passed = cond(node.result)
+                                        passed = cond(node.result, self.shared_state)
                                     except Exception as ce:
                                         logger.warning(f"Edge condition {node_id}->{child_id} failed with exception: {ce}")
                                         passed = False

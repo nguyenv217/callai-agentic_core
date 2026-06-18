@@ -1,18 +1,13 @@
 # Architecture Decisions
 
-## 2026-06-18: Conditional Edges in DAGAgentRunner (Control Flow Decoupling)
+## 2026-06-18: Global State Bus in DAGAgentRunner & Subagent Re-Alignment
 
 **Context:**
-We needed a way to introduce dynamic routing (e.g., "if condition X, trigger branch Y") without coupling the execution logic inside an agent's prompt or forcing agents to use orchestrator-specific tools like `transfer_control` in DAG workflows.
+Conditional edges in `DAGAgentRunner` evaluated only localized `AgentResponse` objects, preventing holistic swarm routing decisions. Simultaneously, `SpawnSubAgentsTool` was utilizing `StatefulSwarmEngine` (a cyclic, transfer-based orchestrator) for task graphs defined with strict sequential edges, creating severe architectural mismatch.
 
 **Decision:**
-Implemented **Conditional Edges** natively in the `DAGAgentRunner`.
-Edges can now optionally take a third parameter: a `Callable[[AgentResponse], bool]`.
-When a node completes, its outbound edges evaluate this callable. 
-- If `True` (or omitted), the target node receives the parent's context.
-- If `False`, the branch is pruned. The target node records the parent as `skipped`. 
-If a node has ALL its parent dependencies skipped, the node itself transitions to `SKIPPED` and cascades the pruning downstream. 
-If a node has a mix of successful and skipped parents, it executes using only the context of the successful parents (acting as an implicit OR-merge for branched workflows).
+1.  **DAG State Bus:** We injected a global `shared_state: dict[str, Any]` into `DAGAgentRunner`. This state is propagated directly to all node runners via `RunnerConfig.extra_context["dag_state"]` (enabling mutation via tools) and is passed as the second argument to edge conditions (`Callable[[AgentResponse, dict], bool]`).
+2.  **Subagent Re-Alignment:** We refactored `SpawnSubAgentsTool` to exclusively orchestrate via `DAGAgentRunner`. We removed `max_swarm_steps` as topological execution implicitly provides bound termination.
 
 **Rationale:**
-This guarantees strict separation of concerns (Single Responsibility Principle). Agents remain "pure" computation units unaware of the global graph topology, while the graph orchestrator exclusively manages routing logic. It vastly increases the modularity and reusability of agent nodes across different swarms.
+Bridging global state sharing into the DAG retains the deterministic, acyclic guarantees of topological completion while resolving the localized context limitations. Real-world swarms require stateful routing, but do not necessarily require unstructured, dynamic cycles. This refactor cleanly eliminates technical debt, simplifies the schema, and aligns tools with their explicitly designed orchestrators.

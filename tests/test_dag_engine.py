@@ -151,7 +151,7 @@ async def test_conditional_edges():
     runner = AgentRunner(llm, tools, memory)
     config = RunnerConfig()
 
-    def condition_false(res: AgentResponse) -> bool:
+    def condition_false(res: AgentResponse, state: dict) -> bool:
         return False
 
     nodes_def = {
