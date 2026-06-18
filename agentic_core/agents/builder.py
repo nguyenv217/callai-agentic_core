@@ -120,7 +120,7 @@ async def chat(
     session_id: str | None = None,
     tenant_id: str = "default",   
     **kwargs
-) -> AgentResponse:
+) -> ChatResult:
     """
     The absolute simplest way to start an agentic flow.
     """

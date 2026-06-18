@@ -7,6 +7,7 @@ from agentic_core.engines.dag_engine import DAGAgentRunner, NodeState, DAGEventH
 from agentic_core.llm_providers.base import ILLMClient, LLMResponse
 from agentic_core.tools import ToolManager
 from agentic_core.memory.manager import MemoryManager
+from agentic_core.models import AgentResponse
 
 class MockLLMClient(ILLMClient):
     def __init__(self):

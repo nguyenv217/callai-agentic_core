@@ -171,8 +171,9 @@ As a safety net, `ToolManager` registers a synchronous `cleanup()` method with P
 * `ToolManager` accepts a `toolsets` mapping where each key is a logical group (e.g., `"file_ops"`) and the value is a list of tool names.
 * Optional `prompt` strings can be attached to a toolset; the runner can prepend them to the LLM prompt to give context about the available capabilities.
 
-### 6.2 Extra Context
+### 6.2 Extra Context & DAG State Bus
 * `extra_context` passed to the manager is merged into the `context` argument of every tool's `execute` call. Use it to share session state, authentication tokens, or temporary variables.
+* **DAG Workflows**: When running under a `DAGAgentRunner`, a globally shared state dictionary is automatically injected into `context["dag_state"]`. Your tools can mutate this dictionary to pass out-of-band data (like database IDs or file paths) across disparate nodes, entirely bypassing the LLM's context window.
 
 ---
 
