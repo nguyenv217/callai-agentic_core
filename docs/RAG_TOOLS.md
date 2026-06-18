@@ -38,7 +38,7 @@ Prepare your specific backend-compatible vector database. See `examples/example_
 ### 2. Initialize the RAG Tools
 ```python
 import asyncio
-from agentic_core.agents import create_openai_agent, chat
+from agentic_core.agents import AgentBuilder, chat
 from agentic_core.config import RunnerConfig
 from agentic_core_rag import (
     RAGConfig,
@@ -69,9 +69,7 @@ async def main():
     )
     
     # 4. Create an agent and register tools
-    runner = create_openai_agent(api_key="sk-...")
-    runner.tools.register_tool(search_tool)
-    runner.tools.register_tool(ingest_tool)
+    runner = AgentBuilder().with_provider_openai(api_key="sk-...").with_tools([search_tool, ingest_tool]).build()
     
     run_config = RunnerConfig(
         tools=[search_tool.schema, ingest_tool.schema],

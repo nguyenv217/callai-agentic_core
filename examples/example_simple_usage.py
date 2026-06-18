@@ -10,7 +10,7 @@ if not load_dotenv(dotenv_path=env_path):
     raise RuntimeError("No .env file found. Please create one in the project root directory and try again")
 
 import asyncio
-from agentic_core.agents import chat, create_openai_agent  # That's it!
+from agentic_core.agents import chat, AgentBuilder  # That's it!
 from pathlib import Path
 
 import os
@@ -26,12 +26,13 @@ async def main():
     print("Simple OpenAI Agent")
     print("=" * 50)
     
-    runner = create_openai_agent(
+    runner = AgentBuilder().with_provider_openai(
         api_key=os.getenv("FIREWORK_API_KEY", ""),                          # let's suppose you use a provider like FIREWORK
         model="fireworks/minimax-m2p5",                                     # refer to the provider-specific model slug 
-        base_url="https://api.fireworks.ai/inference/v1",                   # open-ai compatible endpoint
-        mcp_config_path=os.getenv("MCP_CONFIG_PATH", "memory.jsonl")        # path to your MCP configuration file
-    )
+        base_url="https://api.fireworks.ai/inference/v1"                    # open-ai compatible endpoint
+    ).with_mcp(
+        config_path=os.getenv("MCP_CONFIG_PATH", "memory.jsonl")        # path to your MCP configuration file
+    ).build()
 
     from agentic_core.engines.engine import RunnerConfig
     

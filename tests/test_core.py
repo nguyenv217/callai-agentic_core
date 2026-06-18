@@ -1,5 +1,5 @@
 import pytest
-from agentic_core.agents.builder import create_openai_agent
+from agentic_core.agents.builder import AgentBuilder
 from agentic_core.config import RunnerConfig
 from agentic_core.exceptions import IterationLimitReachedError
 from agentic_core.llm_providers.base import ILLMClient, LLMResponse
@@ -20,7 +20,7 @@ async def test_tool_json_decode_error(mock_llm_class):
     resp2 = LLMResponse(text="I fixed the JSON.", tool_calls=[], usage={})
 
     mock_llm = mock_llm_class([resp1, resp2])
-    agent = create_openai_agent(api_key="mock_key")
+    agent = AgentBuilder().with_provider_openai(api_key="mock_key").build()
     agent.llm = mock_llm
 
     result = await agent.run_turn("Test JSON error", SilentHandler())
@@ -40,7 +40,7 @@ async def test_max_iterations_reached(mock_llm_class):
     )
     mock_llm = mock_llm_class([resp] * 10)
 
-    agent = create_openai_agent(api_key="mock_key")
+    agent = AgentBuilder().with_provider_openai(api_key="mock_key").build()
     agent.llm = mock_llm
 
     class LoopTool(BaseTool):
@@ -69,7 +69,7 @@ async def test_tool_exception_handling(mock_llm_class, error_tool_factory):
     resp2 = LLMResponse(text="The tool failed, but I'm okay.", tool_calls=[], usage={}, )
 
     mock_llm = mock_llm_class([resp1, resp2])
-    agent = create_openai_agent(api_key="mock_key")
+    agent = AgentBuilder().with_provider_openai(api_key="mock_key").build()
     agent.llm = mock_llm
     agent.tools.register_tool(error_tool_factory(should_fail=True))
 
@@ -83,7 +83,7 @@ async def test_tool_exception_handling(mock_llm_class, error_tool_factory):
 @pytest.mark.asyncio
 async def test_system_prompt_combination(mock_llm_class):
     """Test that toolset prompt and explicit system prompt are merged."""
-    agent = create_openai_agent(api_key="mock_key")
+    agent = AgentBuilder().with_provider_openai(api_key="mock_key").build()
     agent.tools.add_toolset("my_set", [], "TOOLSET PROMPT")
 
     assert "my_set" in agent.tools.toolsets
@@ -107,7 +107,7 @@ async def test_handler_skip_tool(mock_llm_class, error_tool_factory):
     resp2 = LLMResponse(text="Tool was skipped.", tool_calls=[], usage={}, )
 
     mock_llm = mock_llm_class([resp1, resp2])
-    agent = create_openai_agent(api_key="mock_key")
+    agent = AgentBuilder().with_provider_openai(api_key="mock_key").build()
     agent.llm = mock_llm
     agent.tools.register_tool(error_tool_factory())
 
@@ -130,7 +130,7 @@ async def test_handler_abandon_turn(mock_llm_class, error_tool_factory):
     )
 
     mock_llm = mock_llm_class([resp1])
-    agent = create_openai_agent(api_key="mock_key")
+    agent = AgentBuilder().with_provider_openai(api_key="mock_key").build()
     agent.llm = mock_llm
     agent.tools.register_tool(error_tool_factory())
 

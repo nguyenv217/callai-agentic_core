@@ -364,16 +364,15 @@ from agentic_core.tools import ToolManager
 from agentic_core.llm_providers import OpenAILLM
 from agentic_core.handlers import PrintHandler
 
-# 1. Create components
-llm = OpenAILLM(api_key="sk-...", model="gpt-4o")
-memory = MemoryManager()
-memory.set_system_prompt("You are a helpful coding assistant.")
-tools = ToolManager()
+# 1. Create agent
+from agentic_core.agents import AgentBuilder
 
-# 2. Create agent
-agent = AgentRunner(llm_client=llm, tools=tools, memory=memory)
+agent = AgentBuilder() \
+    .with_provider_openai(api_key="sk-...", model="gpt-4o") \
+    .with_system_prompt("You are a helpful coding assistant.") \
+    .build()
 
-# 3. Run!
+# 2. Run!
 result = await agent.run_turn(
     user_input="Hello!",
     handler=PrintHandler()
