@@ -65,7 +65,7 @@ class DAGTask:
     max_retries: int | None = None
     context_assembler: Callable[[dict[str, AgentResponse], dict[str, Any]], str] | None = None
 
-class DAGAgentRunner:
+class GraphAgentRunner:
     def __init__(
         self, 
         nodes_def: dict[str, Tuple[AgentRunner, RunnerConfig, str, int] | DAGTask] | None, 
@@ -194,28 +194,54 @@ class DAGAgentRunner:
             logger.error(f"Failed to save DAG checkpoint: {e}")
 
     def compile(self):
+        visited = set()
+        rec_stack = set()
+        self.forward_edges = {u: [] for u in self.nodes}
+        self.back_edges = {u: [] for u in self.nodes}
+
+        def dfs(u):
+            visited.add(u)
+            rec_stack.add(u)
+            for v in self.out_edges[u]:
+                if v not in visited:
+                    self.forward_edges[u].append(v)
+                    dfs(v)
+                elif v in rec_stack:
+                    self.back_edges[u].append(v)
+                else:
+                    self.forward_edges[u].append(v)
+            rec_stack.remove(u)
+
+        for node in self.nodes:
+            if node not in visited:
+                dfs(node)
+
+        self.forward_in_degree = {n: 0 for n in self.nodes}
+        for u in self.nodes:
+            for v in self.forward_edges[u]:
+                self.forward_in_degree[v] += 1
+        
+        for node_id, node in self.nodes.items():
+            node.in_degree = self.forward_in_degree[node_id]
+
         from collections import deque
-        temp_in_degree = self.in_degree.copy()
+        temp_in_degree = self.forward_in_degree.copy()
         queue = deque([n for n in self.nodes if temp_in_degree[n] == 0])
-        visited_nodes = set()
         topo_order = []
 
         while queue:
             u = queue.popleft()
-            visited_nodes.add(u)
             topo_order.append(u)
-            for v in self.out_edges[u]:
+            for v in self.forward_edges[u]:
                 temp_in_degree[v] -= 1
                 if temp_in_degree[v] == 0:
                     queue.append(v)
 
-        if len(visited_nodes) != len(self.nodes):
-            raise NodeValidationError("Cycle detected in DAG.")
-
-        priorities = {}
+        priorities = {n: 1 for n in self.nodes}
         for u in reversed(topo_order):
-            children = self.out_edges[u]
-            priorities[u] = 1 if not children else 1 + max(priorities[v] for v in children)
+            children = self.forward_edges[u]
+            if children:
+                priorities[u] = 1 + max(priorities[v] for v in children)
 
         for node_id, priority in priorities.items():
             self.nodes[node_id].priority = priority
@@ -251,28 +277,59 @@ class DAGAgentRunner:
         else: # ABANDON
             return True, None
 
-    async def _resolve_child(self, child_id: str, parent_id: str, passed_condition: bool):
+    async def _resolve_forward_child(self, child_id: str, parent_id: str, passed_condition: bool):
         child = self.nodes[child_id]
         if child.state == NodeState.FAILED_UPSTREAM:
             return
 
         if passed_condition:
-            child.active_parents.append(parent_id)
+            if parent_id not in child.active_parents:
+                child.active_parents.append(parent_id)
         else:
-            child.skipped_parents.append(parent_id)
+            if parent_id not in child.skipped_parents:
+                child.skipped_parents.append(parent_id)
 
-        child.in_degree -= 1
-        if child.in_degree == 0:
-            if len(self.in_edges[child_id]) > 0 and not child.active_parents:
+        total_received = len(child.active_parents) + len(child.skipped_parents)
+        if total_received == self.forward_in_degree[child_id]:
+            if not child.active_parents:
                 child.state = NodeState.SKIPPED
                 child.result = AgentResponse(text=f"Node {child_id} skipped because all parent branches were pruned.")
                 await self.handler.on_node_complete(child_id, NodeState.SKIPPED, child.result)
-                for grand_child_id in self.out_edges[child_id]:
-                    await self._resolve_child(grand_child_id, child_id, passed_condition=False)
+                for grand_child_id in self.forward_edges[child_id]:
+                    await self._resolve_forward_child(grand_child_id, child_id, passed_condition=False)
             else:
                 child.state = NodeState.READY
                 await self.queue.put((-child.priority, child_id))
                 await self.handler.on_node_queued(child_id, child.priority)
+
+    async def _trigger_back_edge(self, target_id: str, source_id: str):
+        loop_body = set()
+        stack = [target_id]
+        while stack:
+            curr = stack.pop()
+            if curr not in loop_body:
+                loop_body.add(curr)
+                stack.extend(self.forward_edges[curr])
+        
+        async with self._state_lock:
+            for node_id in loop_body:
+                node = self.nodes[node_id]
+                node.state = NodeState.PENDING
+                node.result = None
+                node.error = None
+                node.error_details = None
+                node.failed_by = None
+                node.current_retries = 0
+                node.active_parents = [p for p in node.active_parents if p not in loop_body]
+                node.skipped_parents = [p for p in node.skipped_parents if p not in loop_body]
+        
+        target_node = self.nodes[target_id]
+        if source_id not in target_node.active_parents:
+            target_node.active_parents.append(source_id)
+            
+        target_node.state = NodeState.READY
+        await self.queue.put((-target_node.priority, target_id))
+        await self.handler.on_node_queued(target_id, target_node.priority)
 
     async def _worker(self, worker_id: int):
         while True:
@@ -281,15 +338,6 @@ class DAGAgentRunner:
                 node = self.nodes[node_id]
 
                 if node.state in (NodeState.SUCCESS, NodeState.FAILED, NodeState.FAILED_UPSTREAM, NodeState.SKIPPED):
-                    self.queue.task_done()
-                    continue
-
-                if len(self.in_edges[node_id]) > 0 and not node.active_parents:
-                    node.state = NodeState.SKIPPED
-                    node.result = AgentResponse(text=f"Node {node_id} skipped because all parent branches were pruned.")
-                    await self.handler.on_node_complete(node_id, NodeState.SKIPPED, node.result)
-                    for child_id in self.out_edges[node_id]:
-                        await self._resolve_child(child_id, node_id, passed_condition=False)
                     self.queue.task_done()
                     continue
 
@@ -348,16 +396,28 @@ class DAGAgentRunner:
                     await self.handler.on_node_complete(node_id, NodeState.SUCCESS, result)
                     await self._save_checkpoint(node_id)
 
-                    for child_id in self.out_edges[node_id]:
+                    for child_id in self.forward_edges[node_id]:
                         cond = self.edge_conditions.get((node_id, child_id))
                         passed = True
                         if cond:
                             try:
-                                passed = cond(result, self.shared_state)
+                                passed = cond(result, local_state)
                             except Exception as ce:
                                 logger.warning(f"Edge condition {node_id}->{child_id} failed with exception: {ce}")
                                 passed = False
-                        await self._resolve_child(child_id, node_id, passed)
+                        await self._resolve_forward_child(child_id, node_id, passed)
+
+                    for child_id in self.back_edges[node_id]:
+                        cond = self.edge_conditions.get((node_id, child_id))
+                        passed = True
+                        if cond:
+                            try:
+                                passed = cond(result, local_state)
+                            except Exception as ce:
+                                logger.warning(f"Back-edge condition {node_id}->{child_id} failed with exception: {ce}")
+                                passed = False
+                        if passed:
+                            await self._trigger_back_edge(child_id, node_id)
 
                 except Exception as e:
                     tb_str = traceback.format_exc()
@@ -383,7 +443,7 @@ class DAGAgentRunner:
 
                         await self.handler.on_node_complete(node_id, NodeState.SUCCESS, fallback_response)
                         await self._save_checkpoint(node_id)
-                        for child_id in self.out_edges[node_id]:
+                        for child_id in self.forward_edges[node_id]:
                             cond = self.edge_conditions.get((node_id, child_id))
                             passed = True
                             if cond:
@@ -392,7 +452,19 @@ class DAGAgentRunner:
                                 except Exception as ce:
                                     logger.warning(f"Edge condition {node_id}->{child_id} failed with exception: {ce}")
                                     passed = False
-                            await self._resolve_child(child_id, node_id, passed)
+                            await self._resolve_forward_child(child_id, node_id, passed)
+                            
+                        for child_id in self.back_edges[node_id]:
+                            cond = self.edge_conditions.get((node_id, child_id))
+                            passed = True
+                            if cond:
+                                try:
+                                    passed = cond(fallback_response, self.shared_state)
+                                except Exception as ce:
+                                    logger.warning(f"Back-edge condition {node_id}->{child_id} failed with exception: {ce}")
+                                    passed = False
+                            if passed:
+                                await self._trigger_back_edge(child_id, node_id)
                     else:
                         node.state = NodeState.FAILED
                         node.error = e
@@ -404,7 +476,7 @@ class DAGAgentRunner:
                             node.state = NodeState.SUCCESS 
                             await self.handler.on_node_complete(node_id, NodeState.SUCCESS, node.result)
                             await self._save_checkpoint(node_id)
-                            for child_id in self.out_edges[node_id]:
+                            for child_id in self.forward_edges[node_id]:
                                 cond = self.edge_conditions.get((node_id, child_id))
                                 passed = True
                                 if cond:
@@ -413,7 +485,19 @@ class DAGAgentRunner:
                                     except Exception as ce:
                                         logger.warning(f"Edge condition {node_id}->{child_id} failed with exception: {ce}")
                                         passed = False
-                                await self._resolve_child(child_id, node_id, passed)
+                                await self._resolve_forward_child(child_id, node_id, passed)
+                                
+                            for child_id in self.back_edges[node_id]:
+                                cond = self.edge_conditions.get((node_id, child_id))
+                                passed = True
+                                if cond:
+                                    try:
+                                        passed = cond(node.result, self.shared_state)
+                                    except Exception as ce:
+                                        logger.warning(f"Back-edge condition {node_id}->{child_id} failed with exception: {ce}")
+                                        passed = False
+                                if passed:
+                                    await self._trigger_back_edge(child_id, node_id)
                         elif isinstance(decision_event.action, GraphRoutingDecision.FALLBACK):
                             pass 
                         else:
@@ -425,7 +509,7 @@ class DAGAgentRunner:
                 break
 
     async def _cascade_failure(self, failed_node_id: str):
-        stack = list(self.out_edges[failed_node_id])
+        stack = list(self.forward_edges[failed_node_id])
         visited = set()
         while stack:
             node_id = stack.pop()
@@ -438,7 +522,7 @@ class DAGAgentRunner:
                 node.failed_by = failed_node_id
                 node.result = f"Upstream failure caused by node: {failed_node_id}"
                 await self.handler.on_node_complete(node_id, NodeState.FAILED_UPSTREAM, node.result)
-                stack.extend(self.out_edges[node_id])
+                stack.extend(self.forward_edges[node_id])
 
     async def execute(self) -> DAGResponse:
         if self.persistence_provider and self.session_id:
@@ -466,7 +550,7 @@ class DAGAgentRunner:
             
         for node_id, node in self.nodes.items():
             if node.state == NodeState.SUCCESS: continue 
-            if node.in_degree == 0:
+            if self.forward_in_degree[node_id] == 0:
                 node.state = NodeState.READY
                 await self.queue.put((-node.priority, node_id))
 
@@ -490,3 +574,5 @@ class DAGAgentRunner:
         response = DAGResponse(nodes=nodes_resp)
         await self.handler.on_graph_complete(response)
         return response
+
+DAGAgentRunner = GraphAgentRunner
