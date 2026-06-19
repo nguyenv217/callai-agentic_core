@@ -55,10 +55,18 @@ class DAGNode:
         if self.active_parents is None: self.active_parents = []
         if self.skipped_parents is None: self.skipped_parents = []
 
+@dataclass
+class DAGTask:
+    runner: AgentRunner
+    prompt: str
+    config: RunnerConfig | None = None
+    max_retries: int | None = None
+    context_assembler: Callable[[dict[str, AgentResponse], dict[str, Any]], str] | None = None
+
 class DAGAgentRunner:
     def __init__(
         self, 
-        nodes_def: dict[str, tuple] | None, 
+        nodes_def: dict[str, Tuple[AgentRunner, RunnerConfig, str, int] | DAGTask] | None, 
         edges: list[Tuple[str, str] | Tuple[str, str, Callable[[AgentResponse, dict[str, Any]], bool]]], 
         max_concurrency: int = 4,
         handler: DAGEventHandler | None = None,
@@ -68,20 +76,6 @@ class DAGAgentRunner:
         default_backoff_max: float = 60.0,
         shared_state: dict[str, Any] | None = None
     ):
-        """
-        Engine for concurrent dispatch of agent swarms with dependencies modeled as a Directed Acyclic Graph (DAG) .
-
-        Args:
-            nodes_def: {node_id: (runner, config, prompt, max_retries, context_assembler)}
-            edges: [(parent_id, child_id)] or [(parent_id, child_id, condition_callable)]
-            max_concurrency: Maximum number of concurrent nodes to run at once.
-            handler: Optional handler for tracking execution events.
-            checkpoint_state: Optional state from a previous failed run to resume from.
-            default_max_retries: Default max retries for nodes that don't specify.
-            default_backoff_base: Default base delay for exponential backoff.
-            default_backoff_max: Default max delay for exponential backoff.
-            shared_state: Global dictionary for stateful data passing between nodes.
-        """
         self.nodes: dict[str, DAGNode] = {}
         self.out_edges: dict[str, list[str]] = {node_id: [] for node_id in nodes_def}
         self.in_edges: dict[str, list[str]] = {node_id: [] for node_id in nodes_def}
@@ -93,10 +87,25 @@ class DAGAgentRunner:
         self.default_backoff_max = default_backoff_max
 
         for node_id, def_vals in nodes_def.items():
-            runner, config, prompt = def_vals[:3]
-            max_retries = def_vals[3] if len(def_vals) > 3 else default_max_retries
-            context_assembler = def_vals[4] if len(def_vals) > 4 else None
-            self.nodes[node_id] = DAGNode(node_id, runner, config, prompt, max_retries=max_retries, context_assembler=context_assembler)
+            if isinstance(def_vals, tuple):
+                runner, config, prompt = def_vals[:3]
+                max_retries = def_vals[3] if len(def_vals) > 3 else default_max_retries
+                context_assembler = def_vals[4] if len(def_vals) > 4 else None
+            else:
+                runner = def_vals.runner
+                config = def_vals.config or RunnerConfig()
+                prompt = def_vals.prompt
+                max_retries = def_vals.max_retries if def_vals.max_retries is not None else default_max_retries
+                context_assembler = def_vals.context_assembler
+
+            self.nodes[node_id] = DAGNode(
+                node_id=node_id, 
+                runner=runner, 
+                config=config, 
+                prompt=prompt, 
+                max_retries=max_retries,
+                context_assembler=context_assembler
+            )
 
         for edge in edges:
             if len(edge) == 2:
@@ -145,8 +154,6 @@ class DAGAgentRunner:
                         self.in_degree[child_id] -= 1
                         self.nodes[child_id].in_degree = self.in_degree[child_id]
 
-
-
     def compile(self):
         from collections import deque
         temp_in_degree = self.in_degree.copy()
@@ -181,7 +188,6 @@ class DAGAgentRunner:
         finally:
             self.active_retries -= 1
 
-    # In agentic_core/engines/dag_engine.py
     async def _create_error_context(self, e: BaseException, node_id: str, retry_count: int = 0) -> ErrorContext:
         return ErrorContext(
             error=e,
@@ -256,9 +262,11 @@ class DAGAgentRunner:
                         node.config.extra_context = {}
                     node.config.extra_context["dag_state"] = self.shared_state
 
+                    # Retrieve executed parent results using the compiled graph in-edges
                     parent_responses = {
                         p_id: self.nodes[p_id].result
-                        for p_id in node.active_parents
+                        for p_id in self.in_edges.get(node_id, [])
+                        if self.nodes[p_id].result is not None
                     }
 
                     if node.context_assembler:
@@ -270,14 +278,12 @@ class DAGAgentRunner:
                     else:
                         parent_results = [
                             f"Node {p_id} result: {clean_context_for_downstream(resp.text)}"
-                            for p_id, resp in parent_responses.items() if resp
+                            for p_id, resp in parent_responses.items()
                         ]
                         context_prefix = "\n\nParent Context:\n" + "\n".join(parent_results) if parent_results else ""
-                    
-                    full_prompt = node.prompt + context_prefix
-                    
+
                     result = await node.runner.run_turn(
-                        user_input=full_prompt,
+                        user_input=node.prompt + context_prefix,
                         handler=self.handler,
                         config=node.config
                     )
@@ -310,7 +316,6 @@ class DAGAgentRunner:
                         node.state = NodeState.RETRYING
                         await self.handler.on_node_retry(node_id, node.current_retries, node.max_retries)
                         
-                        # Inspect the decision again to grab backoff config
                         decision = (await self.handler.on_error(error_context)).action
                         delay = decision.delay * (decision.exponential_base ** node.current_retries) if isinstance(decision, ErrorDecision.RETRY) else self.default_backoff_base
                         
@@ -355,9 +360,8 @@ class DAGAgentRunner:
                                         passed = False
                                 await self._resolve_child(child_id, node_id, passed)
                         elif isinstance(decision_event.action, GraphRoutingDecision.FALLBACK):
-                            # Future implementation: Inject dynamic fallback runner here
                             pass 
-                        else: # CASCADE
+                        else:
                             await self._cascade_failure(node_id)
                             await self.handler.on_node_complete(node_id, NodeState.FAILED, str(e))
                 finally:
@@ -396,7 +400,7 @@ class DAGAgentRunner:
         workers = [asyncio.create_task(self._worker(i)) for i in range(self.max_concurrency)]
 
         try:
-            while True:  # avoid queue.join() misintepreting empty queue while retrying is underway 
+            while True:  
                 await self.queue.join()
                 if self.active_retries == 0:
                     break

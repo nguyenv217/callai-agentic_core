@@ -92,7 +92,8 @@ async def test_spawn_subagents_granular_tools(subagent_tool, mock_llm, mock_tm):
 
         # Inspect the nodes_def passed to DAGAgentRunner
         nodes_def = MockDAG.call_args[0][0]
-        runner, config, prompt, max_retries = nodes_def["n1"]
+        task = nodes_def["n1"]
+        config = task.config
         assert config.tools is not None 
         assert {"type":"function", "function":{"name":"search_tool"}} in config.tools
 

@@ -89,6 +89,7 @@ class SpawnSubAgentsTool(BaseTool):
     
     async def execute(self, args: dict, context: dict) -> str:
         from agentic_core.engines import AgentRunner, DAGAgentRunner
+        from agentic_core.engines.dag_engine import DAGTask
         # Resolve dependencies from context
         llm_client: ILLMClient = context.get("llm_client")
         tools_manager: ToolManager = context.get("tools_manager")
@@ -147,7 +148,12 @@ class SpawnSubAgentsTool(BaseTool):
             max_retries = cfg.get("max_retries", 0)
             config.max_iterations = cfg.get("max_iterations", 10)
 
-            nodes_def[node_id] = (runner, config, prompt, max_retries)
+            nodes_def[node_id] = DAGTask(
+                runner=runner,
+                prompt=prompt,
+                config=config,
+                max_retries=max_retries
+            )
 
         try:
             dag_runner = DAGAgentRunner(nodes_def, edges, handler=handler)

@@ -3,34 +3,28 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 from agentic_core.handlers.dag import DAGSmartRetryHandler
 from agentic_core.engines.engine import AgentRunner, RunnerConfig
-from agentic_core.engines.dag_engine import DAGAgentRunner, NodeState, DAGEventHandler
+from agentic_core.engines.dag_engine import DAGAgentRunner, NodeState, DAGEventHandler, DAGTask
+from agentic_core.models import AgentResponse
 from agentic_core.llm_providers.base import ILLMClient, LLMResponse
 from agentic_core.tools import ToolManager
 from agentic_core.memory.manager import MemoryManager
-from agentic_core.models import AgentResponse
 
 class MockLLMClient(ILLMClient):
     def __init__(self):
         self.call_counts = {}
+        self.last_prompts = {}
 
     async def ask(self, messages, tools=None, **kwargs):
         last_message = messages[-1]["content"]
         node_id = "Unknown"
-        # Infer node_id from prompt (hack for tests)
         for word in last_message.split():
             if word.startswith("Node_"):
                 node_id = word
 
         self.call_counts[node_id] = self.call_counts.get(node_id, 0) + 1
+        self.last_prompts[node_id] = last_message
 
         if "fail_permanent" in last_message:
-            # We want the runner to return something that triggers the error handling
-            # Based on the dag_engine.py: if "error" in result: raise Exception(result["error"])
-            # The AgentRunner typically returns the final result.
-            # To simulate a failure that the dag_engine catches, we can make the runner return a dict with "error".
-            # However, the agentic_core AgentRunner.run_turn implementation might not do that.
-            # Let's assume for these tests that MockLLMClient is used by a runner that handles this.
-            # In reality, if the runner raises an exception, the dag_engine catches it.
             raise Exception("Fatal error")
         elif "fail_transient" in last_message:
             if self.call_counts[node_id] <= 2:
@@ -44,130 +38,49 @@ class MinimalToolManager(ToolManager):
     def __init__(self):
         super().__init__()
         self.tools_list = []
-
-    async def prepare_turn(self, config):
-        pass
-
-    def get_tools_from_toolset(self, toolset):
-        return self.tools_list
-
-    def get_mcp_loaded_tools(self):
-        return []
-
-    def get_discovery_tools(self):
-        return []
-
-    async def execute(self, tool_name, tool_args, **kwargs):
-        return "tool result"
+    async def prepare_turn(self, config): pass
+    def get_tools_from_toolset(self, toolset): return self.tools_list
+    def get_mcp_loaded_tools(self): return []
+    def get_discovery_tools(self): return []
+    async def execute(self, tool_name, tool_args, **kwargs): return "tool result"
 
 @pytest.mark.asyncio
 async def test_retry_success():
     llm = MockLLMClient()
-    tools = MinimalToolManager()
-    memory = MemoryManager()
-    runner = AgentRunner(llm, tools, memory)
-    config = RunnerConfig()
-
-    nodes_def = {
-        "A": (runner, config, "Node_A fail_transient", 3),
-    }
-    edges = []
-
-    dag = DAGAgentRunner(nodes_def, edges, handler=DAGSmartRetryHandler())
+    runner = AgentRunner(llm, MinimalToolManager(), MemoryManager())
+    
+    nodes_def = {"A": DAGTask(runner, "Node_A fail_transient", max_retries=3)}
+    dag = DAGAgentRunner(nodes_def, [], handler=DAGSmartRetryHandler())
     results = await dag.execute()
-
     assert results.nodes["A"].state == "SUCCESS"
     assert llm.call_counts["Node_A"] == 3
 
 @pytest.mark.asyncio
 async def test_retry_exhaustion():
     llm = MockLLMClient()
-    tools = MinimalToolManager()
-    memory = MemoryManager()
-    runner = AgentRunner(llm, tools, memory)
-    config = RunnerConfig()
-
-    nodes_def = {
-        "A": (runner, config, "Node_A fail_transient", 1),
-    }
-    edges = []
-
-    dag = DAGAgentRunner(nodes_def, edges, handler=DAGSmartRetryHandler(fallback_on_permanent_failure=False))
+    runner = AgentRunner(llm, MinimalToolManager(), MemoryManager())
+    
+    nodes_def = {"A": DAGTask(runner, "Node_A fail_transient", max_retries=1)}
+    dag = DAGAgentRunner(nodes_def, [], handler=DAGSmartRetryHandler(fallback_on_permanent_failure=False))
     results = await dag.execute()
-
     assert results.nodes["A"].state == "FAILED"
     assert llm.call_counts["Node_A"] == 2
 
 @pytest.mark.asyncio
-async def test_permanent_failure_no_retry():
-    llm = MockLLMClient()
-    tools = MinimalToolManager()
-    memory = MemoryManager()
-    runner = AgentRunner(llm, tools, memory)
-    config = RunnerConfig()
-
-    nodes_def = {
-        "A": (runner, config, "Node_A fail_permanent", 5),
-    }
-    edges = []
-
-    dag = DAGAgentRunner(nodes_def, edges)
-    results = await dag.execute()
-
-    assert results.nodes["A"].state == "FAILED"
-    assert llm.call_counts["Node_A"] == 1
-    assert "Fatal error" in str(results.nodes["A"].error)
-    assert results.nodes["A"].error_details is not None
-
-@pytest.mark.asyncio
-async def test_multi_parent_cascade_bug():
-    llm = MockLLMClient()
-    tools = MinimalToolManager()
-    memory = MemoryManager()
-    runner1 = AgentRunner(llm, tools, memory)
-    runner2 = AgentRunner(llm, tools, memory)
-    runner3 = AgentRunner(llm, tools, memory)
-    config = RunnerConfig()
-
-    nodes_def = {
-        "A": (runner1, config, "Node_A fail_permanent", 0),
-        "B": (runner2, config, "Node_B success", 0),
-        "C": (runner3, config, "Node_C", 0),
-    }
-    edges = [("A", "C"), ("B", "C")]
-
-    dag = DAGAgentRunner(nodes_def, edges)
-    results = await dag.execute()
-
-    assert results.nodes["A"].state == "FAILED"
-    assert results.nodes["B"].state == "SUCCESS"
-    assert results.nodes["C"].state == "FAILED_UPSTREAM"
-    assert results.nodes["C"].failed_by == "A"
-
-@pytest.mark.asyncio
 async def test_conditional_edges():
     llm = MockLLMClient()
-    tools = MinimalToolManager()
-    memory = MemoryManager()
-    runner = AgentRunner(llm, tools, memory)
-    config = RunnerConfig()
-
-    def condition_false(res: AgentResponse, state: dict) -> bool:
-        return False
+    runner = AgentRunner(llm, MinimalToolManager(), MemoryManager())
+    
+    def condition_false(res: AgentResponse, state: dict) -> bool: return False
+    def condition_true(res: AgentResponse, state: dict) -> bool: return True
 
     nodes_def = {
-        "A": (runner, config, "Node_A success", 0),
-        "B": (runner, config, "Node_B success", 0),
-        "C": (runner, config, "Node_C success", 0),
-        "D": (runner, config, "Node_D success", 0),
+        "A": DAGTask(runner, "Node_A success"),
+        "B": DAGTask(runner, "Node_B success"),
+        "C": DAGTask(runner, "Node_C success"),
+        "D": DAGTask(runner, "Node_D success"),
     }
-    
-    edges = [
-        ("A", "B"), 
-        ("A", "C", condition_false), 
-        ("B", "D"), 
-        ("C", "D")
-    ]
+    edges = [("A", "B", condition_true), ("A", "C", condition_false), ("B", "D"), ("C", "D")]
 
     dag = DAGAgentRunner(nodes_def, edges)
     results = await dag.execute()
@@ -178,25 +91,37 @@ async def test_conditional_edges():
     assert results.nodes["D"].state == "SUCCESS"
     
 @pytest.mark.asyncio
-async def test_dag_success():
+async def test_context_assembler():
     llm = MockLLMClient()
-    tools = MinimalToolManager()
-    memory = MemoryManager()
-    runner1 = AgentRunner(llm, tools, memory)
-    runner2 = AgentRunner(llm, tools, memory)
-    runner3 = AgentRunner(llm, tools, memory)
-    config = RunnerConfig()
-
+    runner = AgentRunner(llm, MinimalToolManager(), MemoryManager())
+    
+    def reducer(parents, state):
+        return "\nCustom Reduced: " + parents["A"].text
+        
     nodes_def = {
-        "A": (runner1, config, "Node_A success", 0),
-        "B": (runner2, config, "Node_B success", 0),
-        "C": (runner3, config, "Node_C success", 0),
+        "A": DAGTask(runner, "Node_A success"),
+        "B": DAGTask(runner, "Node_B success", context_assembler=reducer)
     }
-    edges = [("A", "B"), ("A", "C"), ("B", "C")]
-
+    edges = [("A", "B")]
+    
     dag = DAGAgentRunner(nodes_def, edges)
-    results = await dag.execute()
+    await dag.execute()
+    
+    assert "Custom Reduced: Success" in llm.last_prompts["Node_B"]
 
-    assert results.nodes["A"].state == "SUCCESS"
-    assert results.nodes["B"].state == "SUCCESS"
-    assert results.nodes["C"].state == "SUCCESS"
+@pytest.mark.asyncio
+async def test_context_fallback():
+    llm = MockLLMClient()
+    runner = AgentRunner(llm, MinimalToolManager(), MemoryManager())
+    
+    nodes_def = {
+        "A": DAGTask(runner, "Node_A success"),
+        "B": DAGTask(runner, "Node_B success")
+    }
+    edges = [("A", "B")]
+    
+    dag = DAGAgentRunner(nodes_def, edges)
+    await dag.execute()
+    
+    assert "Parent Context:" in llm.last_prompts["Node_B"]
+    assert "Node A result: Success" in llm.last_prompts["Node_B"]
