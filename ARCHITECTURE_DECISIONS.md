@@ -9,3 +9,17 @@ We recognized the framework natively bounded DAG execution to ephemeral memory p
 
 **Rationale:**
 These decisions grant enterprise-level fault tolerance and observability without injecting heavy infrastructure dependencies into the core package. The framework remains zero-config out of the box but is trivially extensible for complex, long-running production environments.
+
+## 2026-06-19: Transition to Horizontally Scalable Workflow Paradigm
+
+**Context:**
+The previous implementation of `DAGAgentRunner` was structurally bottlenecked, relying on a single-process `asyncio.PriorityQueue`, O(N^2) state persistence dumps, and a mutable shared dictionary across concurrent coroutines. This caused massive write amplification to databases, potential race conditions, and an inability to distribute tasks across horizontal workers or pause execution for Human-In-The-Loop (HITL) workflows.
+
+**Decision:**
+1. **Task Broker Abstraction**: Replaced `asyncio.PriorityQueue` with an injected `ITaskBroker` protocol, allowing seamless swapping to Redis, Celery, or RabbitMQ for distributed cluster orchestration.
+2. **State Isolation**: Replaced concurrent mutability of `shared_state` with deep-copied isolated state channels and a deterministic change reducer at the node boundaries.
+3. **Delta Checkpointing**: Expanded `IPersistenceProvider` to support incremental append-only `save_node_result()` to eliminate O(N^2) write bloat on massive sub-agent DAG graphs.
+4. **First-Class Suspension**: Introduced `SUSPEND` lifecycle action and `StreamEventType.SUSPENDED` natively to the `AgentRunner`, pausing node execution safely for asynchronous external triggers (e.g., Human-in-the-loop webhooks).
+
+**Rationale:**
+These fixes break the single-process ceiling of `agentic_core`. Solo developers can still run it zero-config locally, but enterprise users can now confidently scale the orchestration across Kubernetes clusters.

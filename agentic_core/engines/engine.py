@@ -326,6 +326,11 @@ class AgentRunner:
                         await self._add_error_tool_result(tool_name, tool_id, decision_event.action.msg, handler)
                         yield StreamEvent(StreamEventType.TOOL_RESULT, {"tool": tool_name, "id": tool_id, "result": decision_event.action.msg, "success": True})
                         break
+                    elif isinstance(decision_event.action, ToolStartDecision.SUSPEND):
+                        yield StreamEvent(StreamEventType.SUSPENDED, {"tool": tool_name, "id": tool_id})
+                        final_response.text += f"\n[Execution Suspended pending external input for tool: {tool_name}]"
+                        iteration = max_iterations + 1
+                        break
 
                     try:
                         parser = tool_args_parser or self.tool_args_parser

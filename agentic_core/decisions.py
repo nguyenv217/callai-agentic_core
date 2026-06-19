@@ -57,12 +57,17 @@ class ToolStartDecision:
         msg: str
         name: str = "BREAK_WITH_MSG"
 
+    @dataclass(frozen=True)
+    class SUSPEND:
+        name: str = "SUSPEND"
+
 ToolStartAction = Union[
-   ToolStartDecision.CONTINUE,
-   ToolStartDecision.SKIP, 
-   ToolStartDecision.SKIP_WITH_MSG, 
-   ToolStartDecision.ABANDON, 
-   ToolStartDecision.BREAK_WITH_MSG
+    ToolStartDecision.CONTINUE,
+    ToolStartDecision.SKIP, 
+    ToolStartDecision.SKIP_WITH_MSG, 
+    ToolStartDecision.ABANDON, 
+    ToolStartDecision.BREAK_WITH_MSG,
+    ToolStartDecision.SUSPEND
 ]
 
 # ===================================================

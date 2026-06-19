@@ -60,6 +60,7 @@ class StreamEventType(Enum):
     TOOL_RESULT = "tool_result"
     ERROR = "error"
     FINAL_RESPONSE = "final_response"
+    SUSPENDED = "suspended"
 
 @dataclass
 class StreamEvent:

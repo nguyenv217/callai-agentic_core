@@ -32,6 +32,7 @@ class NodeState(Enum):
     FAILED_UPSTREAM = auto()
     RETRYING = auto()
     SKIPPED = auto()
+    SUSPENDED = auto()
 
 @dataclass
 class DAGNode:
@@ -77,7 +78,8 @@ class DAGAgentRunner:
         default_backoff_max: float = 60.0,
         shared_state: dict[str, Any] | None = None,
         persistence_provider: IPersistenceProvider | None = None,
-        session_id: str | None = None
+        session_id: str | None = None,
+        task_broker: Any | None = None
     ):
         self.nodes: dict[str, DAGNode] = {}
         self.out_edges: dict[str, list[str]] = {node_id: [] for node_id in nodes_def}
@@ -130,10 +132,11 @@ class DAGAgentRunner:
 
         self.max_concurrency = max_concurrency
         self.handler = handler or DAGEventHandler()
-        self.queue = asyncio.PriorityQueue()
+        self.queue = task_broker if task_broker is not None else asyncio.PriorityQueue()
         self.active_retries = 0  
         self.persistence_provider = persistence_provider
         self.session_id = session_id
+        self._state_lock = asyncio.Lock()
         
         if checkpoint_state:
             self._apply_checkpoint(checkpoint_state)
@@ -162,9 +165,21 @@ class DAGAgentRunner:
                     self.in_degree[child_id] -= 1
                     self.nodes[child_id].in_degree = self.in_degree[child_id]
 
-    async def _save_checkpoint(self):
+    async def _save_checkpoint(self, completed_node_id: str | None = None):
         if not (self.persistence_provider and self.session_id):
             return
+
+        if completed_node_id and hasattr(self.persistence_provider, "save_node_result"):
+            node = self.nodes[completed_node_id]
+            try:
+                await self.persistence_provider.save_node_result(
+                    self.session_id, 
+                    completed_node_id, 
+                    node.result.to_dict() if node.result else {}
+                )
+            except Exception as e:
+                logger.error(f"Failed to save node checkpoint: {e}")
+
         state = {
             "results": {
                 n_id: n.result.to_dict() 
@@ -288,7 +303,11 @@ class DAGAgentRunner:
                         turn_config.extra_context = {}
                     else:
                         turn_config.extra_context = turn_config.extra_context.copy()
-                    turn_config.extra_context["dag_state"] = self.shared_state
+                    
+                    async with self._state_lock:
+                        local_state = copy.deepcopy(self.shared_state)
+                        original_state_snapshot = copy.deepcopy(local_state)
+                    turn_config.extra_context["dag_state"] = local_state
 
                     # Retrieve executed parent results using the compiled graph in-edges
                     parent_responses = {
@@ -319,10 +338,15 @@ class DAGAgentRunner:
                     if result.error:
                         raise NodeExecutionError(node_id, str(result.error), result.error)
 
+                    async with self._state_lock:
+                        for k, v in local_state.items():
+                            if k not in original_state_snapshot or original_state_snapshot[k] != v:
+                                self.shared_state[k] = v
+
                     node.result = result
                     node.state = NodeState.SUCCESS
                     await self.handler.on_node_complete(node_id, NodeState.SUCCESS, result)
-                    await self._save_checkpoint()
+                    await self._save_checkpoint(node_id)
 
                     for child_id in self.out_edges[node_id]:
                         cond = self.edge_conditions.get((node_id, child_id))
@@ -358,7 +382,7 @@ class DAGAgentRunner:
                         node.error_details = tb_str
 
                         await self.handler.on_node_complete(node_id, NodeState.SUCCESS, fallback_response)
-                        await self._save_checkpoint()
+                        await self._save_checkpoint(node_id)
                         for child_id in self.out_edges[node_id]:
                             cond = self.edge_conditions.get((node_id, child_id))
                             passed = True
@@ -379,7 +403,7 @@ class DAGAgentRunner:
                             node.result = AgentResponse(text=f"IGNORED: Node {node_id} failed permanently: {convert_exception_to_message(e)}.")
                             node.state = NodeState.SUCCESS 
                             await self.handler.on_node_complete(node_id, NodeState.SUCCESS, node.result)
-                            await self._save_checkpoint()
+                            await self._save_checkpoint(node_id)
                             for child_id in self.out_edges[node_id]:
                                 cond = self.edge_conditions.get((node_id, child_id))
                                 passed = True
