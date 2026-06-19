@@ -24,6 +24,9 @@ The engine automatically calculates the longest path to the leaf nodes. Nodes th
 ### 4. Adaptive Retries & Cascade Failures
 Exponential backoff handles transient API errors. If a node fails permanently, its downstream dependents are automatically masked as `FAILED_UPSTREAM`.
 
+### 5. Context Reducers (State Channels)
+To prevent "Prompt-as-a-Database" token bloat, `DAGAgentRunner` supports custom Context Assemblers (`State Reducers`). Instead of blindly concatenating all parent outputs into the prompt, you can define a `Callable[[dict[str, AgentResponse], dict], str]` that prunes, formats, or aggregates upstream dependencies and the global state.
+
 ## Usage Guide
 
 ### Basic Setup with Conditional Edges and State Bus
@@ -47,9 +50,13 @@ config = RunnerConfig()
 runner = AgentRunner(llm, tools, memory)
 
 # 2. Define the Graph Nodes
+def reduce_research(parents: dict, state: dict) -> str:
+    # Safely extract just the text we care about to prevent token bloat
+    return f"\n\nHere is the research to review: {parents['research'].text[:500]}..."
+
 nodes_def = {
     "research": (runner, config, "Research the latest trends in AI.", 3),
-    "review": (runner, config, "Review the research. Set 'approved': True in dag_state if good.", 2),
+    "review": (runner, config, "Review the research. Set 'approved': True in dag_state if good.", 2, reduce_research), # 5th param is the context assembler
     "publish": (runner, config, "Publish the article.", 1),
     "revise": (runner, config, "Revise the research based on feedback.", 1),
 }
@@ -94,6 +101,41 @@ class DAGResponse:
     nodes: dict[str, DAGNodeResponse]
     error: BaseException | None
 ```
+
+### Advanced Configuration
+
+#### `nodes_def` Parameter Breakdown
+
+The nodes_def dictionary is the heart of your graph. Each entry follows this tuple structure: "node_id": (AgentRunner, RunnerConfig, str, int)
+
+| Parameter | Type       | Description                                                                           |
+| :-------- | :--------- | :------------------------------------------------------------------------------------ |
+| `AgentRunner` | `AgentRunner`   | The logic engine for this specific node.                                                |
+| `RunnerConfig`  | `RunnerConfig`  | Runtime settings (max iterations, system prompt, etc.).                                 |
+| `prompt      `  | `str`           | The specific instruction for this node.                                                |
+| `max_retries `  | `int`           | How many times to retry on transient API errors (optional).                             |
+| `context_assembler` | `Callable` | Optional reducer `[[dict, dict], str]` to format parent outputs and prevent token bloat. |
+
+### Monitoring with `DAGEventHandler`
+
+You can track the execution in real-time by implementing a custom handler:
+
+```python
+from agentic_core.dag_engine import DAGEventHandler
+
+class MyDAGHandler(DAGEventHandler):
+    def on_node_start(self, node_id, worker_id):
+        print(f"Node {node_id} is now running on worker {worker_id}")
+
+    def on_node_retry(self, node_id, count, max_r):
+        print(f"Node {node_id} failed. Retry {count}/{max_r}...")
+
+    def on_node_complete(self, node_id, status, result):
+        print(f"Node {node_id} finished with status: {status}")
+
+engine = DAGAgentRunner(nodes_def, edges, handler=MyDAGHandler())
+```
+
 
 ## Understanding Node States
 

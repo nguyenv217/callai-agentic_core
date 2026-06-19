@@ -49,6 +49,7 @@ class DAGNode:
     failed_by: str | None = None
     active_parents: list[str] = None
     skipped_parents: list[str] = None
+    context_assembler: Callable[[dict[str, AgentResponse], dict[str, Any]], str] | None = None
 
     def __post_init__(self):
         if self.active_parents is None: self.active_parents = []
@@ -57,7 +58,7 @@ class DAGNode:
 class DAGAgentRunner:
     def __init__(
         self, 
-        nodes_def: dict[str, Tuple[AgentRunner, RunnerConfig, str, int]] | None, 
+        nodes_def: dict[str, tuple] | None, 
         edges: list[Tuple[str, str] | Tuple[str, str, Callable[[AgentResponse, dict[str, Any]], bool]]], 
         max_concurrency: int = 4,
         handler: DAGEventHandler | None = None,
@@ -71,7 +72,7 @@ class DAGAgentRunner:
         Engine for concurrent dispatch of agent swarms with dependencies modeled as a Directed Acyclic Graph (DAG) .
 
         Args:
-            nodes_def: {node_id: (runner, config, prompt, max_retries)}
+            nodes_def: {node_id: (runner, config, prompt, max_retries, context_assembler)}
             edges: [(parent_id, child_id)] or [(parent_id, child_id, condition_callable)]
             max_concurrency: Maximum number of concurrent nodes to run at once.
             handler: Optional handler for tracking execution events.
@@ -94,7 +95,8 @@ class DAGAgentRunner:
         for node_id, def_vals in nodes_def.items():
             runner, config, prompt = def_vals[:3]
             max_retries = def_vals[3] if len(def_vals) > 3 else default_max_retries
-            self.nodes[node_id] = DAGNode(node_id, runner, config, prompt, max_retries=max_retries)
+            context_assembler = def_vals[4] if len(def_vals) > 4 else None
+            self.nodes[node_id] = DAGNode(node_id, runner, config, prompt, max_retries=max_retries, context_assembler=context_assembler)
 
         for edge in edges:
             if len(edge) == 2:
@@ -254,14 +256,28 @@ class DAGAgentRunner:
                         node.config.extra_context = {}
                     node.config.extra_context["dag_state"] = self.shared_state
 
-                    parent_results = [
-                        f"Node {p_id} result: {clean_context_for_downstream(self.nodes[p_id].result.text)}"
+                    parent_responses = {
+                        p_id: self.nodes[p_id].result
                         for p_id in node.active_parents
-                    ]
-                    context_prefix = "\n\nParent Context:\n" + "\n".join(parent_results) if parent_results else ""
+                    }
+
+                    if node.context_assembler:
+                        try:
+                            context_prefix = node.context_assembler(parent_responses, self.shared_state)
+                        except Exception as ce:
+                            logger.error(f"Context assembler failed for node {node_id}: {ce}")
+                            context_prefix = ""
+                    else:
+                        parent_results = [
+                            f"Node {p_id} result: {clean_context_for_downstream(resp.text)}"
+                            for p_id, resp in parent_responses.items() if resp
+                        ]
+                        context_prefix = "\n\nParent Context:\n" + "\n".join(parent_results) if parent_results else ""
+                    
+                    full_prompt = node.prompt + context_prefix
                     
                     result = await node.runner.run_turn(
-                        user_input=node.prompt + context_prefix,
+                        user_input=full_prompt,
                         handler=self.handler,
                         config=node.config
                     )
