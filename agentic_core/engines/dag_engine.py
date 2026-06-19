@@ -19,6 +19,7 @@ from agentic_core.utils import clean_context_for_downstream, convert_exception_t
 
 if TYPE_CHECKING:
     from agentic_core.engines import AgentRunner
+    from agentic_core.interfaces import IPersistenceProvider
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,9 @@ class DAGAgentRunner:
         default_max_retries: int = 3,
         default_backoff_base: float = 1.0,
         default_backoff_max: float = 60.0,
-        shared_state: dict[str, Any] | None = None
+        shared_state: dict[str, Any] | None = None,
+        persistence_provider: IPersistenceProvider | None = None,
+        session_id: str | None = None
     ):
         self.nodes: dict[str, DAGNode] = {}
         self.out_edges: dict[str, list[str]] = {node_id: [] for node_id in nodes_def}
@@ -129,30 +132,51 @@ class DAGAgentRunner:
         self.handler = handler or DAGEventHandler()
         self.queue = asyncio.PriorityQueue()
         self.active_retries = 0  
+        self.persistence_provider = persistence_provider
+        self.session_id = session_id
         
         if checkpoint_state:
-            for node_id, result in checkpoint_state.items():
-                if node_id in self.nodes:
-                    node = self.nodes[node_id]
-                    node.state = NodeState.SUCCESS
-                    node.result = result
-                    for child_id in self.out_edges[node_id]:
-                        cond = self.edge_conditions.get((node_id, child_id))
-                        passed = True
-                        if cond:
-                            try:
-                                passed = cond(result, self.shared_state)
-                            except Exception:
-                                passed = False
+            self._apply_checkpoint(checkpoint_state)
+
+    def _apply_checkpoint(self, checkpoint_state: dict[str, AgentResponse]):
+        for node_id, result in checkpoint_state.items():
+            if node_id in self.nodes:
+                node = self.nodes[node_id]
+                node.state = NodeState.SUCCESS
+                node.result = result
+                for child_id in self.out_edges[node_id]:
+                    cond = self.edge_conditions.get((node_id, child_id))
+                    passed = True
+                    if cond:
+                        try:
+                            passed = cond(result, self.shared_state)
+                        except Exception:
+                            passed = False
+                    
+                    child = self.nodes[child_id]
+                    if passed:
+                        child.active_parents.append(node_id)
+                    else:
+                        child.skipped_parents.append(node_id)
                         
-                        child = self.nodes[child_id]
-                        if passed:
-                            child.active_parents.append(node_id)
-                        else:
-                            child.skipped_parents.append(node_id)
-                            
-                        self.in_degree[child_id] -= 1
-                        self.nodes[child_id].in_degree = self.in_degree[child_id]
+                    self.in_degree[child_id] -= 1
+                    self.nodes[child_id].in_degree = self.in_degree[child_id]
+
+    async def _save_checkpoint(self):
+        if not (self.persistence_provider and self.session_id):
+            return
+        state = {
+            "results": {
+                n_id: n.result.to_dict() 
+                for n_id, n in self.nodes.items() 
+                if n.state == NodeState.SUCCESS and n.result
+            },
+            "shared_state": self.shared_state
+        }
+        try:
+            await self.persistence_provider.save_checkpoint(self.session_id, state)
+        except Exception as e:
+            logger.error(f"Failed to save DAG checkpoint: {e}")
 
     def compile(self):
         from collections import deque
@@ -298,6 +322,7 @@ class DAGAgentRunner:
                     node.result = result
                     node.state = NodeState.SUCCESS
                     await self.handler.on_node_complete(node_id, NodeState.SUCCESS, result)
+                    await self._save_checkpoint()
 
                     for child_id in self.out_edges[node_id]:
                         cond = self.edge_conditions.get((node_id, child_id))
@@ -333,6 +358,7 @@ class DAGAgentRunner:
                         node.error_details = tb_str
 
                         await self.handler.on_node_complete(node_id, NodeState.SUCCESS, fallback_response)
+                        await self._save_checkpoint()
                         for child_id in self.out_edges[node_id]:
                             cond = self.edge_conditions.get((node_id, child_id))
                             passed = True
@@ -353,6 +379,7 @@ class DAGAgentRunner:
                             node.result = AgentResponse(text=f"IGNORED: Node {node_id} failed permanently: {convert_exception_to_message(e)}.")
                             node.state = NodeState.SUCCESS 
                             await self.handler.on_node_complete(node_id, NodeState.SUCCESS, node.result)
+                            await self._save_checkpoint()
                             for child_id in self.out_edges[node_id]:
                                 cond = self.edge_conditions.get((node_id, child_id))
                                 passed = True
@@ -390,6 +417,24 @@ class DAGAgentRunner:
                 stack.extend(self.out_edges[node_id])
 
     async def execute(self) -> DAGResponse:
+        if self.persistence_provider and self.session_id:
+            try:
+                persisted = await self.persistence_provider.load_checkpoint(self.session_id)
+                if persisted:
+                    from agentic_core.models import AgentResponse
+                    ckpt = {}
+                    for k, v in persisted.get("results", {}).items():
+                        if isinstance(v, dict):
+                            ckpt[k] = AgentResponse(**{key: val for key, val in v.items() if key in AgentResponse.__dataclass_fields__})
+                        else:
+                            ckpt[k] = v
+                    if ckpt:
+                        self._apply_checkpoint(ckpt)
+                    if "shared_state" in persisted:
+                        self.shared_state.update(persisted["shared_state"])
+            except Exception as e:
+                logger.error(f"Failed to load DAG checkpoint: {e}")
+
         try:
             self.compile()
         except RuntimeError as e:

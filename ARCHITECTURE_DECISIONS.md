@@ -1,11 +1,11 @@
-## 2026-06-19: Synchronized Database Caching and Explicit Static Typing
+## 2026-06-19: Extensibility via Persistence Providers and Structured Telemetry
 
 **Context:**
-We discovered that the lightweight `SQLiteVectorStore` was repeatedly deserializing the entire database into memory to compute similarities via NumPy, causing instantaneous OOM bottlenecks on modestly sized knowledge bases. Furthermore, the `agentic_core_rag` initialization relied on PEP 562 (`__getattr__`) lazy-loading, masking module typings and sabotaging developer IDE tooling.
+We recognized the framework natively bounded DAG execution to ephemeral memory processes. A reviewer accurately pointed out that without "Durable Execution," orchestrations facing OOM-kills or node rotations would lose hours of swarm computation. Additionally, console-printed telemetry proved useless for tracking latencies and token-bloat in production environments.
 
 **Decision:**
-1.  **RAG Sync Caches**: Rebuilt `SQLiteVectorStore` to hold a synchronized, persistent cache array in memory. Initialization reads from SQLite once; insertions append incrementally. Search executes purely mathematically via `np.dot` over the cached array without touching the database.
-2.  **Explicit Optional Typings**: Replaced the `__getattr__` module dictionary lookup with standardized explicit `try...except ImportError` fallback classes for Vector Stores.
+1. **IPersistenceProvider:** We introduced a formal protocol interface allowing developers to pass Redis/Postgres/S3 wrappers to the `DAGAgentRunner`. The engine automatically intercepts execution to load historical checkpoints and saves state incrementally after every node completion.
+2. **StructuredTelemetryHandler:** Implemented an event handler that bypasses standard text-logs in favor of JSON-formatted span records tracking `trace_id`, `node_id`, `duration_s`, and `usage`.
 
 **Rationale:**
-Transforms the fallback RAG module from a toy implementation into a genuinely fast, embedded memory solution. By explicitly importing dummy classes when missing extras, we satisfy static typing strictures (mypy/pylance) and maintain the framework's standard of uncompromised developer experience.
+These decisions grant enterprise-level fault tolerance and observability without injecting heavy infrastructure dependencies into the core package. The framework remains zero-config out of the box but is trivially extensible for complex, long-running production environments.

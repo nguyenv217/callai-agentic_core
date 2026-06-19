@@ -27,6 +27,13 @@ class Message(TypedDict):
     reasoning: NotRequired[str]
     usage: NotRequired[dict[str, Any] | None]
 
+from typing import Protocol
+
+class IPersistenceProvider(Protocol):
+    """Protocol for injecting durable execution storage into long-running tasks."""
+    async def save_checkpoint(self, session_id: str, state: dict[str, Any]) -> None: ...
+    async def load_checkpoint(self, session_id: str) -> dict[str, Any] | None: ...
+
 class ToolSchema(TypedDict):
     type: Literal["function"]
 
