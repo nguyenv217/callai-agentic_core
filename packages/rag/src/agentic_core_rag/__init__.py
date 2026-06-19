@@ -1,38 +1,24 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from .stores.sqlite_store import SQLiteVectorStore
-    from .stores.chromadb_store import ChromaDBVectorStore
-
 from .providers.embedders import LocalEmbedder, MockEmbedder, OllamaEmbedder, OpenAIEmbedder, GeminiEmbedder
 from agentic_core.tools.manager import ToolManager
 from .core import RAGConfig, IVectorStore, IEmbeddingProvider
 from .tools import RAGConfig, SearchKnowledgeTool, IngestKnowledgeTool
 
-_LOOKUP = {
-    "SQLiteVectorStore": ".stores.sqlite_store",
-    "ChromaDBVectorStore": ".stores.chromadb_store",
-}
+try:
+    from .stores.sqlite_store import SQLiteVectorStore
+except ImportError:
+    class SQLiteVectorStore:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            raise ImportError("SQLAlchemy and aiosqlite are required for SQLiteVectorStore. Install with `pip install callai-agentic_core[rag-sqlite]`")
 
-def __getattr__(name):
-    """
-    Lazy-load the module when the attribute is accessed.
-    This is used because some of the modules require optional dependencies.
-    """
-    if name in _LOOKUP:
-        module_path = _LOOKUP[name]
-
-        import importlib
-        module = importlib.import_module(module_path, __package__)
-        
-        val = getattr(module, name)
-        
-        # Cache it in the global scope so next time is faster
-        globals()[name] = val
-        return val
-    
-    raise AttributeError(f"module {__name__} has no attribute {name}")
+try:
+    from .stores.chromadb_store import ChromaDBVectorStore
+except ImportError:
+    class ChromaDBVectorStore:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ChromaDB is required for ChromaDBVectorStore. Install with `pip install callai-agentic_core[rag-chroma]`")
 
 
 def register_rag_suite(

@@ -258,9 +258,13 @@ class DAGAgentRunner:
                 node.state = NodeState.RUNNING
 
                 try:
-                    if node.config.extra_context is None:
-                        node.config.extra_context = {}
-                    node.config.extra_context["dag_state"] = self.shared_state
+                    import copy
+                    turn_config = copy.copy(node.config)
+                    if turn_config.extra_context is None:
+                        turn_config.extra_context = {}
+                    else:
+                        turn_config.extra_context = turn_config.extra_context.copy()
+                    turn_config.extra_context["dag_state"] = self.shared_state
 
                     # Retrieve executed parent results using the compiled graph in-edges
                     parent_responses = {
@@ -285,7 +289,7 @@ class DAGAgentRunner:
                     result = await node.runner.run_turn(
                         user_input=node.prompt + context_prefix,
                         handler=self.handler,
-                        config=node.config
+                        config=turn_config
                     )
 
                     if result.error:

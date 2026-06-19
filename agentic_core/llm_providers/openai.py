@@ -34,8 +34,8 @@ class OpenAILLM(ILLMClient):
         
         if client:
             self.client = client
-        elif api_key:
-            self.client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
+        elif api_key or base_url:
+            self.client = AsyncOpenAI(api_key=api_key or "dummy_key_for_local_endpoints", base_url=base_url, timeout=timeout)
         else:
             raise ConfigurationError("Please pass either a valid api_key as 'api_key' or a configured `AsyncOpenAI` client instance as 'client'")
             
