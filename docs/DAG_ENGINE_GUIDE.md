@@ -1,154 +1,87 @@
-# DAG Agent Runner Guide
+# DAG Engine Specification
 
-`DAGAgentRunner` is a high-performance, state-aware asynchronous execution engine for complex agentic workflows.
+The `DAGAgentRunner` coordinates multi-agent execution topologies using a Directed Acyclic Graph (DAG). It resolves dependencies, manages concurrent execution via an `asyncio.PriorityQueue`, evaluates conditional routing logic, and maintains a mutable global state bus.
 
-## Core Concepts
+## 1. Core Components
 
-The engine represents a workflow as a **Directed Acyclic Graph (DAG)** of **Nodes** (Agents) and **Edges** (Dependencies/Routing Logic).
-
-*   **Nodes**: Each node contains an `AgentRunner` instance, a `RunnerConfig`, a prompt, and optional retry settings.
-*   **Edges**: A directed link from Node A to Node B means Node B evaluates whether to execute based on Node A's completion.
-*   **Shared State Bus**: A global dictionary (`shared_state`) injected into all tools (via `context["dag_state"]`) and evaluated by edges.
-
-## Key Features
-
-### 1. Conditional Edges (Dynamic Routing)
-Edges are not just static dependencies. You can provide a `Callable[[AgentResponse, dict], bool]` to an edge. When Node A finishes, the engine evaluates the condition. If it returns `False`, the branch to Node B is pruned (`SKIPPED`), cascading downstream until an implicit OR-merge resolves it.
-
-### 2. State-Aware Execution
-Nodes do not rely solely on LLM context windows to pass complex data (like large JSONs or database IDs). Tools can mutate the `shared_state` bus, and downstream nodes can read from it natively.
-
-### 3. Critical Path Heuristic & Async Workers
-The engine automatically calculates the longest path to the leaf nodes. Nodes that unlock the most downstream work execute first across an async worker pool.
-
-### 4. Adaptive Retries & Cascade Failures
-Exponential backoff handles transient API errors. If a node fails permanently, its downstream dependents are automatically masked as `FAILED_UPSTREAM`.
-
-### 5. Context Reducers (State Channels)
-To prevent "Prompt-as-a-Database" token bloat, `DAGAgentRunner` supports custom Context Assemblers (`State Reducers`). Instead of blindly concatenating all parent outputs into the prompt, you can define a `Callable[[dict[str, AgentResponse], dict], str]` that prunes, formats, or aggregates upstream dependencies and the global state.
-
-## Usage Guide
-
-### Basic Setup with Conditional Edges and State Bus
+### DAGTask
+Defines the configuration for a single node in the graph.
 
 ```python
-import asyncio
-from agentic_core.engines import AgentRunner
-from agentic_core.config import RunnerConfig
-from agentic_core.engines.dag_engine import DAGAgentRunner
-from agentic_core.llm_providers.openai import OpenAILLM
-from agentic_core.tools import ToolManager
-from agentic_core.memory.manager import MemoryManager
-from agentic_core.models import AgentResponse
+@dataclass
+class DAGTask:
+    runner: AgentRunner
+    prompt: str
+    config: RunnerConfig | None = None
+    max_retries: int | None = None
+    context_assembler: Callable[[dict[str, AgentResponse], dict[str, Any]], str] | None = None
+```
 
-# 1. Initialize shared components
-llm = OpenAILLM(api_key="your_key", model="gpt-4o")
-tools = ToolManager()
-memory = MemoryManager()
-config = RunnerConfig()
+*   `runner`: The initialized `AgentRunner` instance.
+*   `prompt`: The primary instruction passed to the runner.
+*   `config`: Specific `RunnerConfig` overrides for this node.
+*   `max_retries`: Re-execution limit upon API transient failures.
+*   `context_assembler`: Optional state reducer function (see Section 3).
 
-runner = AgentRunner(llm, tools, memory)
+### Edges
+Defines the execution order and routing logic. Edges are provided as a list of tuples:
+*   `Tuple[str, str]`: Unconditional edge. The child node executes after the parent node completes.
+*   `Tuple[str, str, Callable[[AgentResponse, dict], bool]]`: Conditional edge. The child node executes only if the callable evaluates to `True`.
 
-# 2. Define the Graph Nodes
-def reduce_research(parents: dict, state: dict) -> str:
-    # Safely extract just the text we care about to prevent token bloat
-    return f"\n\nHere is the research to review: {parents['research'].text[:500]}..."
+### Shared State Bus
+A global `dict[str, Any]` provided during `DAGAgentRunner` initialization. 
+*   It is injected into the execution context of every tool via `context["dag_state"]`.
+*   Tools can mutate this dictionary to pass data out-of-band.
+*   It is passed as the second argument to all Conditional Edge callables and Context Assemblers.
 
-nodes_def = {
-    "research": (runner, config, "Research the latest trends in AI.", 3),
-    "review": (runner, config, "Review the research. Set 'approved': True in dag_state if good.", 2, reduce_research), # 5th param is the context assembler
-    "publish": (runner, config, "Publish the article.", 1),
-    "revise": (runner, config, "Revise the research based on feedback.", 1),
-}
+## 2. Conditional Routing
 
-# 3. Define Conditional Logic
-def is_approved(resp: AgentResponse, state: dict) -> bool:
-    return state.get("approved", False) == True
+Conditional edges dynamically prune graph execution paths.
 
-def needs_revision(resp: AgentResponse, state: dict) -> bool:
-    return not is_approved(resp, state)
+```python
+# Signature: Callable[[AgentResponse, dict[str, Any]], bool]
+def routing_condition(resp: AgentResponse, state: dict) -> bool:
+    return state.get("requires_review", False)
 
-# 4. Define Edges
 edges = [
-    ("research", "review"),
-    ("review", "publish", is_approved),    # Only runs if approved
-    ("review", "revise", needs_revision)   # Only runs if rejected
+    ("generate", "review", routing_condition)
 ]
-
-# 5. Execute
-async def main():
-    global_state = {"approved": False}
-    engine = DAGAgentRunner(nodes_def, edges, max_concurrency=2, shared_state=global_state)
-    results = await engine.execute()
-    print(results.to_dict())
-
-asyncio.run(main())
 ```
 
-### Return Type
+*   **Pruning (SKIPPED State)**: If a condition evaluates to `False`, the target node registers the parent as `skipped`. If a node finds that *all* its incoming edges evaluated to `False`, the node's state becomes `SKIPPED`, and it does not execute. This status cascades to all its strictly dependent children.
+*   **OR-Merge**: If a node has multiple incoming conditional edges, and at least one evaluates to `True`, the node executes. Its `context_assembler` will only receive the `AgentResponse` objects from the branches that evaluated to `True`.
 
-`DAGAgentRunner.execute()` returns a `DAGResponse` object containing the node results and any fatal execution errors.
+## 3. Context Reducers (State Channels)
+
+By default, `DAGAgentRunner` concatenates the raw string outputs of all successful parent nodes and appends them to the child node's prompt. To prevent token limit exhaustion, define a `context_assembler` in the `DAGTask`.
 
 ```python
-class DAGNodeResponse:
-    state: str
-    result: AgentResponse | None
-    error: BaseException | None
-    error_details: str | None
-    failed_by: str | None
+# Signature: Callable[[dict[str, AgentResponse], dict[str, Any]], str]
+def reduce_context(parents: dict[str, AgentResponse], state: dict) -> str:
+    parent_a_text = parents["node_a"].text
+    return f"\n\nExtracted metric: {parent_a_text[:100]}"
 
-class DAGResponse:
-    nodes: dict[str, DAGNodeResponse]
-    error: BaseException | None
+task = DAGTask(
+    runner=my_runner,
+    prompt="Analyze the metric.",
+    context_assembler=reduce_context
+)
 ```
 
-### Advanced Configuration
+## 4. Execution State Machine
 
-#### `nodes_def` Parameter Breakdown
+Upon `engine.execute()`, the DAG returns a `DAGResponse` object containing a mapping of `node_id` to `DAGNodeResponse`.
 
-The nodes_def dictionary is the heart of your graph. Each entry follows this tuple structure: "node_id": (AgentRunner, RunnerConfig, str, int)
+| Status | Description |
+| :--- | :--- |
+| `SUCCESS` | Node executed and returned an `AgentResponse`. |
+| `FAILED` | Node encountered an exception and exhausted all retries. |
+| `FAILED_UPSTREAM` | Node execution cancelled because a required parent node resolved to `FAILED`. |
+| `SKIPPED` | Node execution bypassed because all incoming conditional edges evaluated to `False`. |
+| `PENDING` | Default uninitialized state. |
 
-| Parameter | Type       | Description                                                                           |
-| :-------- | :--------- | :------------------------------------------------------------------------------------ |
-| `AgentRunner` | `AgentRunner`   | The logic engine for this specific node.                                                |
-| `RunnerConfig`  | `RunnerConfig`  | Runtime settings (max iterations, system prompt, etc.).                                 |
-| `prompt      `  | `str`           | The specific instruction for this node.                                                |
-| `max_retries `  | `int`           | How many times to retry on transient API errors (optional).                             |
-| `context_assembler` | `Callable` | Optional reducer `[[dict, dict], str]` to format parent outputs and prevent token bloat. |
+## 5. Persistence and Telemetry
 
-### Monitoring with `DAGEventHandler`
+The `DAGAgentRunner` accepts an `IPersistenceProvider` and a `session_id`. If provided, the engine will invoke `save_checkpoint(session_id, state)` upon every node completion. If initialized with an existing `session_id` containing saved data, the engine will deserialize the states and resume execution from the last pending node.
 
-You can track the execution in real-time by implementing a custom handler:
-
-```python
-from agentic_core.dag_engine import DAGEventHandler
-
-class MyDAGHandler(DAGEventHandler):
-    def on_node_start(self, node_id, worker_id):
-        print(f"Node {node_id} is now running on worker {worker_id}")
-
-    def on_node_retry(self, node_id, count, max_r):
-        print(f"Node {node_id} failed. Retry {count}/{max_r}...")
-
-    def on_node_complete(self, node_id, status, result):
-        print(f"Node {node_id} finished with status: {status}")
-
-engine = DAGAgentRunner(nodes_def, edges, handler=MyDAGHandler())
-```
-
-
-## Understanding Node States
-
-| State            | Meaning                         |
-| :--------------- | :----------------------------- |
-| `SUCCESS`          | Node executed and returned a valid result. |
-| `FAILED`           | Node failed and exhausted all retries (or hit a fatal error). |
-| `FAILED_UPSTREAM`  | Node was never executed because one of its parents failed. |
-| `SKIPPED`          | Node was pruned because all of its incoming conditional edges evaluated to False. |
-| `PENDING`          | Node was never reached (usually indicates a disconnected graph). |
-
-## Performance Tuning
-
-*   `max_concurrency`: Adjust this based on your LLM rate limits. High concurrency speeds up wide DAGs but may trigger more RateLimitErrors.
-*   `max_retries`: Set higher for nodes using unstable APIs or large context windows prone to timeouts.
-*   **Graph Design**: To maximize throughput, keep the graph "wide" (more parallel nodes) rather than "deep" (long chains of dependencies). Use the shared state bus to prevent context pollution between unrelated nodes.
+Pass `StructuredTelemetryHandler` as the `handler` argument to emit deterministic JSON logs tracking node duration, token usage, and trace IDs.

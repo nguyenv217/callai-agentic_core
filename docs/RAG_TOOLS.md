@@ -1,44 +1,43 @@
-# RAG Tool Suite Guide
+# RAG Module Specification
 
-The RAG Suite allows you to give your agent a long-term memory or a domain-specific knowledge base using vector embeddings.
+The `agentic_core_rag` package provides interfaces and concrete implementations for embedding generation and vector storage. 
 
-### Installation
+## 1. Installation
+
+The module requires specific optional dependencies based on the chosen backend.
+
 ```bash
-git clone https://github.com/nguyenv217/callai-agentic_core 
-cd callai-agentic_core
-pip install ".[rag-sqlite]" 
-# or simply
+pip install "callai-agentic_core[rag-chroma]"
 pip install "callai-agentic_core[rag-sqlite]"
+pip install "callai-agentic_core[rag-openai]"
+pip install "callai-agentic_core[rag-transformers]"
+pip install "callai-agentic_core[rag-ollama]"
+pip install "callai-agentic_core[rag-all]"
 ```
 
-| Option | Description |
-| --- | --- |
-| `[rag-chroma]` | Uses `ChromaDB` for vector storage. |
-| `[rag-sqlite]` | Uses `sqlalchemy` for SQLite. **Note**: SQLite doesn't natively support vector indexing. |
-| `[rag-openai]` | Enables OpenAI-compatible async embedder endpoints. |
-| `[rag-transformers]` | Includes `sentence-transformers` for local embedder usage. |
-| `[rag-ollama]` | For local `Ollama` embedders. |
-| `[rag-all]` | All of the above. |
+## 2. Core Interfaces
 
-## Components
+*   `IEmbeddingProvider`: Protocol requiring `async def embed(self, texts: list[str]) -> list[list[float]]`.
+*   `IVectorStore`: Protocol requiring `add()`, `search()`, `count()`, and `delete_all()`.
 
-1. **Embedders**: Convert text to vectors.
-   - `OpenAIEmbedder`: High-quality embeddings via OpenAI.
-   - `LocalEmbedder`: Runs locally using `sentence-transformers`.
-   - `OllamaEmbedder`: Uses local Ollama embedding models.
-2. **Stores**: Store and retrieve vectors.
-   - `SQLiteVectorStore`: Lightweight, file-based storage.
-   - `ChromaDBVectorStore`: High-performance vector database. (Recommended).
+## 3. SQLite Vector Store (In-Memory Cache)
 
-## Quick Start Example
+The `SQLiteVectorStore` provides persistent storage backed by a SQLite file, but maintains a synchronized in-memory NumPy array for search operations. Search operations (`np.dot` / `np.linalg.norm`) execute in `O(1)` database read complexity.
 
-### 1. Setup your database
-Prepare your specific backend-compatible vector database. See `examples/example_RAG_index_script.py` for a ready-to-use indexing CLI script.
+```python
+from agentic_core_rag import SQLiteVectorStore
 
-### 2. Initialize the RAG Tools
+store = SQLiteVectorStore(db_path="vectors.db", distance_metric="cosine")
+# Valid metrics: 'cosine', 'euclidean'
+```
+
+## 4. Integration via AgentBuilder
+
+The module provides two standard tools: `SearchKnowledgeTool` and `IngestKnowledgeTool`. 
+
 ```python
 import asyncio
-from agentic_core.agents import AgentBuilder, chat
+from agentic_core.agents import AgentBuilder
 from agentic_core.config import RunnerConfig
 from agentic_core_rag import (
     RAGConfig,
@@ -49,49 +48,32 @@ from agentic_core_rag import (
 )
 
 async def main():
-    # 1. Setup RAG components
     embedder = OpenAIEmbedder(api_key="sk-...")
     store = SQLiteVectorStore(db_path="my_knowledge.db")
+    
     config = RAGConfig(
         chunk_size=1000,
-        distance_metric="cosine",
-        suite_prompt="You have access to an internal knowledge base. Retrieve facts and cite your answers."
+        chunk_overlap=200,
+        default_top_k=3,
+        suite_prompt="Search the database for internal context before answering."
     )
     
-    # 2. Initialize the RAG Tools
     search_tool = SearchKnowledgeTool(store, embedder, config)
     ingest_tool = IngestKnowledgeTool(store, embedder, config)
     
-    # 3. Manually ingest some documents
-    await ingest_tool.execute(
-        {"text": "The company's remote work policy allows 3 days at home.", "source": "HR_Handbook"},
-        {}
-    )
+    agent = AgentBuilder() \
+        .with_provider_openai(api_key="sk-...") \
+        .with_tools([search_tool, ingest_tool]) \
+        .build()
     
-    # 4. Create an agent and register tools
-    runner = AgentBuilder().with_provider_openai(api_key="sk-...").with_tools([search_tool, ingest_tool]).build()
-    
-    run_config = RunnerConfig(
-        tools=[search_tool.schema, ingest_tool.schema],
-        system_prompt=config.suite_prompt
-    )
+    run_config = RunnerConfig(system_prompt=config.suite_prompt)
 
-    # 5. Execute
-    result = await chat(
-        message="What is the remote work policy?",
-        runner=runner,
+    result = await agent.run_turn(
+        user_input="What is the remote work policy?",
         config=run_config
     )
-    print(result.response.text)
+    print(result.text)
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
-
-## Key Configuration Options (`RAGConfig`)
-
-| Parameter | Default | Description |
-|---|---|---|
-| `chunk_size` | 1000 | Maximum characters per document chunk. |
-| `chunk_overlap` | 200 | Overlap between chunks to preserve context. |
-| `default_top_k` | 3 | Number of documents to retrieve per search. |
-| `suite_prompt` | (String) | Instructions injected to tell the agent how to use the RAG tool. |
