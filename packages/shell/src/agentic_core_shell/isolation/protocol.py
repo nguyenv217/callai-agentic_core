@@ -1,31 +1,31 @@
 from __future__ import annotations
 
-from typing import TypedDict, Literal, NotRequired
+from typing import TypedDict, Literal
 
 
 class IsolationDockerConfig(TypedDict, total=False):
     type: Literal["docker"]
-    image: NotRequired[str]
-    container_name: NotRequired[str]
-    container_cmd: NotRequired[str]
-    workdir: NotRequired[str]
-    mount_cwd: NotRequired[bool]
-    disable_network: NotRequired[bool]
-    persistent_container: NotRequired[bool]
-    setup_commands: NotRequired[list[str]]
-    volumes: NotRequired[list[str]]
-    publish_ports: NotRequired[list[str]]
-    privileged: NotRequired[bool]
-    extra_args: NotRequired[list[str]]
-    user: NotRequired[str]
-    env: NotRequired[dict[str, str]]
+    image: str | None = None
+    container_name: str | None = None
+    container_cmd: str | None = None
+    workdir: str | None = None
+    mount_cwd: bool | None = None
+    disable_network: bool | None = None
+    persistent_container: bool | None = None
+    setup_commands: list[str] | None = None
+    volumes: list[str] | None = None
+    publish_ports: list[str] | None = None
+    privileged: bool | None = None
+    extra_args: list[str] | None = None
+    user: str | None = None
+    env: dict[str, str] | None = None
 
 
 class IsolationConfig(TypedDict, total=False):
     """Tool-instance config for shell isolation."""
 
     # None means no isolation backend; tool runs locally.
-    type: NotRequired[str]
+    type: str | None = None
 
 
 # Helper union shape; used for typing only.

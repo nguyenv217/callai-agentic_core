@@ -1,4 +1,4 @@
-from typing import Any, Literal, TypedDict, NotRequired
+from typing import Any, Literal, TypedDict
 
 # ===================================================
 # Common response interfaces 
@@ -19,13 +19,13 @@ class Message(TypedDict):
     content: str | list[Any]
     
     # The following arguments are presented when role = "tool"
-    tool_name: NotRequired[str | None]
-    tool_call_id: NotRequired[str | None]
+    tool_name: str | None = None
+    tool_call_id: str | None = None
     
     # The following arguments are presented when role = "assistant"
-    tool_calls: NotRequired[list[ToolResponse]]
-    reasoning: NotRequired[str]
-    usage: NotRequired[dict[str, Any] | None]
+    tool_calls: list[ToolResponse] = None
+    reasoning: str = None
+    usage: dict[str, Any] | None = None
 
 from typing import Protocol
 
