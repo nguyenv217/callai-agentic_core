@@ -1,10 +1,12 @@
-# DAG Engine Specification
+# Graph Engine Specification
 
-The `DAGAgentRunner` coordinates multi-agent execution topologies using a Directed Acyclic Graph (DAG). It resolves dependencies, manages concurrent execution via an `asyncio.PriorityQueue`, evaluates conditional routing logic, and maintains a mutable global state bus.
+*Note: `DAGAgentRunner` has been upgraded and renamed to `GraphAgentRunner` to reflect its capability to execute arbitrary cyclic graphs natively. `DAGAgentRunner` remains as an alias for backwards compatibility.*
+
+The `GraphAgentRunner` coordinates multi-agent execution topologies using generalized Cyclic Graphs with Petri Net semantics. It resolves dependencies, automatically detects loops (back-edges), manages concurrent execution via an abstract `ITaskBroker` queue, evaluates conditional routing logic, and maintains an isolated, horizontally-scalable state bus.
 
 ## 1. Core Components
 
-### DAGTask
+### DAGTask (Node Definition)
 Defines the configuration for a single node in the graph.
 
 ```python
@@ -21,22 +23,33 @@ class DAGTask:
 *   `prompt`: The primary instruction passed to the runner.
 *   `config`: Specific `RunnerConfig` overrides for this node.
 *   `max_retries`: Re-execution limit upon API transient failures.
-*   `context_assembler`: Optional state reducer function (see Section 3).
+*   `context_assembler`: Optional state reducer function (see Section 4).
 
 ### Edges
 Defines the execution order and routing logic. Edges are provided as a list of tuples:
 *   `Tuple[str, str]`: Unconditional edge. The child node executes after the parent node completes.
 *   `Tuple[str, str, Callable[[AgentResponse, dict], bool]]`: Conditional edge. The child node executes only if the callable evaluates to `True`.
 
-### Shared State Bus
-A global `dict[str, Any]` provided during `DAGAgentRunner` initialization. 
+### Distributed State Bus
+A global `dict[str, Any]` provided during `GraphAgentRunner` initialization.
 *   It is injected into the execution context of every tool via `context["dag_state"]`.
-*   Tools can mutate this dictionary to pass data out-of-band.
+*   **Concurrency Safe**: Nodes do not mutate the shared reference directly. They mutate a deep-copied localized state slice. Changes are deterministically reconciled and merged under a lock at the node boundary, completely eliminating race conditions.
 *   It is passed as the second argument to all Conditional Edge callables and Context Assemblers.
 
-## 2. Conditional Routing
+## 2. Cyclic Routing & Loopbacks (Petri Net Semantics)
 
-Conditional edges dynamically prune graph execution paths.
+Unlike early iterations that were restricted to Directed Acyclic Graphs (DAGs), `GraphAgentRunner` natively supports cycles, loops, and recursive consensus structures.
+
+During `compile()`, the engine automatically categorizes edges using Depth-First Search (DFS):
+*   **Forward Edges (AND-joins)**: Standard dependencies. A node waits until all incoming forward edges have resolved (either `SUCCESS` or `SKIPPED`).
+*   **Back Edges (OR-joins / Loops)**: Cycles in the graph. When a conditional back-edge evaluates to `True`, it triggers a "Reset Wave". 
+    *   The loop body (all nodes in the cycle) is mathematically cleared of its previous state.
+    *   The target node of the back-edge is instantly queued for re-execution.
+    *   Outer dependencies (forward edges from outside the loop) are preserved.
+
+## 3. Conditional Routing
+
+Conditional edges dynamically prune graph execution paths and control loops.
 
 ```python
 # Signature: Callable[[AgentResponse, dict[str, Any]], bool]
@@ -44,44 +57,26 @@ def routing_condition(resp: AgentResponse, state: dict) -> bool:
     return state.get("requires_review", False)
 
 edges = [
-    ("generate", "review", routing_condition)
+    ("generate", "review", routing_condition),
+    ("review", "generate") # Back-edge automatically handled!
 ]
 ```
 
-*   **Pruning (SKIPPED State)**: If a condition evaluates to `False`, the target node registers the parent as `skipped`. If a node finds that *all* its incoming edges evaluated to `False`, the node's state becomes `SKIPPED`, and it does not execute. This status cascades to all its strictly dependent children.
-*   **OR-Merge**: If a node has multiple incoming conditional edges, and at least one evaluates to `True`, the node executes. Its `context_assembler` will only receive the `AgentResponse` objects from the branches that evaluated to `True`.
+*   **Pruning (SKIPPED State)**: If a condition evaluates to `False`, the target node registers the parent as `skipped`. If a node finds that *all* its incoming forward edges evaluated to `False`, the node's state becomes `SKIPPED`, and it does not execute. This status cascades to all its strictly dependent children.
 
-## 3. Context Reducers (State Channels)
+## 4. Context Reducers (State Channels)
 
-By default, `DAGAgentRunner` concatenates the raw string outputs of all successful parent nodes and appends them to the child node's prompt. To prevent token limit exhaustion, define a `context_assembler` in the `DAGTask`.
+By default, `GraphAgentRunner` concatenates the raw string outputs of all successful parent nodes and appends them to the child node's prompt. To prevent token limit exhaustion, define a `context_assembler`.
 
 ```python
 # Signature: Callable[[dict[str, AgentResponse], dict[str, Any]], str]
 def reduce_context(parents: dict[str, AgentResponse], state: dict) -> str:
     parent_a_text = parents["node_a"].text
     return f"\n\nExtracted metric: {parent_a_text[:100]}"
-
-task = DAGTask(
-    runner=my_runner,
-    prompt="Analyze the metric.",
-    context_assembler=reduce_context
-)
 ```
 
-## 4. Execution State Machine
+## 5. Persistence, Telemetry, and Scaling
 
-Upon `engine.execute()`, the DAG returns a `DAGResponse` object containing a mapping of `node_id` to `DAGNodeResponse`.
+The `GraphAgentRunner` accepts an `IPersistenceProvider` and a `session_id`. It features **Delta Checkpointing**, where the `save_node_result` is invoked incrementally upon each node's completion. This O(1) write operation eliminates massive serialization bloat in long-running orchestrations.
 
-| Status | Description |
-| :--- | :--- |
-| `SUCCESS` | Node executed and returned an `AgentResponse`. |
-| `FAILED` | Node encountered an exception and exhausted all retries. |
-| `FAILED_UPSTREAM` | Node execution cancelled because a required parent node resolved to `FAILED`. |
-| `SKIPPED` | Node execution bypassed because all incoming conditional edges evaluated to `False`. |
-| `PENDING` | Default uninitialized state. |
-
-## 5. Persistence and Telemetry
-
-The `DAGAgentRunner` accepts an `IPersistenceProvider` and a `session_id`. If provided, the engine will invoke `save_checkpoint(session_id, state)` upon every node completion. If initialized with an existing `session_id` containing saved data, the engine will deserialize the states and resume execution from the last pending node.
-
-Pass `StructuredTelemetryHandler` as the `handler` argument to emit deterministic JSON logs tracking node duration, token usage, and trace IDs.
+The execution queue is fully abstracted. By injecting a custom `ITaskBroker` (e.g., pointing to Redis or Celery), the engine transitions from a local single-process loop to a fully distributed, horizontally scaled Kubernetes orchestration.

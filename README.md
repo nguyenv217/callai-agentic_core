@@ -1,6 +1,6 @@
 # agentic_core
 
-`agentic_core` is a deterministic, asynchronous execution engine and orchestration framework for Large Language Model (LLM) agents. It provides native support for the Model Context Protocol (MCP), directed acyclic graph (DAG) execution topologies, and extensible state persistence.
+`agentic_core` is a deterministic, asynchronous execution engine and orchestration framework for Large Language Model (LLM) agents. It provides native support for the Model Context Protocol (MCP), arbitrary cyclic graph execution topologies, and extensible state persistence.
 
 ## 1. Installation
 
@@ -74,12 +74,12 @@ agent = AgentBuilder() \
 
 Reference `docs/TOOLS_GUIDE.md` for `BaseTool` implementation and `docs/MCP_CONFIG_GUIDE.md` for MCP runtime behaviors.
 
-## 4. DAG Orchestration (`DAGAgentRunner`)
+## 4. Cyclic Graph Orchestration (`GraphAgentRunner`)
 
-For multi-agent workflows, the framework uses a Directed Acyclic Graph (DAG) orchestrator (`DAGAgentRunner`). It supports conditional routing, state reducers, and a global state bus.
+For multi-agent workflows, the framework uses a generalized Cyclic Graph orchestrator (`GraphAgentRunner`). Unlike rigid DAGs, it natively supports loopbacks, recursive consensus structures, conditional routing, state reducers, and a deeply isolated state bus.
 
 ```python
-from agentic_core.engines.dag_engine import DAGAgentRunner, DAGTask
+from agentic_core.engines.dag_engine import GraphAgentRunner, DAGTask
 from agentic_core.models import AgentResponse
 
 # 1. Define nodes using DAGTask
@@ -89,19 +89,21 @@ nodes_def = {
 }
 
 # 2. Define edges (Dependencies and routing logic)
+# Forward edges and back-edges (loops) are automatically resolved via Petri Net semantics
 def evaluate_condition(resp: AgentResponse, state: dict) -> bool:
     return "SUCCESS" in resp.text
 
 edges = [
-    ("node_a", "node_b", evaluate_condition)
+    ("node_a", "node_b", evaluate_condition),
+    ("node_b", "node_a") # Cyclic loopback natively supported!
 ]
 
 # 3. Execute
-dag = DAGAgentRunner(nodes_def, edges, shared_state={"key": "value"})
-response = await dag.execute()
+graph = GraphAgentRunner(nodes_def, edges, shared_state={"key": "value"})
+response = await graph.execute()
 ```
 
-Reference `docs/DAG_ENGINE_GUIDE.md` for edge evaluation, context assemblers, and state injection mechanics.
+Reference `docs/DAG_ENGINE_GUIDE.md` for loopback evaluation, context assemblers, and state injection mechanics.
 
 ## 5. Streaming Execution
 

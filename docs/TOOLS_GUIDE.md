@@ -48,8 +48,8 @@ Variables can be injected globally during `AgentBuilder` initialization or per-t
 user_id = context.get("user_id")
 ```
 
-### DAG State Bus
-If the tool is executing within a `DAGAgentRunner`, the global state bus is accessible via `context["dag_state"]`. The tool can mutate this dictionary. Subsequent nodes in the DAG can read these mutations.
+### Graph State Bus
+If the tool is executing within a `GraphAgentRunner`, the global state bus is accessible via `context["dag_state"]`. The tool can mutate this dictionary safely as the execution engine guarantees state isolation and deterministic merging. Subsequent nodes in the graph can read these mutations.
 ```python
 async def execute(self, args: dict, context: dict) -> str:
     if "dag_state" in context:
