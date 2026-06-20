@@ -91,12 +91,14 @@ class StudioAnalyzer(App):
 
         if node_id:
             self.table.update_cell(node_id, "State", self.nodes_data[node_id]["state"])
-            if self.table.cursor_row is not None:
+            if self.table.cursor_row is not None and self.table.cursor_row >= 0:
                 row_key = self.table.coordinate_to_cell_key(self.table.cursor_coordinate).row_key
-                if row_key.value == node_id:
+                if row_key is not None and row_key.value == node_id:
                     self.update_details(node_id)
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted):
+        if event.row_key is None:
+            return
         node_id = event.row_key.value
         self.update_details(node_id)
 
