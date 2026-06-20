@@ -52,10 +52,12 @@ class DAGNode:
     active_parents: list[str] = None
     skipped_parents: list[str] = None
     context_assembler: Callable[[dict[str, AgentResponse], dict[str, Any]], str] | None = None
+    history: list[AgentResponse] = None
 
     def __post_init__(self):
         if self.active_parents is None: self.active_parents = []
         if self.skipped_parents is None: self.skipped_parents = []
+        if self.history is None: self.history = []
 
 @dataclass
 class DAGTask:
@@ -79,7 +81,8 @@ class GraphAgentRunner:
         shared_state: dict[str, Any] | None = None,
         persistence_provider: IPersistenceProvider | None = None,
         session_id: str | None = None,
-        task_broker: Any | None = None
+        task_broker: Any | None = None,
+        state_reducer: Callable[[dict[str, Any], dict[str, Any], dict[str, Any]], None] | None = None
     ):
         self.nodes: dict[str, DAGNode] = {}
         self.out_edges: dict[str, list[str]] = {node_id: [] for node_id in nodes_def}
@@ -136,6 +139,7 @@ class GraphAgentRunner:
         self.active_retries = 0  
         self.persistence_provider = persistence_provider
         self.session_id = session_id
+        self.state_reducer = state_reducer
         self._state_lock = asyncio.Lock()
         
         if checkpoint_state:
@@ -192,6 +196,22 @@ class GraphAgentRunner:
             await self.persistence_provider.save_checkpoint(self.session_id, state)
         except Exception as e:
             logger.error(f"Failed to save DAG checkpoint: {e}")
+
+    def _apply_state_delta(self, shared_target: dict, original_snapshot: dict, local_state: dict):
+        for k, v in local_state.items():
+            if k not in original_snapshot:
+                shared_target[k] = v
+            elif original_snapshot[k] != v:
+                if isinstance(v, dict) and isinstance(shared_target.get(k), dict) and isinstance(original_snapshot[k], dict):
+                    self._apply_state_delta(shared_target[k], original_snapshot[k], v)
+                elif isinstance(v, list) and isinstance(shared_target.get(k), list) and isinstance(original_snapshot[k], list):
+                    orig_len = len(original_snapshot[k])
+                    if len(v) > orig_len and v[:orig_len] == original_snapshot[k]:
+                        shared_target[k].extend(v[orig_len:])
+                    else:
+                        shared_target[k] = v
+                else:
+                    shared_target[k] = v
 
     def compile(self):
         visited = set()
@@ -314,6 +334,8 @@ class GraphAgentRunner:
         async with self._state_lock:
             for node_id in loop_body:
                 node = self.nodes[node_id]
+                if node.result is not None:
+                    node.history.append(node.result)
                 node.state = NodeState.PENDING
                 node.result = None
                 node.error = None
@@ -358,11 +380,13 @@ class GraphAgentRunner:
                     turn_config.extra_context["dag_state"] = local_state
 
                     # Retrieve executed parent results using the compiled graph in-edges
-                    parent_responses = {
-                        p_id: self.nodes[p_id].result
-                        for p_id in self.in_edges.get(node_id, [])
-                        if self.nodes[p_id].result is not None
-                    }
+                    parent_responses = {}
+                    for p_id in self.in_edges.get(node_id, []):
+                        p_node = self.nodes[p_id]
+                        if p_node.result is not None:
+                            parent_responses[p_id] = p_node.result
+                        elif getattr(p_node, 'history', None):
+                            parent_responses[p_id] = p_node.history[-1]
 
                     if node.context_assembler:
                         try:
@@ -387,9 +411,10 @@ class GraphAgentRunner:
                         raise NodeExecutionError(node_id, str(result.error), result.error)
 
                     async with self._state_lock:
-                        for k, v in local_state.items():
-                            if k not in original_state_snapshot or original_state_snapshot[k] != v:
-                                self.shared_state[k] = v
+                        if self.state_reducer:
+                            self.state_reducer(self.shared_state, original_state_snapshot, local_state)
+                        else:
+                            self._apply_state_delta(self.shared_state, original_state_snapshot, local_state)
 
                     node.result = result
                     node.state = NodeState.SUCCESS
