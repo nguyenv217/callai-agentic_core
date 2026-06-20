@@ -11,7 +11,7 @@ from agentic_core.decisions import (
     ErrorContext, 
     ErrorDecision,
 )
-from agentic_core.handlers import DAGEventHandler
+from agentic_core.handlers.dag import DAGEventHandler
 from agentic_core.config import ConfigurationError, RunnerConfig
 from agentic_core.models import AgentResponse, DAGNodeResponse, DAGResponse
 from agentic_core.exceptions import NodeValidationError, NodeExecutionError

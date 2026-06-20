@@ -1,11 +1,14 @@
+from __future__ import annotations
 import time
 import json
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from .dag import DAGEventHandler
 from ..models import AgentResponse, DAGResponse
 from ..decisions import ErrorContext
-from ..engines.dag_engine import NodeState
+
+if TYPE_CHECKING:
+    from ..engines.dag_engine import NodeState
 
 logger = logging.getLogger("agentic_core.telemetry")
 
