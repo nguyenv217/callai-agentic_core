@@ -213,6 +213,27 @@ class GraphAgentRunner:
                 else:
                     shared_target[k] = v
 
+    def to_mermaid(self) -> str:
+        """Exports the compiled graph topology as a Mermaid.js flowchart."""
+        try:
+            self.compile()
+        except Exception:
+            pass
+        
+        lines = ["graph TD"]
+        for node_id in self.nodes:
+            lines.append(f"    {node_id}[{node_id}]")
+            
+        for parent, children in getattr(self, 'forward_edges', {}).items():
+            for child in children:
+                lines.append(f"    {parent} -->|Forward| {child}")
+                
+        for parent, children in getattr(self, 'back_edges', {}).items():
+            for child in children:
+                lines.append(f"    {parent} -.->|Loop| {child}")
+                
+        return "\n".join(lines)
+
     def compile(self):
         visited = set()
         rec_stack = set()

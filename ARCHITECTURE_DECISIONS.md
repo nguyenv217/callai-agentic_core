@@ -23,3 +23,14 @@ The previous implementation of `DAGAgentRunner` was structurally bottlenecked, r
 
 **Rationale:**
 These fixes break the single-process ceiling of `agentic_core`. Solo developers can still run it zero-config locally, but enterprise users can now confidently scale the orchestration across Kubernetes clusters.
+
+## 2026-06-20: The Pre-Engineered Plugin Ecosystem
+
+**Context:**
+The core execution engine stripped out heavy infrastructure dependencies to prioritize execution speed and strict single-responsibility orchestration. However, this inflicted high developmental overhead on solo developers deploying to production (requiring manual database/queue adapters) and researchers running benchmarking pipelines (lacking evaluation frameworks).
+
+**Decision:**
+Instead of bloating the core package with SQL, Redis, and visualization servers, we established a strict Monorepo Plugin Ecosystem (`packages/persistence`, `packages/brokers`, `packages/evals`, `packages/studio`). We simultaneously injected a native `.to_mermaid()` visualizer directly into the base Graph orchestrator to instantly eliminate mental mapping friction during topology debugging.
+
+**Rationale:**
+This honors the Open-Closed principle. The execution engine remains pure and unopinionated, but standard operational hassles are solved entirely out-of-the-box via official, opt-in plugins.
