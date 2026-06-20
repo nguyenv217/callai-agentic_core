@@ -84,4 +84,8 @@ class StudioProbe(DAGSmartRetryHandler):
 
     async def on_graph_complete(self, diagnostics):
         self._broadcast("graph_complete", {})
+        try:
+            await asyncio.wait_for(self.queue.join(), timeout=2.0)
+        except asyncio.TimeoutError:
+            pass
         return await super().on_graph_complete(diagnostics)

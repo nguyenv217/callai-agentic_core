@@ -8,15 +8,16 @@ from textual.containers import Horizontal, Vertical
 class TCPServerProtocol(asyncio.Protocol):
     def __init__(self, app):
         self.app = app
-        self.buffer = ""
+        self.buffer = b""
 
     def data_received(self, data):
-        self.buffer += data.decode('utf-8')
-        while "\n" in self.buffer:
-            line, self.buffer = self.buffer.split("\n", 1)
-            if line.strip():
+        self.buffer += data
+        while b"\n" in self.buffer:
+            line, self.buffer = self.buffer.split(b"\n", 1)
+            line_str = line.decode('utf-8', errors='replace').strip()
+            if line_str:
                 try:
-                    msg = json.loads(line)
+                    msg = json.loads(line_str)
                     self.app.call_from_thread(self.app.handle_event, msg)
                 except Exception:
                     pass
@@ -38,13 +39,14 @@ class StudioAnalyzer(App):
                 yield DataTable(id="nodes_table")
             with Vertical(id="right_pane"):
                 yield Markdown("# Waiting for Telemetry...", id="details_panel")
-                yield RichLog(id="logs_panel", wrap=True, highlight=True)
+                yield RichLog(id="logs_panel", wrap=True, highlight=True, markup=True)
         yield Footer()
 
     async def on_mount(self):
         self.nodes_data = {}
         self.table = self.query_one("#nodes_table", DataTable)
-        self.table.add_columns("Node ID", "State")
+        self.table.add_column("Node ID", key="node_id")
+        self.table.add_column("State", key="state")
         self.table.cursor_type = "row"
         self.log_widget = self.query_one("#logs_panel", RichLog)
         self.details = self.query_one("#details_panel", Markdown)
@@ -60,41 +62,47 @@ class StudioAnalyzer(App):
             self.log_widget.write(f"[bold red]Failed to bind TCP server: {e}[/bold red]")
 
     def handle_event(self, message):
-        evt_type = message.get("type")
-        payload = message.get("payload", {})
-        node_id = payload.get("node_id")
+        try:
+            evt_type = message.get("type")
+            payload = message.get("payload", {})
+            node_id = payload.get("node_id")
 
-        if node_id and node_id not in self.nodes_data:
-            self.nodes_data[node_id] = {"state": "UNKNOWN", "text": "", "reasoning": "", "error": "", "tools": []}
-            self.table.add_row(node_id, "UNKNOWN", key=node_id)
+            if node_id and node_id not in self.nodes_data:
+                self.nodes_data[node_id] = {"state": "UNKNOWN", "text": "", "reasoning": "", "error": "", "tools": []}
+                self.table.add_row(node_id, "UNKNOWN", key=node_id)
 
-        if evt_type == "node_queued":
-            self.nodes_data[node_id]["state"] = "QUEUED"
-            self.log_widget.write(f"[cyan]Queued[/cyan] {node_id}")
-        elif evt_type == "node_start":
-            self.nodes_data[node_id]["state"] = "RUNNING"
-            self.log_widget.write(f"[yellow]Started[/yellow] {node_id}")
-        elif evt_type == "node_complete":
-            self.nodes_data[node_id]["state"] = payload.get("status", "SUCCESS")
-            self.nodes_data[node_id]["text"] = payload.get("text", "")
-            self.nodes_data[node_id]["reasoning"] = payload.get("reasoning", "")
-            self.nodes_data[node_id]["tools"] = payload.get("tool_calls", [])
-            self.log_widget.write(f"[green]Completed[/green] {node_id} -> {payload.get('status')}")
-        elif evt_type == "error":
-            self.nodes_data[node_id]["state"] = "ERROR"
-            self.nodes_data[node_id]["error"] = payload.get("error", "")
-            self.log_widget.write(f"[red]Error[/red] in {node_id}: {payload.get('error')}")
-        elif evt_type == "tool_start":
-            self.log_widget.write(f"[magenta]Tool Execution[/magenta] {payload.get('tool_name')}")
-        elif evt_type == "graph_complete":
-            self.log_widget.write("[bold green]Graph Execution Completed[/bold green]")
+            if evt_type == "node_queued":
+                self.nodes_data[node_id]["state"] = "QUEUED"
+                self.log_widget.write(f"[cyan]Queued[/cyan] {node_id}")
+            elif evt_type == "node_start":
+                self.nodes_data[node_id]["state"] = "RUNNING"
+                self.log_widget.write(f"[yellow]Started[/yellow] {node_id}")
+            elif evt_type == "node_complete":
+                self.nodes_data[node_id]["state"] = payload.get("status", "SUCCESS")
+                self.nodes_data[node_id]["text"] = payload.get("text", "")
+                self.nodes_data[node_id]["reasoning"] = payload.get("reasoning", "")
+                self.nodes_data[node_id]["tools"] = payload.get("tool_calls", [])
+                self.log_widget.write(f"[green]Completed[/green] {node_id} -> {payload.get('status')}")
+            elif evt_type == "error":
+                self.nodes_data[node_id]["state"] = "ERROR"
+                self.nodes_data[node_id]["error"] = payload.get("error", "")
+                self.log_widget.write(f"[red]Error[/red] in {node_id}: {payload.get('error')}")
+            elif evt_type == "tool_start":
+                self.log_widget.write(f"[magenta]Tool Execution[/magenta] {payload.get('tool_name')}")
+            elif evt_type == "graph_complete":
+                self.log_widget.write("[bold green]Graph Execution Completed[/bold green]")
 
-        if node_id:
-            self.table.update_cell(node_id, "State", self.nodes_data[node_id]["state"])
-            if self.table.cursor_row is not None and self.table.cursor_row >= 0:
-                row_key = self.table.coordinate_to_cell_key(self.table.cursor_coordinate).row_key
-                if row_key is not None and row_key.value == node_id:
-                    self.update_details(node_id)
+            if node_id:
+                self.table.update_cell(node_id, "state", self.nodes_data[node_id]["state"])
+                if self.table.cursor_row is not None and self.table.cursor_row >= 0:
+                    try:
+                        row_key = self.table.coordinate_to_cell_key(self.table.cursor_coordinate).row_key
+                        if row_key is not None and row_key.value == node_id:
+                            self.update_details(node_id)
+                    except Exception:
+                        pass
+        except Exception as e:
+            self.log_widget.write(f"[bold red]Analyzer Error:[/bold red] {e}")
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted):
         if event.row_key is None:
@@ -104,7 +112,7 @@ class StudioAnalyzer(App):
 
     def update_details(self, node_id):
         data = self.nodes_data.get(node_id, {})
-        md = f"# Node: {node_id}\n**State:** {data['state']}\n\n"
+        md = f"# Node: {node_id}\n**State:** {data.get('state', 'UNKNOWN')}\n\n"
         if data.get('error'):
             md += f"## Error Trace\n```python\n{data['error']}\n```\n"
         if data.get('tools'):
