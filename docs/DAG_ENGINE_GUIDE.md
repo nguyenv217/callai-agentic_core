@@ -79,4 +79,6 @@ def reduce_context(parents: dict[str, AgentResponse], state: dict) -> str:
 
 The `GraphAgentRunner` accepts an `IPersistenceProvider` and a `session_id`. It features **Delta Checkpointing**, where the `save_node_result` is invoked incrementally upon each node's completion. This O(1) write operation eliminates massive serialization bloat in long-running orchestrations.
 
-The execution queue is fully abstracted. By injecting a custom `ITaskBroker` (e.g., pointing to Redis or Celery), the engine transitions from a local single-process loop to a fully distributed, horizontally scaled Kubernetes orchestration.
+The execution queue is fully abstracted. By injecting an `ITaskBroker` (e.g., `RedisTaskBroker` from `agentic_core_brokers`), the engine transitions from a local single-process loop to a fully distributed, horizontally scaled Kubernetes orchestration.
+
+Visual debugging of complex cyclic topologies is provided natively via the `graph.to_mermaid()` method, which exports the compiled Petri Net into a Mermaid.js flowchart.

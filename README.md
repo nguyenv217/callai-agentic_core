@@ -119,16 +119,28 @@ async for event in agent.stream_turn("Query string"):
         print(event.content['function']['name'])
 ```
 
-## 6. Project Structure
+## 6. The Plugin Ecosystem
+
+`agentic_core` ships with official pre-engineered plugins to solve production boilerplates without bloating the core engine:
+*   `callai-agentic_core-persistence`: Zero-config durable state (SQLite) via `IPersistenceProvider`.
+*   `callai-agentic_core-brokers`: Distributed task queues (Redis) for horizontal cluster scaling.
+*   `callai-agentic_core-evals`: LLM-as-a-Judge benchmarking for agent trajectories.
+*   `callai-agentic_core-studio`: Observability tools (including native `.to_mermaid()` graph visualizers).
+
+## 7. Project Structure
 
 ```text
 callai-agentic_core/
-├── packages/                # Extensible Modules
+├── packages/                # Extensible Plugin Ecosystem
+│   ├── brokers/             # Distributed execution queues
+│   ├── evals/               # Trajectory benchmarking
+│   ├── persistence/         # Durable state checkpointing
 │   ├── rag/                 # Vector stores and embedding providers
 │   ├── shell/               # Local and Docker-isolated shell execution
-│   └── skills/              # LLM-based trace extraction and skill synthesis
+│   ├── skills/              # LLM-based trace extraction and skill synthesis
+│   └── studio/              # Visualization and observability
 └── agentic_core/
-    ├── engines/             # Execution loops (AgentRunner, DAGAgentRunner)
+    ├── engines/             # Execution loops (AgentRunner, GraphAgentRunner)
     ├── agents/              # Builder patterns
     ├── llm_providers/       # Provider adapters
     ├── memory/              # Context truncation and management
