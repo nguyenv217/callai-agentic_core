@@ -8,7 +8,8 @@ version = "0.1.0"
 description = "Visual debugging and telemetry dashboard for agentic_core"
 requires-python = ">=3.10"
 dependencies = [
-    "callai-agentic_core>=0.6.6"
+    "callai-agentic_core>=0.6.6",
+    "rich>=13.0.0"
 ]
 
 [tool.hatch.build.targets.wheel]

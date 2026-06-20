@@ -1,3 +1,3 @@
-from .exporter import StudioExporter
+from .tui import GraphStudioHandler
 
-__all__ = ["StudioExporter"]
+__all__ = ["GraphStudioHandler"]
