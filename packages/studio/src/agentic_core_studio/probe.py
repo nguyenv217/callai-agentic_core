@@ -1,11 +1,11 @@
 import json
-import socket
+import asyncio
 from agentic_core.handlers.dag import DAGSmartRetryHandler
 
 class StudioProbe(DAGSmartRetryHandler):
     """
     Telemetry probe that attaches to a GraphAgentRunner and broadcasts 
-    non-blocking UDP telemetry to the standalone Studio Analyzer.
+    non-blocking TCP JSONlines telemetry to the standalone Studio Analyzer.
     
     Usage: 
         graph = GraphAgentRunner(..., handler=StudioProbe())
@@ -14,16 +14,44 @@ class StudioProbe(DAGSmartRetryHandler):
         super().__init__(**kwargs)
         self.host = host
         self.port = port
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.setblocking(False)
+        self.queue = asyncio.Queue()
+        self._task = None
 
     def _broadcast(self, event_type: str, payload: dict):
+        self.queue.put_nowait({"type": event_type, "payload": payload})
+        if self._task is None:
+            try:
+                loop = asyncio.get_running_loop()
+                self._task = loop.create_task(self._publisher())
+            except RuntimeError:
+                pass
+
+    async def _publisher(self):
+        writer = None
         try:
-            data = json.dumps({"type": event_type, "payload": payload}).encode('utf-8')
-            if len(data) < 60000:  # Stay safely under UDP packet limits
-                self.sock.sendto(data, (self.host, self.port))
-        except Exception:
-            pass  # Silently drop telemetry if analyzer is offline
+            while True:
+                msg = await self.queue.get()
+                if not writer:
+                    try:
+                        _, writer = await asyncio.open_connection(self.host, self.port)
+                    except Exception:
+                        self.queue.task_done()
+                        continue
+
+                try:
+                    data = json.dumps(msg) + "\n"
+                    writer.write(data.encode('utf-8'))
+                    await writer.drain()
+                except Exception:
+                    writer = None
+                self.queue.task_done()
+        except asyncio.CancelledError:
+            if writer:
+                writer.close()
+                try:
+                    await writer.wait_closed()
+                except Exception:
+                    pass
 
     async def on_node_queued(self, node_id, priority):
         self._broadcast("node_queued", {"node_id": node_id, "priority": priority})
@@ -34,12 +62,14 @@ class StudioProbe(DAGSmartRetryHandler):
         return await super().on_node_start(node_id, worker_id)
 
     async def on_node_complete(self, node_id, status, result):
-        snippet = ""
-        if result and hasattr(result, 'text') and result.text:
-            snippet = result.text[:200] + ("..." if len(result.text) > 200 else "")
-        elif isinstance(result, str):
-            snippet = result[:200] + ("..." if len(result) > 200 else "")
-        self._broadcast("node_complete", {"node_id": node_id, "status": status.name, "snippet": snippet})
+        payload = {
+            "node_id": node_id,
+            "status": status.name,
+            "text": getattr(result, 'text', '') if result else str(result),
+            "reasoning": getattr(result, 'reasoning', '') if result else "",
+            "tool_calls": getattr(result, 'tool_calls', []) if result else []
+        }
+        self._broadcast("node_complete", payload)
         return await super().on_node_complete(node_id, status, result)
 
     async def on_error(self, error_context):

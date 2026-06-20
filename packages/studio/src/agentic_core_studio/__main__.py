@@ -1,136 +1,126 @@
 import sys
 import json
 import asyncio
-import datetime
-from collections import deque
-from rich.live import Live
-from rich.layout import Layout
-from rich.table import Table
-from rich.panel import Panel
-from rich.text import Text
+from textual.app import App, ComposeResult
+from textual.widgets import Header, Footer, DataTable, RichLog, Markdown
+from textual.containers import Horizontal, Vertical
 
-class UDPTelemetryServer(asyncio.DatagramProtocol):
-    def __init__(self, analyzer):
-        self.analyzer = analyzer
+class TCPServerProtocol(asyncio.Protocol):
+    def __init__(self, app):
+        self.app = app
+        self.buffer = ""
 
-    def datagram_received(self, data, addr):
+    def data_received(self, data):
+        self.buffer += data.decode('utf-8')
+        while "\n" in self.buffer:
+            line, self.buffer = self.buffer.split("\n", 1)
+            if line.strip():
+                try:
+                    msg = json.loads(line)
+                    self.app.call_from_thread(self.app.handle_event, msg)
+                except Exception:
+                    pass
+
+class StudioAnalyzer(App):
+    CSS = """
+    #left_pane { width: 35%; border-right: solid $primary; }
+    #right_pane { width: 65%; }
+    #details_panel { height: 70%; border-bottom: solid $primary; overflow: auto; padding: 1 2; }
+    #logs_panel { height: 30%; }
+    DataTable { height: 100%; }
+    """
+    BINDINGS = [("q", "quit", "Quit")]
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        with Horizontal():
+            with Vertical(id="left_pane"):
+                yield DataTable(id="nodes_table")
+            with Vertical(id="right_pane"):
+                yield Markdown("# Waiting for Telemetry...", id="details_panel")
+                yield RichLog(id="logs_panel", wrap=True, highlight=True)
+        yield Footer()
+
+    async def on_mount(self):
+        self.nodes_data = {}
+        self.table = self.query_one("#nodes_table", DataTable)
+        self.table.add_columns("Node ID", "State")
+        self.table.cursor_type = "row"
+        self.log_widget = self.query_one("#logs_panel", RichLog)
+        self.details = self.query_one("#details_panel", Markdown)
+        
+        loop = asyncio.get_running_loop()
         try:
-            message = json.loads(data.decode('utf-8'))
-            self.analyzer.handle_event(message)
-        except Exception:
-            pass
-
-class StudioAnalyzer:
-    def __init__(self):
-        self.nodes = {}
-        self.logs = deque(maxlen=30)
-        self.status = "LISTENING (Port 9876)"
-        self.metrics = {"tools_called": 0, "errors": 0}
-        self.start_time = datetime.datetime.now()
+            self.server = await loop.create_server(
+                lambda: TCPServerProtocol(self),
+                '127.0.0.1', 9876
+            )
+            self.log_widget.write("[bold green]Agentic Studio Analyzer Listening on TCP 127.0.0.1:9876[/bold green]")
+        except Exception as e:
+            self.log_widget.write(f"[bold red]Failed to bind TCP server: {e}[/bold red]")
 
     def handle_event(self, message):
         evt_type = message.get("type")
         payload = message.get("payload", {})
+        node_id = payload.get("node_id")
+
+        if node_id and node_id not in self.nodes_data:
+            self.nodes_data[node_id] = {"state": "UNKNOWN", "text": "", "reasoning": "", "error": "", "tools": []}
+            self.table.add_row(node_id, "UNKNOWN", key=node_id)
 
         if evt_type == "node_queued":
-            self.nodes[payload["node_id"]] = {"state": "QUEUED", "snippet": ""}
-            self.logs.appendleft(f"[cyan]Queued[/cyan] {payload['node_id']}")
+            self.nodes_data[node_id]["state"] = "QUEUED"
+            self.log_widget.write(f"[cyan]Queued[/cyan] {node_id}")
         elif evt_type == "node_start":
-            self.nodes[payload["node_id"]]["state"] = "RUNNING"
-            self.logs.appendleft(f"[yellow]Started[/yellow] {payload['node_id']}")
+            self.nodes_data[node_id]["state"] = "RUNNING"
+            self.log_widget.write(f"[yellow]Started[/yellow] {node_id}")
         elif evt_type == "node_complete":
-            self.nodes[payload["node_id"]]["state"] = payload["status"]
-            self.nodes[payload["node_id"]]["snippet"] = payload.get("snippet", "").replace('\n', ' ')
-            self.logs.appendleft(f"[green]Completed[/green] {payload['node_id']} -> {payload['status']}")
+            self.nodes_data[node_id]["state"] = payload.get("status", "SUCCESS")
+            self.nodes_data[node_id]["text"] = payload.get("text", "")
+            self.nodes_data[node_id]["reasoning"] = payload.get("reasoning", "")
+            self.nodes_data[node_id]["tools"] = payload.get("tool_calls", [])
+            self.log_widget.write(f"[green]Completed[/green] {node_id} -> {payload.get('status')}")
         elif evt_type == "error":
-            self.metrics["errors"] += 1
-            self.logs.appendleft(f"[red]Error[/red] in {payload.get('node_id')}: {payload.get('error')} -> {payload.get('action')}")
-            if payload.get("node_id") in self.nodes:
-                self.nodes[payload["node_id"]]["state"] = "ERROR"
+            self.nodes_data[node_id]["state"] = "ERROR"
+            self.nodes_data[node_id]["error"] = payload.get("error", "")
+            self.log_widget.write(f"[red]Error[/red] in {node_id}: {payload.get('error')}")
         elif evt_type == "tool_start":
-            self.metrics["tools_called"] += 1
-            self.logs.appendleft(f"[magenta]Tool Execution[/magenta] {payload.get('tool_name')}")
+            self.log_widget.write(f"[magenta]Tool Execution[/magenta] {payload.get('tool_name')}")
         elif evt_type == "graph_complete":
-            self.status = "COMPLETED"
-            self.logs.appendleft("[bold green]Graph Execution Completed[/bold green]")
+            self.log_widget.write("[bold green]Graph Execution Completed[/bold green]")
 
-    def generate_layout(self) -> Layout:
-        layout = Layout()
-        layout.split_column(
-            Layout(name="header", size=3),
-            Layout(name="main")
-        )
-        layout["main"].split_row(
-            Layout(name="left_panel", ratio=2),
-            Layout(name="right_panel", ratio=1)
-        )
-        layout["right_panel"].split_column(
-            Layout(name="metrics", size=8),
-            Layout(name="logs")
-        )
+        if node_id:
+            self.table.update_cell(node_id, "State", self.nodes_data[node_id]["state"])
+            if self.table.cursor_row is not None:
+                row_key = self.table.coordinate_to_cell_key(self.table.cursor_coordinate).row_key
+                if row_key.value == node_id:
+                    self.update_details(node_id)
 
-        # Header
-        uptime = datetime.datetime.now() - self.start_time
-        header_text = Text(f"Agentic Core Studio | Status: {self.status} | Uptime: {str(uptime).split('.')[0]}", style="bold white on blue", justify="center")
-        layout["header"].update(Panel(header_text))
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted):
+        node_id = event.row_key.value
+        self.update_details(node_id)
 
-        # Nodes Table
-        table = Table(title="Live Execution Topology", expand=True)
-        table.add_column("Node ID", style="cyan")
-        table.add_column("State", style="bold")
-        table.add_column("Output Snippet", style="dim")
+    def update_details(self, node_id):
+        data = self.nodes_data.get(node_id, {})
+        md = f"# Node: {node_id}\n**State:** {data['state']}\n\n"
+        if data.get('error'):
+            md += f"## Error Trace\n```python\n{data['error']}\n```\n"
+        if data.get('tools'):
+            md += f"## Tool Calls\n"
+            for tc in data['tools']:
+                func = tc.get("function", {})
+                md += f"- **{func.get('name')}**: `{func.get('arguments')}`\n"
+            md += "\n"
+        if data.get('reasoning'):
+            md += f"## Reasoning\n{data['reasoning']}\n\n"
+        if data.get('text'):
+            md += f"## Final Output\n{data['text']}\n"
         
-        for node_id, info in self.nodes.items():
-            state = info["state"]
-            color = "white"
-            if state == "SUCCESS": color = "green"
-            elif state == "RUNNING": color = "yellow"
-            elif state == "QUEUED": color = "cyan"
-            elif state in ("FAILED", "ERROR", "FAILED_UPSTREAM"): color = "red"
-            elif state == "SKIPPED": color = "grey50"
-            
-            table.add_row(node_id, f"[{color}]{state}[/{color}]", info["snippet"][:60])
-        
-        layout["left_panel"].update(Panel(table, border_style="blue"))
-
-        # Metrics
-        metrics_table = Table.grid(padding=1)
-        metrics_table.add_column(style="bold cyan")
-        metrics_table.add_column(justify="right")
-        metrics_table.add_row("Active Nodes:", str(sum(1 for n in self.nodes.values() if n["state"] == "RUNNING")))
-        metrics_table.add_row("Tools Executed:", str(self.metrics["tools_called"]))
-        metrics_table.add_row("Exceptions Caught:", str(self.metrics["errors"]))
-        layout["metrics"].update(Panel(metrics_table, title="Global Metrics", border_style="cyan"))
-
-        # Logs
-        log_text = "\n".join(self.logs)
-        layout["logs"].update(Panel(log_text, title="Live Event Telemetry", border_style="magenta"))
-
-        return layout
-
-async def run_studio():
-    analyzer = StudioAnalyzer()
-    loop = asyncio.get_running_loop()
-    transport, protocol = await loop.create_datagram_endpoint(
-        lambda: UDPTelemetryServer(analyzer),
-        local_addr=('127.0.0.1', 9876)
-    )
-    
-    try:
-        with Live(analyzer.generate_layout(), refresh_per_second=10, screen=True) as live:
-            while True:
-                await asyncio.sleep(0.1)
-                live.update(analyzer.generate_layout())
-    except KeyboardInterrupt:
-        pass
-    finally:
-        transport.close()
+        self.details.update(md)
 
 def main():
-    try:
-        asyncio.run(run_studio())
-    except KeyboardInterrupt:
-        pass
+    app = StudioAnalyzer()
+    app.run()
 
 if __name__ == "__main__":
     main()

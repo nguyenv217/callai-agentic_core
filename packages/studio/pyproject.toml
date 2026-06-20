@@ -9,7 +9,7 @@ description = "Visual debugging and telemetry dashboard for agentic_core"
 requires-python = ">=3.10"
 dependencies = [
     "callai-agentic_core>=0.6.6",
-    "rich>=13.0.0"
+    "textual>=0.40.0"
 ]
 
 [project.scripts]
