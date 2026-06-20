@@ -1,3 +1,3 @@
-from .tui import GraphStudioHandler
+from .probe import StudioProbe
 
-__all__ = ["GraphStudioHandler"]
+__all__ = ["StudioProbe"]

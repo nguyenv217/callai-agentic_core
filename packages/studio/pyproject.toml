@@ -12,5 +12,8 @@ dependencies = [
     "rich>=13.0.0"
 ]
 
+[project.scripts]
+agentic-studio = "agentic_core_studio.__main__:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentic_core_studio"]
